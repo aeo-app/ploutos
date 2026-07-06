@@ -1,0 +1,32 @@
+[project]
+name = "ploutos-gate"
+version = "0.1.0"
+description = "Ploutos Gateway — AEO backend modules"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "langchain>=0.3.0",
+    "langchain-aws>=0.2.0",
+    "langchain-community>=0.3.0",
+    "botocore[crt]>=1.35.0",
+    "crawl4ai>=0.5.0",
+    "tavily-python>=0.5.0",
+    "ddgs>=9.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "python-jose[cryptography]>=3.0.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-mock>=3.15.1",
+]
