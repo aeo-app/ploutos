@@ -1,0 +1,57 @@
+.form {
+  background: var(--c-white);
+  border: 1px solid var(--c-slate-200);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-md);
+  padding: 28px;
+  margin-bottom: 28px;
+  position: relative;
+  overflow: hidden;
+}
+.form::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--grad-brand);
+}
+.formTitle { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--c-slate-800); margin-bottom: 4px; }
+.formSub   { font-size: 13px; color: var(--c-slate-500); margin-bottom: 22px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.row  { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 160px; }
+.label { font-size: 12px; font-weight: 600; color: var(--c-slate-600); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 4px; }
+.required { color: var(--c-danger); }
+.input {
+  padding: 10px 14px;
+  border: 1.5px solid var(--c-slate-200);
+  border-radius: var(--r-md);
+  font-size: 14px; color: var(--c-slate-800);
+  background: var(--c-white);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  outline: none;
+}
+.input::placeholder { color: var(--c-slate-300); }
+.input:focus {
+  border-color: var(--c-indigo-400);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.10);
+}
+.footer { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.hint   { font-size: 12px; color: var(--c-slate-400); }
+
+/* Compact form */
+.compact { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 24px; padding: 16px 20px; }
+.compactInput { padding: 9px 13px; font-size: 13px; flex: 1; min-width: 140px; }
+
+/* Quick-start pills */
+.quickStarts { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+.qsPill {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px;
+  background: var(--c-white); border: 1px solid var(--c-slate-200);
+  color: var(--c-slate-600); cursor: pointer;
+  transition: all var(--t-fast);
+  font-family: var(--font-body);
+}
+.qsPill:hover { border-color: var(--c-indigo-300); background: var(--c-indigo-50); color: var(--c-indigo-700); }
+
+@media (max-width: 640px) {
+  .grid { grid-template-columns: 1fr; }
+}

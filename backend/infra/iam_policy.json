@@ -1,0 +1,21 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DynamoDBTableAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:UpdateItem",
+        "dynamodb:DescribeTable"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-southeast-1:*:table/apac_seo_analyses",
+        "arn:aws:dynamodb:ap-southeast-1:*:table/apac_seo_analyses/index/gsi_analysis_id"
+      ]
+    }
+  ]
+}

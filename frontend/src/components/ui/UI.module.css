@@ -1,0 +1,147 @@
+.card {
+  background: var(--c-white);
+  border: 1px solid var(--c-slate-200);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-sm);
+}
+.cardPadded { padding: 24px; }
+
+/* ── Badge ── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.badgeDefault  { background: var(--c-slate-100); color: var(--c-slate-600); }
+.badgeBrand    { background: var(--c-indigo-100); color: var(--c-indigo-600); }
+.badgeSuccess  { background: var(--c-success-bg); color: var(--c-success); }
+.badgeWarning  { background: var(--c-warning-bg); color: var(--c-warning); }
+.badgeDanger   { background: var(--c-danger-bg);  color: var(--c-danger); }
+.badgeInfo     { background: var(--c-info-bg);    color: var(--c-info); }
+
+/* ── Tag ── */
+.tag {
+  display: inline-flex; align-items: center;
+  padding: 5px 12px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  background: var(--c-indigo-50);
+  border: 1px solid var(--c-indigo-200);
+  color: var(--c-indigo-700);
+  cursor: default;
+  transition: background var(--t-fast);
+}
+.tag:hover { background: var(--c-indigo-100); }
+
+/* ── StatTile ── */
+.statTile { padding: 22px 24px; }
+.statLabel {
+  font-size: 12px; font-weight: 500; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--c-slate-500);
+  margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.statValue {
+  font-family: var(--font-display);
+  font-size: 32px; font-weight: 800; line-height: 1;
+  margin-bottom: 4px; letter-spacing: -0.02em;
+}
+.statSub { font-size: 12px; color: var(--c-slate-400); }
+.statTrend { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
+.trendUp   { color: var(--c-success); }
+.trendDown { color: var(--c-danger); }
+
+/* ── Progress ── */
+.progressWrap { }
+.progressHeader { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.progressLabel { font-size: 13px; color: var(--c-slate-600); font-weight: 500; }
+.progressVal   { font-size: 13px; font-weight: 700; font-family: var(--font-mono); }
+.progressTrack { height: 8px; background: var(--c-slate-100); border-radius: 4px; overflow: hidden; }
+.progressFill  { height: 100%; border-radius: 4px; transition: width 0.9s cubic-bezier(0.4,0,0.2,1); }
+
+/* ── Table ── */
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.th {
+  padding: 11px 16px; text-align: left;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--c-slate-500);
+  background: var(--c-slate-50);
+  border-bottom: 1px solid var(--c-slate-200);
+  white-space: nowrap;
+  position: sticky; top: 0;
+}
+.th:first-child { border-radius: var(--r-sm) 0 0 0; }
+.th:last-child  { border-radius: 0 var(--r-sm) 0 0; }
+.td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--c-slate-100);
+  color: var(--c-slate-700);
+  vertical-align: middle;
+}
+.tr { transition: background var(--t-fast); }
+.tr:hover .td { background: var(--c-slate-50); }
+.tr:last-child .td { border-bottom: none; }
+.thRight { text-align: right; }
+.tdRight { text-align: right; }
+.tdMono  { font-family: var(--font-mono); font-size: 12px; }
+.tdBold  { font-weight: 600; color: var(--c-slate-800); }
+
+/* ── Section Header ── */
+.sectionHeader { margin-bottom: 20px; }
+.sectionTitle  { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--c-slate-800); margin-bottom: 4px; }
+.sectionSub    { font-size: 13px; color: var(--c-slate-500); }
+.sectionHeaderRow { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* ── Empty ── */
+.empty { padding: 60px 24px; text-align: center; }
+.emptyIcon { font-size: 48px; margin-bottom: 16px; }
+.emptyTitle { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--c-slate-700); margin-bottom: 8px; }
+.emptyBody  { font-size: 14px; color: var(--c-slate-500); max-width: 360px; margin: 0 auto 24px; line-height: 1.6; }
+
+/* ── Skeleton ── */
+.skeleton {
+  background: linear-gradient(90deg, var(--c-slate-100) 25%, var(--c-slate-200) 50%, var(--c-slate-100) 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+
+/* ── Divider ── */
+.divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; }
+.dividerLine { flex: 1; height: 1px; background: var(--c-slate-200); }
+.dividerLabel { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--c-slate-400); white-space: nowrap; }
+
+/* ── Copy button ── */
+.copyBtn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: var(--r-sm);
+  font-size: 12px; font-weight: 600;
+  background: var(--c-slate-100); border: 1px solid var(--c-slate-200);
+  color: var(--c-slate-600);
+  transition: all var(--t-fast);
+}
+.copyBtn:hover { background: var(--c-indigo-50); border-color: var(--c-indigo-200); color: var(--c-indigo-600); }
+.copyBtnCopied { background: var(--c-success-bg); border-color: #6EE7B7; color: var(--c-success); }
+
+/* ── Insight card ── */
+.insightCard {
+  padding: 16px 18px;
+  background: var(--c-indigo-50);
+  border: 1px solid var(--c-indigo-200);
+  border-radius: var(--r-lg);
+  display: flex; gap: 14px; align-items: flex-start;
+}
+.insightNum {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: var(--grad-brand); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; margin-top: 1px;
+}
+.insightTitle { font-size: 13px; font-weight: 600; color: var(--c-slate-800); margin-bottom: 3px; }
+.insightDetail { font-size: 13px; color: var(--c-slate-600); line-height: 1.6; }
+
+/* ── Char count ── */
+.charCount { font-size: 12px; font-family: var(--font-mono); }
+.charOk    { color: var(--c-slate-400); }
+.charWarn  { color: var(--c-warning); }
+.charOver  { color: var(--c-danger); }

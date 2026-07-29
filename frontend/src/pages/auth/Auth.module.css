@@ -1,0 +1,439 @@
+/* ── Outer shell ─────────────────────────────────────────── */
+.shell {
+  min-height: 100vh;
+  display: flex;
+  background: var(--c-slate-50);
+}
+
+/* ── Left brand panel ───────────────────────────────────── */
+.brand {
+  flex: 0 0 46%;
+  background: var(--grad-hero);
+  display: flex;
+  flex-direction: column;
+  padding: 48px 52px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle dot-grid overlay */
+.brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+}
+
+/* Ambient glow blobs */
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(72px);
+}
+.blob1 {
+  width: 360px; height: 360px;
+  background: rgba(167,139,250,0.25);
+  top: -80px; left: -80px;
+}
+.blob2 {
+  width: 280px; height: 280px;
+  background: rgba(99,102,241,0.2);
+  bottom: -60px; right: -40px;
+}
+
+/* Logo */
+.brandLogo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 64px;
+}
+.brandLogoMark {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.25);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(8px);
+}
+.brandLogoText {
+  font-family: var(--font-display);
+  font-size: 17px; font-weight: 800;
+  color: #fff; line-height: 1;
+}
+.brandLogoSub {
+  font-size: 10px;
+  color: rgba(255,255,255,0.6);
+  margin-top: 2px;
+  font-weight: 500;
+}
+
+/* Sonar graphic */
+.sonarArea {
+  position: relative;
+  width: 180px; height: 180px;
+  margin: 0 auto 52px;
+  z-index: 1;
+}
+.sonarCenter {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  border: 1.5px solid rgba(255,255,255,0.3);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2;
+}
+.sonarCenterIcon { color: #fff; width: 26px; height: 26px; }
+.sonarRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.22);
+  animation: sonar-ring 2.6s ease-out infinite;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px; height: 60px;
+}
+
+/* Headlines */
+.brandHeadline {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 2.8vw, 36px);
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+  position: relative; z-index: 1;
+}
+.brandGrad {
+  background: linear-gradient(90deg, #C7D2FE, #DDD6FE);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.brandDesc {
+  font-size: 15px;
+  color: rgba(255,255,255,0.68);
+  line-height: 1.75;
+  max-width: 340px;
+  margin-bottom: 40px;
+  position: relative; z-index: 1;
+}
+
+/* Feature list */
+.features { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 12px; }
+.feature {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 13px 16px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(8px);
+}
+.featureIcon {
+  width: 32px; height: 32px; flex-shrink: 0;
+  border-radius: var(--r-sm);
+  background: rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+}
+.featureText { font-size: 13px; color: rgba(255,255,255,0.82); line-height: 1.5; }
+.featureTitle { font-weight: 600; color: #fff; display: block; margin-bottom: 1px; }
+
+/* ── Right panel ─────────────────────────────────────────── */
+.right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  overflow-y: auto;
+  background: var(--c-slate-50);
+  position: relative;
+}
+
+/* Faint grid on right */
+.right::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--c-slate-200) 1px, transparent 1px),
+    linear-gradient(90deg, var(--c-slate-200) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+/* ── Glass card ──────────────────────────────────────────── */
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255,255,255,0.9);
+  border-radius: var(--r-2xl);
+  padding: 40px 36px;
+  backdrop-filter: blur(20px);
+  box-shadow:
+    0 20px 60px rgba(79,70,229,0.1),
+    0 4px 16px rgba(15,23,42,0.06),
+    inset 0 1px 0 rgba(255,255,255,1);
+  position: relative;
+  z-index: 1;
+}
+
+/* Top accent line */
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 18%; right: 18%;
+  height: 2px;
+  background: var(--grad-brand);
+  border-radius: 0 0 2px 2px;
+}
+
+/* ── Card internals ──────────────────────────────────────── */
+.cardBadge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  background: var(--c-indigo-50);
+  border: 1px solid var(--c-indigo-200);
+  border-radius: 20px;
+  font-size: 12px; font-weight: 600;
+  color: var(--c-indigo-600);
+  margin-bottom: 18px;
+}
+.cardBadgeDot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--c-indigo-500);
+}
+
+.cardTitle {
+  font-family: var(--font-display);
+  font-size: 24px; font-weight: 800;
+  color: var(--c-slate-900);
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.cardSub {
+  font-size: 14px; color: var(--c-slate-500);
+  line-height: 1.6; margin-bottom: 28px;
+}
+
+/* ── Field styles ────────────────────────────────────────── */
+.fields { display: flex; flex-direction: column; gap: 16px; margin-bottom: 22px; }
+
+.fieldWrap { position: relative; }
+.fieldLabel {
+  display: block;
+  font-size: 12px; font-weight: 600;
+  color: var(--c-slate-600);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.fieldRequired { color: var(--c-danger); margin-left: 2px; }
+
+.input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 15px;
+  font-family: var(--font-body);
+  color: var(--c-slate-900);
+  background: var(--c-white);
+  border: 1.5px solid var(--c-slate-200);
+  border-radius: var(--r-md);
+  outline: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
+}
+.input::placeholder { color: var(--c-slate-300); }
+.input:focus {
+  border-color: var(--c-indigo-400);
+  box-shadow: 0 0 0 3.5px rgba(79,70,229,0.12);
+  background: #fff;
+}
+.inputError { border-color: var(--c-danger) !important; }
+.inputError:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,0.12) !important; }
+
+.fieldErr {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--c-danger);
+  display: flex; align-items: center; gap: 4px;
+}
+
+/* ── OTP boxes ───────────────────────────────────────────── */
+.otpRow {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.otpBox {
+  width: 52px; height: 58px;
+  text-align: center;
+  font-size: 22px; font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--c-slate-900);
+  background: var(--c-white);
+  border: 1.5px solid var(--c-slate-200);
+  border-radius: var(--r-md);
+  outline: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
+  caret-color: transparent;
+}
+.otpBox:focus {
+  border-color: var(--c-indigo-500);
+  box-shadow: 0 0 0 3.5px rgba(79,70,229,0.14);
+  background: var(--c-indigo-50);
+}
+.otpBoxFilled {
+  border-color: var(--c-indigo-400);
+  background: var(--c-indigo-50);
+  color: var(--c-indigo-700);
+}
+.otpBoxError {
+  border-color: var(--c-danger) !important;
+  background: var(--c-danger-bg) !important;
+}
+.otpError {
+  text-align: center;
+  font-size: 13px;
+  color: var(--c-danger);
+  margin-top: 8px;
+}
+
+/* ── Countdown resend ────────────────────────────────────── */
+.resendRow {
+  text-align: center;
+  margin: 16px 0 24px;
+}
+.resendTimer {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; color: var(--c-slate-500);
+}
+.timerTrack {
+  width: 20px; height: 20px;
+  transform: rotate(-90deg);
+}
+.timerBg  { fill: none; stroke: var(--c-slate-200); stroke-width: 2.5; }
+.timerFill {
+  fill: none;
+  stroke: var(--c-indigo-500);
+  stroke-width: 2.5;
+  stroke-dasharray: 44;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear;
+}
+.resendBtn {
+  background: none; border: none; cursor: pointer;
+  color: var(--c-indigo-600); font-size: 13px; font-weight: 600;
+  font-family: var(--font-body);
+  padding: 5px 10px; border-radius: var(--r-sm);
+  transition: background var(--t-fast);
+}
+.resendBtn:hover { background: var(--c-indigo-50); }
+
+/* ── Passwordless strip ──────────────────────────────────── */
+.passwordlessStrip {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  background: var(--c-slate-50);
+  border: 1px solid var(--c-slate-200);
+  border-radius: var(--r-md);
+  margin-bottom: 22px;
+}
+.stripIcon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+.stripText { font-size: 12px; color: var(--c-slate-500); line-height: 1.6; }
+
+/* ── Login step indicators ───────────────────────────────── */
+.steps {
+  display: flex; gap: 0; margin-bottom: 28px;
+}
+.step {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  position: relative;
+}
+.step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 14px; left: 50%; right: -50%;
+  height: 1.5px;
+  background: var(--c-slate-200);
+  z-index: 0;
+}
+.step:not(:last-child).stepDone::after { background: var(--c-indigo-300); }
+.stepDot {
+  width: 28px; height: 28px; border-radius: 50%; z-index: 1;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  border: 2px solid var(--c-slate-200);
+  background: var(--c-white);
+  color: var(--c-slate-400);
+  transition: all var(--t-normal);
+}
+.stepActive .stepDot { border-color: var(--c-indigo-500); color: var(--c-indigo-600); background: var(--c-indigo-50); }
+.stepDone   .stepDot { border-color: var(--c-indigo-500); background: var(--c-indigo-500); color: #fff; }
+.stepLabel { font-size: 11px; color: var(--c-slate-400); font-weight: 500; white-space: nowrap; }
+.stepActive .stepLabel { color: var(--c-indigo-600); font-weight: 600; }
+.stepDone   .stepLabel { color: var(--c-indigo-500); }
+
+/* ── Footer link row ─────────────────────────────────────── */
+.switchRow {
+  text-align: center;
+  margin-top: 22px;
+  font-size: 14px;
+  color: var(--c-slate-500);
+}
+.switchLink {
+  color: var(--c-indigo-600); font-weight: 600;
+  background: none; border: none; cursor: pointer;
+  font-family: var(--font-body); font-size: 14px;
+  padding: 0; text-decoration: none;
+}
+.switchLink:hover { text-decoration: underline; }
+
+/* ── Success state ───────────────────────────────────────── */
+.successWrap { text-align: center; padding: 16px 0; }
+.successRing {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--c-success-bg);
+  border: 2px solid #6EE7B7;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 20px;
+  font-size: 30px;
+}
+.successTitle {
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 800;
+  color: var(--c-slate-900); margin-bottom: 8px;
+}
+.successSub { font-size: 14px; color: var(--c-slate-500); }
+
+/* ── Divider ─────────────────────────────────────────────── */
+.divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px 0;
+}
+.dividerLine { flex: 1; height: 1px; background: var(--c-slate-200); }
+.dividerText { font-size: 12px; color: var(--c-slate-400); white-space: nowrap; }
+
+/* ── Terms ───────────────────────────────────────────────── */
+.terms { font-size: 11px; color: var(--c-slate-400); text-align: center; margin-top: 18px; line-height: 1.6; }
+.termsLink { color: var(--c-indigo-500); cursor: pointer; }
+
+/* ── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .brand { display: none; }
+  .right { padding: 24px 16px; align-items: flex-start; padding-top: 40px; }
+  .card  { padding: 28px 22px; }
+  .otpBox { width: 44px; height: 52px; font-size: 20px; }
+}

@@ -1,0 +1,24 @@
+.container {
+  position: fixed;
+  top: 20px; right: 20px;
+  z-index: 9999;
+  display: flex; flex-direction: column; gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 13px 16px;
+  background: var(--c-white);
+  border: 1px solid var(--c-slate-200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 280px; max-width: 380px;
+  pointer-events: all;
+  cursor: pointer;
+}
+.icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.message { font-size: 13px; color: var(--c-slate-700); line-height: 1.5; flex: 1; }
+.toastSuccess { border-left: 3px solid var(--c-success); }
+.toastError   { border-left: 3px solid var(--c-danger); }
+.toastWarning { border-left: 3px solid var(--c-warning); }
+.toastInfo    { border-left: 3px solid var(--c-info); }
