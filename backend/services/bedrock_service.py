@@ -69,6 +69,7 @@ load_dotenv()
 
 from models.seo_models import (
     AnalyseRequest,
+    BacklinkDeepDive,
     CompanyProfile,
     CompetitorAnalysisResponse,
     ContentStrategyAnalysis,
@@ -79,7 +80,9 @@ from models.seo_models import (
     GeneratedContentPiece,
     KeywordContentReport,
     KeywordVolumeResponse,
+    PlatformLink,
     RankingExplanation,
+    RepeatedPlatform,
     SEOFactorAnalysis,
     SEOInsight,
 )
@@ -99,8 +102,9 @@ MAX_TOKENS = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
 # article in ONE response routinely needs 6,000+ tokens and gets silently
 # truncated mid-JSON. We split that into two calls instead, each comfortably
 # bounded well under any model's output ceiling.
-ANALYSIS_MAX_TOKENS = int(os.getenv("BEDROCK_ANALYSIS_MAX_TOKENS", "6000"))
-CONTENT_MAX_TOKENS = int(os.getenv("BEDROCK_CONTENT_MAX_TOKENS", "6500"))
+ANALYSIS_MAX_TOKENS = int(os.getenv("BEDROCK_ANALYSIS_MAX_TOKENS", "9000"))
+BACKLINK_MAX_TOKENS = int(os.getenv("BEDROCK_BACKLINK_MAX_TOKENS", "9500"))
+CONTENT_MAX_TOKENS = int(os.getenv("BEDROCK_CONTENT_MAX_TOKENS", "9500"))
 EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
 EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
 EIGENAI_AWS_SESSION_TOKEN = os.getenv("EIGENAI_AWS_SESSION_TOKEN")
@@ -522,12 +526,16 @@ deep, well-informed knowledge of search ranking factors, backlink patterns, and 
 content structures across Asia-Pacific markets. You have studied thousands of top-ranking pages
 and know the patterns that typically separate a #1 result from a #10 result for a given keyword.
 
-For every keyword you are given, you produce two things:
+For every keyword you are given, you produce three things:
   1. A grounded, specific analysis of why the realistic top-ranking pages for that keyword tend
-     to outrank everyone else — covering their backlink sources, content strategy, and on-page
-     SEO factors — presented clearly as expert analysis/estimates based on well-known industry
-     patterns, not as live scraped data.
-  2. An original, ready-to-publish content piece for the requesting company that matches or
+     to outrank everyone else — covering content strategy and on-page SEO factors — presented
+     clearly as expert analysis/estimates based on well-known industry patterns, not as live
+     scraped data.
+  2. A backlink acquisition deep-dive: real, named, stable platforms and categories (directories,
+     PR wires, guest-post niches, forums) where this type of link is typically earned, with
+     concrete step-by-step instructions to acquire one — NOT a list of a specific competitor's
+     actual backlink URLs (you have no way to know those).
+  3. An original, ready-to-publish content piece for the requesting company that matches or
      improves on what typically ranks, optimised for SEO and built to engage and convert.
 
 CRITICAL RULES:
@@ -542,6 +550,14 @@ CRITICAL RULES:
   names or fabricate specific traffic/ranking numbers you could not plausibly know — use
   qualitative, expert-judgment descriptions instead (e.g. "consistently ranks in the top 3"
   rather than an invented exact position).
+- NEVER invent a specific backlink URL and present it as a real, existing link (to a competitor
+  or anyone else) — you have no live backlink-index access, so any specific URL you produced
+  would be fabricated and could mislead real outreach or client reporting. Instead, name REAL,
+  well-known, stable platforms/categories (e.g. actual directories, actual PR distribution
+  services, actual review sites, actual forums) where this type of link is genuinely earned.
+- When asked for a platform's URL, give that platform's OWN real, correct, top-level homepage
+  or submission/signup URL (e.g. 'https://www.g2.com') — this is a fact about the platform
+  itself, not a claim about a competitor's specific backlink, and must be accurate.
 - The generated content piece must be 100% original writing — never copy or closely paraphrase
   any real company's actual published copy. Write fresh content inspired by the *patterns* you
   describe, in the requesting company's voice.
@@ -554,11 +570,13 @@ CRITICAL RULES:
 """
 
 
-# ── Generator: Step 1 — competitor + SEO analysis for ONE keyword ─────────────
+# ── Generator: Step 1 — competitor + content/SEO analysis for ONE keyword ─────
 def _generate_keyword_analysis(req: ContentStrategyRequest, keyword: str) -> dict:
-    """Small, bounded call: competitors + backlinks + strategy/SEO/ranking analysis.
-    No long-form free text here, so this comfortably fits well under any
-    Bedrock model's output token ceiling."""
+    """Small, bounded call: competitors + content strategy + on-page SEO +
+    ranking-explanation analysis. No long-form free text here, so this
+    comfortably fits well under any Bedrock model's output token ceiling.
+    Backlink acquisition detail is a separate call — see
+    _generate_backlink_deep_dive below."""
     prompt = f"""
 Target keyword: "{keyword}"
 Company requesting this analysis: {req.company_name}
@@ -573,19 +591,13 @@ Return a JSON object with EXACTLY these keys:
 {{
   "keyword": "{keyword}",
   "top_competitors": [
-    {{"rank": 1, "company": "string (real company)", "url": "string (real or plausible domain)",
+    {{"rank": 1, "company": "string (real company)", "url": "string — their real homepage or
+      realistic service-page domain (not a claim about today's exact SERP position)",
       "why_ranking": "string — the single biggest reason this page ranks near the top for
         \\"{keyword}\\" in {req.market}"}}
-    // exactly 4 real, currently-relevant top-ranking competitors for this keyword in {req.market}
+    // exactly 5 real, currently-relevant top-ranking competitors for this keyword in {req.market}
     // (use {req.company_name}'s known direct rivals in {req.industry} where you know them,
     // otherwise the realistic category leaders for this keyword and market)
-  ],
-  "backlink_sources": [
-    {{"source_type": "string e.g. 'Industry directories', 'Digital PR / news mentions',
-       'Guest posts on niche blogs', 'Partner & supplier sites', 'Review platforms'",
-      "examples": "string — 2-4 concrete named platforms or site types typical for {req.industry}",
-      "notes": "string — why this source type specifically helps ranking for \\"{keyword}\\""}}
-    // exactly 5 distinct backlink source categories
   ],
   "content_strategy_analysis": {{
     "dominant_content_types": "string — the content formats (long-form guide, comparison page,
@@ -605,7 +617,13 @@ Return a JSON object with EXACTLY these keys:
     "meta_title_pattern": "string — the formula top pages tend to use for title tags
       (e.g. 'Keyword + Benefit + Brand')",
     "meta_description_pattern": "string — the formula typically used for meta descriptions",
-    "url_structure_pattern": "string — the typical URL slug pattern for this keyword's content"
+    "url_structure_pattern": "string — the typical URL slug pattern for this keyword's content",
+    "internal_linking_pattern": "string — how top pages typically link internally (hub-and-spoke
+      to a pillar page, related-service cross-links, breadcrumb depth, etc.)",
+    "schema_markup_recommendation": "string — the schema.org markup type(s) most relevant here
+      (e.g. Article, FAQPage, Product, LocalBusiness) and why",
+    "estimated_word_count_range": "string — realistic word count range for a competitive page
+      targeting this keyword, e.g. '1,800-2,400 words'"
   }},
   "ranking_explanation": {{
     "backlink_strategy_summary": "string — 2-3 sentences on HOW these competitors typically build
@@ -621,6 +639,93 @@ if needed, since this must parse as strict JSON.
 """
     raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=ANALYSIS_MAX_TOKENS)
     return _parse_json(raw)
+
+
+# ── Generator: Steps 3-5 — backlink deep-dive + replication plan ──────────────
+def _generate_backlink_deep_dive(
+    req: ContentStrategyRequest, keyword: str, analysis: dict
+) -> BacklinkDeepDive:
+    """Real, named, stable platforms/categories where this type of backlink is
+    genuinely earned, with step-by-step acquisition instructions — NOT
+    fabricated backlink URLs (this system has no live backlink-index API, so
+    any specific URL it produced would be invented and could mislead real
+    outreach or client reporting)."""
+    top_names = ", ".join(c.get("company", "") for c in analysis.get("top_competitors", [])[:5])
+
+    prompt = f"""
+Target keyword: "{keyword}"
+Company: {req.company_name} ({req.url}) — {req.industry} in {req.market}
+Top competitors already identified for this keyword: {top_names}
+
+Reverse-engineer how companies like these typically build the backlink profile that helps them
+rank for "{keyword}", then produce an actionable replication plan for {req.company_name}.
+
+Return a JSON object with EXACTLY these keys:
+{{
+  "backlink_opportunities": [
+    {{"category": "string e.g. 'Industry directories', 'Digital PR / news mentions',
+        'Guest posts on niche blogs', 'Partner & supplier sites', 'Review platforms',
+        'Local/chamber associations', 'Forums & communities', 'Resource page link building'",
+      "authority_tier": "'high' | 'medium' | 'foundational'",
+      "real_platforms": [
+        {{"name": "string — real, currently-operating platform name",
+          "url": "string — that platform's OWN real, correct, top-level homepage or
+            submission/signup URL (e.g. 'https://www.g2.com'). This must be the
+            platform's real URL — NOT a claim that any specific competitor has an
+            existing backlink there."}}
+        // 3-5 REAL, well-known, currently-operating platforms for this category that are
+        // genuinely relevant to {req.industry} in {req.market} — never an invented site
+      ],
+      "backlink_type": "string — e.g. 'directory listing', 'guest post', 'PR mention',
+        'forum profile link', 'resource page mention'",
+      "typical_anchor_text_pattern": "string — a realistic anchor-text PATTERN or example phrase
+        (not tied to a specific fabricated backlink)",
+      "why_it_helps_this_keyword": "string — 1-2 sentences",
+      "acquisition_steps": [
+        "string" // 3-5 concrete, ordered steps {req.company_name} could actually take to earn a
+        // link in this category (who to contact, what to submit, what to pitch)
+      ]}}
+    // exactly 8 distinct categories, covering a mix of high/medium/foundational authority_tier
+  ],
+  "high_authority_highlights": [
+    "string" // 3-4 sentences/bullets naming WHICH of the categories/platforms above matter most
+    // and why they're worth prioritising first
+  ],
+  "how_they_likely_earned_backlinks": "string — 3-4 sentences reverse-engineering HOW competitors
+    like {top_names or 'the category leaders'} typically built this backlink profile (outreach,
+    partnerships, PR, listings, content that naturally attracts links, etc.)",
+  "repeated_platforms_pattern": "string — 2-3 sentences on the PATTERN across sources: do the
+    same types of sites recur, the same content formats get linked to, the same outreach
+    channels get reused, etc.",
+  "replication_plan": {{
+    "guest_post_opportunities": [
+      "string" // 4-6 REAL, named sites, publications, or niches genuinely relevant to
+      // {req.industry} in {req.market} that would realistically accept a pitch
+    ],
+    "directory_submissions": [
+      "string" // 4-6 REAL, named directories relevant to {req.industry} / {req.market}
+    ],
+    "pr_article_platforms": [
+      "string" // 3-5 REAL, named PR distribution or article/press platforms
+    ],
+    "forums_communities": [
+      "string" // 3-5 REAL, named forums, communities, or Q&A platforms relevant to this space
+    ],
+    "step_by_step_plan": [
+      "string" // 5-7 ordered, concrete action items (e.g. 'Week 1: audit and shortlist 15
+      // directories from the list above and submit to the top 5') to execute this plan
+    ]
+  }}
+}}
+
+Keep every string value on a single line (no literal line breaks). Do not use double-quote
+characters inside any string value; use single quotes instead, since this must parse as strict
+JSON. Every platform/site named must be a REAL, currently-operating website you have genuine
+training knowledge of — never invent one.
+"""
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=BACKLINK_MAX_TOKENS)
+    data = _parse_json(raw)
+    return BacklinkDeepDive(**data)
 
 
 # ── Shared prompt builder for content generation (used by both the blocking
@@ -707,20 +812,22 @@ def _generate_content_piece(
 def generate_keyword_content_report(
     req: ContentStrategyRequest, keyword: str
 ) -> KeywordContentReport:
-    """Two Bedrock calls (analysis, then content) instead of one oversized
-    call — see ANALYSIS_MAX_TOKENS / CONTENT_MAX_TOKENS above for why."""
+    """Three bounded Bedrock calls per keyword — analysis, then backlink
+    deep-dive, then content — instead of one oversized call. See
+    ANALYSIS_MAX_TOKENS / BACKLINK_MAX_TOKENS / CONTENT_MAX_TOKENS above."""
     logger.info(f"[bedrock] content_strategy — {req.company_name} — keyword={keyword!r}")
 
     analysis = _generate_keyword_analysis(req, keyword)
+    backlink_deep_dive = _generate_backlink_deep_dive(req, keyword, analysis)
     content = _generate_content_piece(req, keyword, analysis)
 
     return KeywordContentReport(
         keyword=analysis.get("keyword", keyword),
         top_competitors=analysis["top_competitors"],
-        backlink_sources=analysis["backlink_sources"],
         content_strategy_analysis=ContentStrategyAnalysis(**analysis["content_strategy_analysis"]),
         seo_factor_analysis=SEOFactorAnalysis(**analysis["seo_factor_analysis"]),
         ranking_explanation=RankingExplanation(**analysis["ranking_explanation"]),
+        backlink_deep_dive=backlink_deep_dive,
         generated_content=content,
     )
 
@@ -801,6 +908,58 @@ def _run_keyword_reports_concurrently(
     return ordered_reports, failures
 
 
+# ── Deterministic (non-LLM) aggregation across a request's keyword_reports ────
+def _compute_backlink_aggregates(
+    keyword_reports: list[KeywordContentReport],
+) -> tuple[list[PlatformLink], list[RepeatedPlatform]]:
+    """
+    Computed in plain Python from the model's own already-generated platform
+    recommendations — NOT a separate LLM call, so there's no additional
+    hallucination risk here, only arithmetic over what was already returned.
+
+    Returns:
+      - backlink_target_directory: every distinct platform recommended across
+        all keywords, deduped by URL — the flat "websites you can use for
+        backlinks" list.
+      - repeated_high_value_platforms: platforms recommended for 2+ different
+        keywords, i.e. genuinely broadly relevant across this keyword set —
+        this is what "repeated / high-value backlink sites" honestly means
+        without a live backlink-index crawl.
+    """
+    TIER_RANK = {"high": 3, "medium": 2, "foundational": 1}
+    by_url: dict[str, dict] = {}
+
+    for report in keyword_reports:
+        for cat in report.backlink_deep_dive.backlink_opportunities:
+            for platform in cat.real_platforms:
+                key = platform.url.strip().rstrip("/").lower()
+                entry = by_url.setdefault(key, {
+                    "name": platform.name, "url": platform.url,
+                    "keywords": set(), "tiers": set(),
+                })
+                entry["keywords"].add(report.keyword)
+                entry["tiers"].add(cat.authority_tier)
+
+    directory = [
+        PlatformLink(name=e["name"], url=e["url"])
+        for e in sorted(by_url.values(), key=lambda e: e["name"].lower())
+    ]
+
+    repeated = [
+        RepeatedPlatform(
+            name=e["name"],
+            url=e["url"],
+            appears_for_keywords=sorted(e["keywords"]),
+            highest_authority_tier=max(e["tiers"], key=lambda t: TIER_RANK.get(t, 0)),
+        )
+        for e in by_url.values()
+        if len(e["keywords"]) >= 2
+    ]
+    repeated.sort(key=lambda r: (-len(r.appears_for_keywords), -TIER_RANK.get(r.highest_authority_tier, 0)))
+
+    return directory, repeated
+
+
 # ── Generator: full Content Strategy (keywords → competitors → content) ───────
 def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyResponse:
     """
@@ -823,6 +982,7 @@ def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyRes
         raise RuntimeError(f"All keywords failed to generate: {failures}")
 
     executive_summary = _generate_executive_summary(req, keyword_reports)
+    directory, repeated = _compute_backlink_aggregates(keyword_reports)
 
     return ContentStrategyResponse(
         company=req.company_name,
@@ -832,6 +992,8 @@ def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyRes
         keywords_analyzed=[r.keyword for r in keyword_reports],
         keyword_reports=keyword_reports,
         executive_summary=executive_summary,
+        backlink_target_directory=directory,
+        repeated_high_value_platforms=repeated,
     )
 
 
@@ -897,13 +1059,19 @@ async def _bridge_stream_to_asyncio(system_text: str, user_text: str, max_tokens
 async def astream_keyword_report(req: ContentStrategyRequest, keyword: str):
     """
     Async generator yielding (event, data) tuples for ONE keyword:
-      "analysis"       — once the (fast, non-streamed) competitor/SEO analysis
-                          call completes
-      "content_delta"  — real Bedrock token deltas as the article is written
-      "keyword_report" — the final, fully assembled KeywordContentReport
+      "analysis"          — once the (fast, non-streamed) competitor/content/SEO
+                             analysis call completes
+      "backlink_deep_dive" — once the backlink acquisition + replication-plan
+                             call completes (real named platforms, not
+                             fabricated backlink URLs)
+      "content_delta"     — real Bedrock token deltas as the article is written
+      "keyword_report"    — the final, fully assembled KeywordContentReport
     """
     analysis = await asyncio.to_thread(_generate_keyword_analysis, req, keyword)
     yield ("analysis", {"keyword": keyword, "analysis": analysis})
+
+    backlink_deep_dive = await asyncio.to_thread(_generate_backlink_deep_dive, req, keyword, analysis)
+    yield ("backlink_deep_dive", {"keyword": keyword, "backlink_deep_dive": backlink_deep_dive.model_dump()})
 
     prompt = _build_content_prompt(req, keyword, analysis)
     chunks: list[str] = []
@@ -915,11 +1083,12 @@ async def astream_keyword_report(req: ContentStrategyRequest, keyword: str):
     report = KeywordContentReport(
         keyword=analysis.get("keyword", keyword),
         top_competitors=analysis["top_competitors"],
-        backlink_sources=analysis["backlink_sources"],
         content_strategy_analysis=ContentStrategyAnalysis(**analysis["content_strategy_analysis"]),
         seo_factor_analysis=SEOFactorAnalysis(**analysis["seo_factor_analysis"]),
         ranking_explanation=RankingExplanation(**analysis["ranking_explanation"]),
+        backlink_deep_dive=backlink_deep_dive,
         generated_content=content,
+
     )
     yield ("keyword_report", {"keyword": keyword, "report": report.model_dump()})
 
@@ -978,13 +1147,18 @@ async def stream_content_strategy_events(req: ContentStrategyRequest, is_disconn
             logger.error(f"[bedrock] executive summary failed: {e}", exc_info=True)
             yield ("executive_summary_error", {"error": str(e)})
 
+    report_list = list(reports.values())
+    directory, repeated_platforms = _compute_backlink_aggregates(report_list)
+
     result = ContentStrategyResponse(
         company=req.company_name,
         url=req.url,
         market=req.market,
         industry=req.industry,
         keywords_analyzed=list(reports.keys()),
-        keyword_reports=list(reports.values()),
+        keyword_reports=report_list,
         executive_summary=executive_summary,
+        backlink_target_directory=directory,
+        repeated_high_value_platforms=repeated_platforms,
     )
     yield ("done", {"failed_keywords": failures, "result": result.model_dump()})

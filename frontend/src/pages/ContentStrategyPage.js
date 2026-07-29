@@ -13,13 +13,27 @@ const MAX_PRIMARY = 5;
 const MAX_TOTAL = 8;
 
 const STATUS_LABEL = {
-  pending: 'Queued', analyzing: 'Analysing competitors', writing: 'Writing content',
-  ready: 'Ready', error: 'Failed',
+  pending: 'Queued', analyzing: 'Analysing competitors', backlinks: 'Building backlink plan',
+  writing: 'Writing content', ready: 'Ready', error: 'Failed',
 };
 const STATUS_CLASS = {
-  pending: s.statusPending, analyzing: s.statusAnalyzing, writing: s.statusWriting,
-  ready: s.statusReady, error: s.statusError,
+  pending: s.statusPending, analyzing: s.statusAnalyzing, backlinks: s.statusAnalyzing,
+  writing: s.statusWriting, ready: s.statusReady, error: s.statusError,
 };
+const TIER_VARIANT = { high: 'success', medium: 'info', foundational: 'default' };
+
+/* ── Shared: keyword suggestions sourced from Keyword Intelligence ──────── */
+function useKeywordSuggestions() {
+  const { state } = useApp();
+  const kwData = state.results.keywords || state.results.fullReport?.keyword_volume;
+  if (!kwData) return [];
+  const all = [
+    ...(kwData.high_volume_head_terms || []),
+    ...(kwData.mid_volume_service_terms || []),
+    ...(kwData.long_tail_high_intent || []),
+  ].map(k => k.keyword).filter(Boolean);
+  return [...new Set(all)].slice(0, 30);
+}
 
 /* ── Keyword chip input ─────────────────────────────────────────────── */
 function ChipInput({ values, onAdd, onRemove, placeholder, max, variant }) {
@@ -58,27 +72,99 @@ function ChipInput({ values, onAdd, onRemove, placeholder, max, variant }) {
   );
 }
 
-/* ── Suggested keywords sourced from Keyword Intelligence ───────────── */
+/* ── Primary keyword picker — a SELECT, not free text ────────────────── */
+function PrimaryKeywordSelect({ values, onAdd, onRemove, max }) {
+  const suggestions = useKeywordSuggestions();
+  const [selectValue, setSelectValue] = useState('');
+  const [customMode, setCustomMode] = useState(false);
+  const [customText, setCustomText] = useState('');
+  const full = values.length >= max;
+  const usedLower = new Set(values.map(v => v.toLowerCase()));
+  const available = suggestions.filter(o => !usedLower.has(o.toLowerCase()));
+
+  const handleSelectChange = (e) => {
+    const val = e.target.value;
+    if (val === '__custom__') { setCustomMode(true); setSelectValue(''); return; }
+    if (val) { onAdd(val); setSelectValue(''); }
+  };
+
+  const commitCustom = () => {
+    const v = customText.trim();
+    if (v && !usedLower.has(v.toLowerCase())) onAdd(v);
+    setCustomText('');
+    setCustomMode(false);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {values.length > 0 && (
+        <div className={s.chipRow}>
+          {values.map((v, i) => (
+            <span key={v + i} className={s.chip}>
+              {v}
+              <button type="button" className={s.chipRemove} onClick={() => onRemove(i)}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {!full && !customMode && (
+        <select
+          className={s.keywordSelect}
+          value={selectValue}
+          onChange={handleSelectChange}
+        >
+          <option value="" disabled>
+            {suggestions.length ? 'Select a keyword…' : 'No suggestions yet — pick "Add a custom keyword"'}
+          </option>
+          {available.map(o => <option key={o} value={o}>{o}</option>)}
+          <option value="__custom__">+ Add a custom keyword…</option>
+        </select>
+      )}
+
+      {!full && customMode && (
+        <div className={s.customRow}>
+          <input
+            autoFocus
+            className={s.companyInput}
+            value={customText}
+            placeholder="Type a keyword…"
+            onChange={e => setCustomText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitCustom(); }
+              if (e.key === 'Escape') setCustomMode(false);
+            }}
+          />
+          <Button size="sm" variant="secondary" onClick={commitCustom}>Add</Button>
+          <Button size="sm" variant="ghost" onClick={() => { setCustomMode(false); setCustomText(''); }}>Cancel</Button>
+        </div>
+      )}
+
+      {full && <div className={s.pickerHint}>Maximum of {max} primary keywords reached — remove one to add another.</div>}
+      {!suggestions.length && !customMode && (
+        <div className={s.pickerHint}>
+          Run <strong>Keywords</strong> analysis first to populate this list with real suggestions.
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ── Suggested keywords sourced from Keyword Intelligence (for the free-text
+   additional-keywords field) ─────────────────────────────────────────── */
 function SuggestedKeywords({ used, onPick }) {
-  const { state } = useApp();
-  const kwData = state.results.keywords || state.results.fullReport?.keyword_volume;
-  if (!kwData) {
+  const suggestions = useKeywordSuggestions();
+  if (!suggestions.length) {
     return (
       <div className={s.pickerHint}>
         Run <strong>Keywords</strong> analysis first to pick suggestions here — or just type your own above.
       </div>
     );
   }
-  const all = [
-    ...(kwData.high_volume_head_terms || []),
-    ...(kwData.mid_volume_service_terms || []),
-    ...(kwData.long_tail_high_intent || []),
-  ].map(k => k.keyword).filter(Boolean);
-  const unique = [...new Set(all)].slice(0, 24);
-
   return (
     <div className={s.suggestedWrap}>
-      {unique.map(kw => {
+      {suggestions.map(kw => {
         const isUsed = used.has(kw.toLowerCase());
         return (
           <button
@@ -98,6 +184,7 @@ function SuggestedKeywords({ used, onPick }) {
 /* ── One keyword's progress card ─────────────────────────────────────── */
 function KeywordCard({ kw, progress, index }) {
   const p = progress || { status: 'pending' };
+  const bdd = p.backlinkDeepDive || p.report?.backlink_deep_dive;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
@@ -105,7 +192,7 @@ function KeywordCard({ kw, progress, index }) {
         <div className={s.kwCardHead}>
           <span className={s.kwTitle}>{kw}</span>
           <span className={`${s.statusBadge} ${STATUS_CLASS[p.status]}`}>
-            {(p.status === 'analyzing' || p.status === 'writing') && <span className={s.statusDot} />}
+            {['analyzing', 'backlinks', 'writing'].includes(p.status) && <span className={s.statusDot} />}
             {STATUS_LABEL[p.status]}
           </span>
         </div>
@@ -131,6 +218,15 @@ function KeywordCard({ kw, progress, index }) {
               </>
             )}
 
+            {p.status === 'backlinks' && !bdd && (
+              <div className={s.writingWrap}>
+                <span className={s.writingSpinner} />
+                <span className={s.writingText}>Reverse-engineering backlink patterns &amp; building a replication plan…</span>
+              </div>
+            )}
+
+            {bdd && <BacklinkDeepDiveBlock bdd={bdd} />}
+
             {p.status === 'writing' && (
               <div className={s.writingWrap}>
                 <span className={s.writingSpinner} />
@@ -152,6 +248,82 @@ function KeywordCard({ kw, progress, index }) {
         )}
       </Card>
     </motion.div>
+  );
+}
+
+/* ── Backlink deep-dive: real platforms, acquisition steps, replication plan ── */
+function BacklinkDeepDiveBlock({ bdd }) {
+  const rp = bdd.replication_plan;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div className={s.rankingBox}>
+        <strong>How they likely earned these backlinks:</strong> {bdd.how_they_likely_earned_backlinks}
+      </div>
+      <div className={s.rankingBox}>
+        <strong>Repeated pattern:</strong> {bdd.repeated_platforms_pattern}
+      </div>
+
+      <div>
+        <div className={ds.cardHead} style={{ padding: '0 0 8px' }}>
+          <SectionHeader title="Backlink opportunities" subtitle="Real platforms — see methodology note below" />
+        </div>
+        <div className={s.bddGrid}>
+          {(bdd.backlink_opportunities || []).map((cat, i) => (
+            <div key={i} className={s.bddCategory}>
+              <div className={s.bddCategoryHead}>
+                <span className={s.bddCategoryName}>{cat.category}</span>
+                <Badge variant={TIER_VARIANT[cat.authority_tier] || 'default'}>{cat.authority_tier}</Badge>
+              </div>
+              <div className={s.tagRow}>
+                {(cat.real_platforms || []).map((pl, j) => (
+                  <a key={j} href={pl.url} target="_blank" rel="noreferrer" className={s.platformLink}>{pl.name} ↗</a>
+                ))}
+              </div>
+              <div className={s.bddMeta}>{cat.backlink_type} · anchor pattern: “{cat.typical_anchor_text_pattern}”</div>
+              <ol className={s.stepsList}>
+                {(cat.acquisition_steps || []).map((step, k) => <li key={k}>{step}</li>)}
+              </ol>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {bdd.high_authority_highlights?.length > 0 && (
+        <div>
+          <div className={s.pickerLabel} style={{ marginBottom: 8 }}>Prioritise first</div>
+          <div className={ds.insights}>
+            {bdd.high_authority_highlights.map((h, i) => <div key={i} className={s.rankingBox}>{h}</div>)}
+          </div>
+        </div>
+      )}
+
+      {rp && (
+        <div>
+          <div className={s.pickerLabel} style={{ marginBottom: 8 }}>Replication plan</div>
+          <div className={s.replicationGrid}>
+            <div>
+              <div className={s.metaLabel}>Guest posts</div>
+              <div className={s.tagRow}>{(rp.guest_post_opportunities || []).map((x, i) => <Badge key={i}>{x}</Badge>)}</div>
+            </div>
+            <div>
+              <div className={s.metaLabel}>Directories</div>
+              <div className={s.tagRow}>{(rp.directory_submissions || []).map((x, i) => <Badge key={i}>{x}</Badge>)}</div>
+            </div>
+            <div>
+              <div className={s.metaLabel}>PR / articles</div>
+              <div className={s.tagRow}>{(rp.pr_article_platforms || []).map((x, i) => <Badge key={i}>{x}</Badge>)}</div>
+            </div>
+            <div>
+              <div className={s.metaLabel}>Forums / communities</div>
+              <div className={s.tagRow}>{(rp.forums_communities || []).map((x, i) => <Badge key={i}>{x}</Badge>)}</div>
+            </div>
+          </div>
+          <ol className={s.stepsList} style={{ marginTop: 10 }}>
+            {(rp.step_by_step_plan || []).map((step, i) => <li key={i}>{step}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -235,6 +407,9 @@ export function ContentStrategyPage() {
   const [progress, setProgress] = useState({});      // { [keyword]: {...} }
   const [executiveSummary, setExecutiveSummary] = useState(null);
   const [failedKeywords, setFailedKeywords] = useState({});
+  const [methodologyDisclaimer, setMethodologyDisclaimer] = useState(null);
+  const [backlinkDirectory, setBacklinkDirectory] = useState([]);
+  const [repeatedPlatforms, setRepeatedPlatforms] = useState([]);
   const [streaming, setStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const abortRef = useRef(null);
@@ -256,9 +431,10 @@ export function ContentStrategyPage() {
         setProgress(Object.fromEntries((data.keywords || []).map(k => [k, { status: 'pending' }])));
         break;
       case 'analysis':
-        patchProgress(data.keyword, { status: 'analyzing', analysis: data.analysis, charsGenerated: 0 });
-        // move straight into "writing" once analysis is in — the content call follows immediately
-        setTimeout(() => patchProgress(data.keyword, { status: 'writing' }), 0);
+        patchProgress(data.keyword, { status: 'backlinks', analysis: data.analysis, charsGenerated: 0 });
+        break;
+      case 'backlink_deep_dive':
+        patchProgress(data.keyword, { status: 'writing', backlinkDeepDive: data.backlink_deep_dive });
         break;
       case 'content_delta':
         setProgress(prev => ({
@@ -284,7 +460,12 @@ export function ContentStrategyPage() {
         break;
       case 'done':
         setFailedKeywords(data.failed_keywords || {});
-        if (data.result) setResultKey('contentStrategy', data.result);
+        if (data.result) {
+          setResultKey('contentStrategy', data.result);
+          setMethodologyDisclaimer(data.result.methodology_disclaimer || null);
+          setBacklinkDirectory(data.result.backlink_target_directory || []);
+          setRepeatedPlatforms(data.result.repeated_high_value_platforms || []);
+        }
         break;
       case 'error':
         setStreamError(data.error || 'Something went wrong while generating your content strategy.');
@@ -302,6 +483,9 @@ export function ContentStrategyPage() {
     setStreamError(null);
     setExecutiveSummary(null);
     setFailedKeywords({});
+    setMethodologyDisclaimer(null);
+    setBacklinkDirectory([]);
+    setRepeatedPlatforms([]);
     setProgress({});
     setOrder([]);
     setStreaming(true);
@@ -372,10 +556,9 @@ export function ContentStrategyPage() {
               {primary.length}/{MAX_PRIMARY}
             </span>
           </div>
-          <ChipInput
+          <PrimaryKeywordSelect
             values={primary}
             max={MAX_PRIMARY}
-            placeholder="Type a keyword and press Enter…"
             onAdd={v => !usedLower.has(v.toLowerCase()) && setPrimary(p => [...p, v])}
             onRemove={i => setPrimary(p => p.filter((_, idx) => idx !== i))}
           />
@@ -403,7 +586,7 @@ export function ContentStrategyPage() {
           <Button
             onClick={run}
             loading={loading}
-            disabled={!request.company_name || loading}
+            disabled={!request.company_name || primary.length === 0 || loading}
             size="lg"
           >
             {loading ? 'Generating…' : '✍️ Generate Content Strategy'}
@@ -430,6 +613,49 @@ export function ContentStrategyPage() {
           </div>
 
           <AnimatePresence>
+            {methodologyDisclaimer && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <div className={s.rankingBox} style={{ background: 'var(--c-warning-bg)', borderColor: 'var(--c-warning)' }}>
+                  <strong>Methodology:</strong> {methodologyDisclaimer}
+                </div>
+              </motion.div>
+            )}
+
+            {repeatedPlatforms.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Card>
+                  <SectionHeader
+                    title="Repeated high-value platforms"
+                    subtitle="Recommended across 2+ of your keywords — computed directly from the analysis above, not a separate estimate"
+                  />
+                  <div className={s.bddGrid}>
+                    {repeatedPlatforms.map((rp, i) => (
+                      <div key={i} className={s.bddCategory}>
+                        <div className={s.bddCategoryHead}>
+                          <a href={rp.url} target="_blank" rel="noreferrer" className={s.platformLink}>{rp.name} ↗</a>
+                          <Badge variant={TIER_VARIANT[rp.highest_authority_tier] || 'default'}>{rp.highest_authority_tier}</Badge>
+                        </div>
+                        <div className={s.bddMeta}>Relevant to: {rp.appears_for_keywords.join(', ')}</div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+
+            {backlinkDirectory.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                <Card>
+                  <SectionHeader title="Websites you can use for backlinks" subtitle="Every distinct platform recommended across all your keywords, deduped" />
+                  <div className={s.tagRow}>
+                    {backlinkDirectory.map((pl, i) => (
+                      <a key={i} href={pl.url} target="_blank" rel="noreferrer" className={s.platformLink}>{pl.name} ↗</a>
+                    ))}
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+
             {executiveSummary && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <Card>

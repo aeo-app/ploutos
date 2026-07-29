@@ -18,7 +18,12 @@ const ERROR_MESSAGES = {
 };
 
 // 🔹 Custom Error Class
-class ApiError extends Error {
+// Exported so every other API module (seoApi.js, etc.) reuses THIS exact
+// class rather than declaring its own duplicate. Previously seoApi.js had
+// its own separate `class ApiError`, which meant `error instanceof ApiError`
+// below always evaluated to false for SEO API errors — silently breaking
+// the forced-redirect-to-login behavior for every SEO endpoint.
+export class ApiError extends Error {
   constructor(code, message, field = null) {
     super(message);
     this.code = code;

@@ -157,18 +157,30 @@ async def content_strategy(
     user_id: str = Depends(get_current_user_id),
 ):
     """
-    Acts as an SEO + content marketing expert.
+    Acts as a senior SEO competitor intelligence + content marketing expert.
 
     Takes up to 5 primary keywords (plus optional extra keywords the user adds
     from Keyword Intelligence). For each keyword:
-      1. Identifies the realistic top-ranking competitors.
-      2. Analyses their backlink sources, content strategy, and on-page SEO
-         factors (keyword usage, headings, meta structure).
-      3. Explains how they achieved their rankings, focusing on backlink
-         strategy and content quality.
-      4. Generates an original, SEO-optimised content piece — matching or
+      1. Identifies 5 realistic top-ranking competitors.
+      2. Analyses their content strategy and on-page SEO factors (keyword
+         usage, headings, meta structure, internal linking, schema markup).
+      3-5. Backlink deep-dive: reverse-engineers HOW competitors like these
+         typically earn backlinks, then returns a replication plan — real,
+         named, currently-operating platforms/categories (directories, PR
+         wires, guest-post niches, forums) with step-by-step acquisition
+         instructions, tiered by authority.
+      6. (folded into step 2) content/SEO structure breakdown.
+      7. Generates an original, SEO-optimised content piece — matching or
          improving on the top competitor's style — with strong engagement
          and conversion elements.
+
+    IMPORTANT — this system has no live SERP or backlink-index API (no
+    Ahrefs/Semrush/Moz/Majestic connector). It does NOT return a competitor's
+    actual backlink URLs — those would be fabricated and could mislead real
+    outreach or client reporting. Every response includes a
+    `methodology_disclaimer` field making this explicit; competitor names,
+    ranking order, and platform recommendations are realistic AI estimates
+    for strategic planning, not a live crawl.
 
     Also returns a cross-keyword executive summary. Saved to DynamoDB.
     """
@@ -195,8 +207,12 @@ async def content_strategy_stream(
     Server-Sent Events instead of one blocking JSON response:
 
       event: start             — {"keywords": [...], "total": N}
-      event: analysis          — per-keyword competitor/SEO analysis, as soon
-                                  as it's ready
+      event: analysis          — per-keyword competitor/content/SEO analysis,
+                                  as soon as it's ready
+      event: backlink_deep_dive — real, named platform categories + step-by-step
+                                  acquisition plan for that keyword (not
+                                  fabricated backlink URLs — see
+                                  methodology_disclaimer in the final result)
       event: content_delta     — real token-by-token deltas as the article
                                   for that keyword is generated
       event: keyword_report    — the fully assembled report for one keyword

@@ -1,18 +1,7 @@
-import { withTokenExpiry } from "./authApi"; // Import for wrapping API calls
+import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
 const BASE = "https://api.aeo-app.ai/api/v1";
 // const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
-
-
-// 🔹 Custom Error Class
-class ApiError extends Error {
-  constructor(code, message, field = null) {
-    super(message);
-    this.code = code;
-    this.field = field;
-    this.name = "ApiError";
-  }
-}
 
 // 🔹 Check Token & User Validity (forcefully redirect to login if missing)
 const checkAuthTokens = () => {
