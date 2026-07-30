@@ -53,6 +53,71 @@ function DAGauge({ current, t6, t12 }) {
   );
 }
 
+export function DomainAuthorityResultView({ data }) {
+  // Group backlinks by pillar
+  const pillars = data?.backlink_opportunities?.reduce((acc, b) => {
+    (acc[b.pillar] = acc[b.pillar] || []).push(b);
+    return acc;
+  }, {}) || {};
+
+  return (
+    <motion.div className={s.sections} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+
+      <DAGauge current={data.current_da} t6={data.target_da_6m} t12={data.target_da_12m} />
+
+      {/* Gap Analysis */}
+      <Card padded={false}>
+        <div className={s.cardHead}>
+          <SectionHeader title="Gap Analysis" subtitle="Current state vs 6-month, 12-month targets and competitor benchmark" />
+        </div>
+        <DataTable
+          rows={data.gap_analysis}
+          keyFn={r => r.metric}
+          cols={[
+            { key: 'metric',             label: 'Metric',         render: v => <strong style={{ color: 'var(--c-slate-800)' }}>{v}</strong> },
+            { key: 'current',            label: 'Current',        render: v => <span style={{ color: 'var(--c-danger)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{v}</span> },
+            { key: 'six_month_target',   label: '6-Month Target', render: v => <span style={{ color: 'var(--c-warning)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{v}</span> },
+            { key: 'twelve_month_target',label: '12-Month Target',render: v => <span style={{ color: 'var(--c-success)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{v}</span> },
+            { key: 'benchmark',          label: 'Benchmark',      render: v => <span style={{ color: 'var(--c-slate-500)' }}>{v}</span> },
+          ]}
+        />
+      </Card>
+
+      {/* Backlinks by pillar */}
+      {Object.entries(pillars).map(([pillar, ops]) => (
+        <Card key={pillar} padded={false}>
+          <div className={s.cardHead}>
+            <SectionHeader
+              title={`${pillar} Links`}
+              subtitle={`${ops.length} opportunities`}
+              right={<Badge variant="brand">{ops.length}</Badge>}
+            />
+          </div>
+          <DataTable
+            rows={ops}
+            keyFn={(_, i) => `${pillar}-${i}`}
+            cols={[
+              { key: 'action',                 label: 'Action',       render: v => <span style={{ color: 'var(--c-slate-800)' }}>{v}</span> },
+              { key: 'platform_or_target',     label: 'Target',       render: v => <span style={{ color: 'var(--c-slate-600)' }}>{v}</span> },
+              { key: 'estimated_da',           label: 'Est. DA',      render: v => <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--c-indigo-600)' }}>{v}</span> },
+              { key: 'difficulty',             label: 'Difficulty',   render: v => <Badge variant={DIFF_BADGE[v] || 'default'}>{v}</Badge> },
+              { key: 'estimated_monthly_links',label: 'Links/Mo.',    render: v => <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--c-slate-500)' }}>{v ?? '—'}</span> },
+            ]}
+          />
+        </Card>
+      ))}
+
+      {/* Priority actions */}
+      <Card>
+        <SectionHeader title="Top 5 Priority Actions" subtitle="Highest-impact moves to grow domain authority" />
+        <div className={s.insights}>
+          {data.top_5_priority_actions.map((a, i) => <InsightCard key={i} {...a} index={i} />)}
+        </div>
+      </Card>
+    </motion.div>
+  );
+}
+
 export function DomainAuthorityPage() {
   const { state, runApi, toast } = useApp();
   const loading = state.loading.domainAuthority;
@@ -64,74 +129,14 @@ export function DomainAuthorityPage() {
     catch (_) {}
   };
 
-  // Group backlinks by pillar
-  const pillars = data?.backlink_opportunities?.reduce((acc, b) => {
-    (acc[b.pillar] = acc[b.pillar] || []).push(b);
-    return acc;
-  }, {}) || {};
-
   return (
     <div className={s.page}>
       <AnalyseForm onSubmit={run} loading={loading} buttonLabel="Build DA Strategy" compact={!!data} />
       {loading && <div className={s.skeletons}>{[1,2,3].map(i => <SkeletonCard key={i} rows={5}/>)}</div>}
       {error && !loading && <ErrorCard message={error} />}
 
-      {data && !loading && (
-        <motion.div className={s.sections} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {data && !loading && <DomainAuthorityResultView data={data} />}
 
-          <DAGauge current={data.current_da} t6={data.target_da_6m} t12={data.target_da_12m} />
-
-          {/* Gap Analysis */}
-          <Card padded={false}>
-            <div className={s.cardHead}>
-              <SectionHeader title="Gap Analysis" subtitle="Current state vs 6-month, 12-month targets and competitor benchmark" />
-            </div>
-            <DataTable
-              rows={data.gap_analysis}
-              keyFn={r => r.metric}
-              cols={[
-                { key: 'metric',             label: 'Metric',         render: v => <strong style={{ color: 'var(--c-slate-800)' }}>{v}</strong> },
-                { key: 'current',            label: 'Current',        render: v => <span style={{ color: 'var(--c-danger)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{v}</span> },
-                { key: 'six_month_target',   label: '6-Month Target', render: v => <span style={{ color: 'var(--c-warning)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{v}</span> },
-                { key: 'twelve_month_target',label: '12-Month Target',render: v => <span style={{ color: 'var(--c-success)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{v}</span> },
-                { key: 'benchmark',          label: 'Benchmark',      render: v => <span style={{ color: 'var(--c-slate-500)' }}>{v}</span> },
-              ]}
-            />
-          </Card>
-
-          {/* Backlinks by pillar */}
-          {Object.entries(pillars).map(([pillar, ops]) => (
-            <Card key={pillar} padded={false}>
-              <div className={s.cardHead}>
-                <SectionHeader
-                  title={`${pillar} Links`}
-                  subtitle={`${ops.length} opportunities`}
-                  right={<Badge variant="brand">{ops.length}</Badge>}
-                />
-              </div>
-              <DataTable
-                rows={ops}
-                keyFn={(_, i) => `${pillar}-${i}`}
-                cols={[
-                  { key: 'action',                 label: 'Action',       render: v => <span style={{ color: 'var(--c-slate-800)' }}>{v}</span> },
-                  { key: 'platform_or_target',     label: 'Target',       render: v => <span style={{ color: 'var(--c-slate-600)' }}>{v}</span> },
-                  { key: 'estimated_da',           label: 'Est. DA',      render: v => <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--c-indigo-600)' }}>{v}</span> },
-                  { key: 'difficulty',             label: 'Difficulty',   render: v => <Badge variant={DIFF_BADGE[v] || 'default'}>{v}</Badge> },
-                  { key: 'estimated_monthly_links',label: 'Links/Mo.',    render: v => <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--c-slate-500)' }}>{v ?? '—'}</span> },
-                ]}
-              />
-            </Card>
-          ))}
-
-          {/* Priority actions */}
-          <Card>
-            <SectionHeader title="Top 5 Priority Actions" subtitle="Highest-impact moves to grow domain authority" />
-            <div className={s.insights}>
-              {data.top_5_priority_actions.map((a, i) => <InsightCard key={i} {...a} index={i} />)}
-            </div>
-          </Card>
-        </motion.div>
-      )}
       {!data && !loading && !error && (
         <Empty icon="📈" title="No DA strategy yet" body="Run an analysis to get a full domain authority growth plan with backlink opportunities and a 12-month roadmap." />
       )}

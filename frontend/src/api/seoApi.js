@@ -1,10 +1,14 @@
 import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
 const BASE = "https://api.aeo-app.ai/api/v1";
-// const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
+// export const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
 
 // 🔹 Check Token & User Validity (forcefully redirect to login if missing)
-const checkAuthTokens = () => {
+// Exported so every other API module (socialApi.js, etc.) reuses THIS exact
+// implementation and the shared ApiError class above — see authApi.js's
+// comment on why duplicating this per-module previously broke token-expiry
+// redirects.
+export const checkAuthTokens = () => {
   const idToken = localStorage.getItem("id_token");
   const userId = localStorage.getItem("user_id");
 
@@ -20,10 +24,8 @@ const checkAuthTokens = () => {
 };
 
 // 🔹 Centralized Auth Headers
-const getAuthHeaders = () => {
+export const getAuthHeaders = () => {
   const { idToken, userId } = checkAuthTokens(); // This will throw if tokens missing
-
-  console.log("Using Auth Headers:", {userId }); // Debugging
 
   return {
     "Content-Type": "application/json",

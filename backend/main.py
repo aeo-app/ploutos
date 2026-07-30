@@ -75,6 +75,14 @@ POST /api/v1/seo/profile
 POST /api/v1/seo/domain-authority
 POST /api/v1/seo/full-report
 POST /api/v1/seo/content-strategy   — keyword → competitor → content strategy generator
+POST /api/v1/seo/content-strategy/stream — same, streamed via SSE
+```
+
+## Social Media Content (requires auth)
+```
+POST /api/v1/social/relocation-calendar         — relocation content calendar for a date range (blocking)
+POST /api/v1/social/relocation-calendar/stream  — same, streamed via SSE (day-by-day)
+```
 ```
 
 ## History (requires auth)
@@ -112,9 +120,11 @@ app.add_middleware(
 
 from routers.auth_router import router as auth_router
 from routers.seo_router  import router as seo_router
+from routers.social_router import router as social_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
+app.include_router(social_router)
 
 
 @app.get("/", tags=["Health"])

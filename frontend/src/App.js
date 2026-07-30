@@ -14,6 +14,8 @@ import { ProfilePage }         from './pages/ProfilePage';
 import { DomainAuthorityPage } from './pages/DomainAuthorityPage';
 import { FullReportPage }      from './pages/FullReportPage';
 import { ContentStrategyPage } from './pages/ContentStrategyPage';
+import { RelocationCalendarPage } from './pages/RelocationCalendarPage';
+import { HistoryPage } from './pages/HistoryPage';
 
 // Auth pages
 import { SignupPage }       from './pages/auth/SignupPage';
@@ -34,6 +36,8 @@ const APP_PAGES = {
   da:       DomainAuthorityPage,
   report:   FullReportPage,
   contentStrategy: ContentStrategyPage,
+  relocationCalendar: RelocationCalendarPage,
+  history: HistoryPage,
 };
 
 const AUTH_SCREENS = {

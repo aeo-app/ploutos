@@ -7,9 +7,9 @@ const Ctx = createContext(null);
 const init = {
   page: 'home',
   request: { company_name: '', url: '', market: 'Singapore', industry: '' },
-  results:  { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null },
-  loading:  { competitors: false, keywords: false, profile: false, domainAuthority: false, fullReport: false, contentStrategy: false },
-  errors:   { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null },
+  results:  { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null },
+  loading:  { competitors: false, keywords: false, profile: false, domainAuthority: false, fullReport: false, contentStrategy: false, relocationCalendar: false },
+  errors:   { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null },
   toasts: [],
 };
 

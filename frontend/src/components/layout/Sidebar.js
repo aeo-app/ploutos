@@ -23,12 +23,19 @@ const NAV = [
     items: [
       { id: 'profile',  icon: '📋', label: 'Company Profile' },
       { id: 'contentStrategy', icon: '✍️', label: 'Content Strategy' },
+      { id: 'relocationCalendar', icon: '📅', label: 'Social Media Calendar' },
     ],
   },
   {
     section: 'Reports',
     items: [
       { id: 'report',   icon: '⚡',  label: 'Full Report' },
+    ],
+  },
+  {
+    section: 'Account',
+    items: [
+      { id: 'history', icon: '🗂️', label: 'History' },
     ],
   },
 ];
@@ -87,6 +94,8 @@ export function Sidebar({ open, onClose }) {
                   : item.id === 'da'      ? !!state.results.domainAuthority || !!state.results.fullReport
                   : item.id === 'report'  ? !!state.results.fullReport
                   : item.id === 'contentStrategy' ? !!state.results.contentStrategy
+                  : item.id === 'relocationCalendar' ? !!state.results.relocationCalendar
+                  : item.id === 'history' ? false
                   : !!state.results[item.id] || !!state.results.fullReport;
                 return (
                   <button

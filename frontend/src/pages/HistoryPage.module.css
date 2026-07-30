@@ -1,0 +1,52 @@
+.page { max-width: 1100px; }
+
+.statsRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+
+.filterRow { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.filterChip {
+  padding: 7px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid var(--c-slate-200); background: var(--c-white); color: var(--c-slate-600);
+  cursor: pointer; transition: all var(--t-fast);
+}
+.filterChip:hover { border-color: var(--c-indigo-300); }
+.filterChipActive { background: var(--c-indigo-600); border-color: var(--c-indigo-600); color: white; }
+
+.typeBadge { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.actionsCell { display: flex; gap: 8px; justify-content: flex-end; }
+.actionBtn {
+  border: 1px solid var(--c-slate-200); background: var(--c-white); border-radius: var(--r-md);
+  padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--c-slate-600); cursor: pointer;
+  transition: all var(--t-fast);
+}
+.actionBtn:hover { border-color: var(--c-indigo-400); color: var(--c-indigo-600); }
+.actionBtnDanger:hover { border-color: var(--c-danger); color: var(--c-danger); }
+.confirmRow { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.confirmText { font-size: 12px; color: var(--c-danger); font-weight: 600; }
+
+.loadMoreWrap { display: flex; justify-content: center; margin-top: 16px; }
+
+/* ── Modal ────────────────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 24px;
+}
+.modal {
+  background: var(--c-white); border-radius: var(--r-lg); max-width: 1000px; width: 100%;
+  max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.modalHead { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--c-slate-200); }
+.modalTitle { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--c-slate-800); }
+.modalClose { border: none; background: none; font-size: 20px; color: var(--c-slate-400); cursor: pointer; line-height: 1; padding: 4px; }
+.modalClose:hover { color: var(--c-slate-700); }
+.modalMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 22px 0; }
+.modalBody { padding: 18px 22px; overflow-y: auto; flex: 1; background: var(--c-slate-50); }
+
+.viewToggle { margin-left: auto; display: flex; gap: 2px; background: var(--c-slate-100); border-radius: var(--r-md); padding: 2px; }
+.viewToggleBtn { border: none; background: none; padding: 5px 10px; font-size: 12px; font-weight: 600; color: var(--c-slate-500); border-radius: 5px; cursor: pointer; }
+.viewToggleBtnActive { background: var(--c-white); color: var(--c-indigo-600); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+.jsonBox {
+  background: var(--c-slate-50); border: 1px solid var(--c-slate-200); border-radius: var(--r-md);
+  padding: 14px 16px; font-family: var(--font-mono); font-size: 12px; color: var(--c-slate-700);
+  white-space: pre-wrap; word-break: break-word; max-height: 55vh; overflow-y: auto; position: relative;
+}
+.jsonCopyBtn { position: absolute; top: 10px; right: 10px; }

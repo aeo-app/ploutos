@@ -4,6 +4,10 @@ import { useApp } from '../context/AppContext';
 import { seoApi } from '../api/seoApi';
 import { AnalyseForm } from '../components/forms/AnalyseForm';
 import { Card, Badge, DataTable, ProgressBar, SectionHeader, SkeletonCard, Empty, ErrorCard, InsightCard, StatTile, Tag, CopyButton } from '../components/ui/UI';
+import { CompetitorsResultView } from './CompetitorsPage';
+import { KeywordsResultView } from './KeywordsPage';
+import { ProfileResultView } from './ProfilePage';
+import { DomainAuthorityResultView } from './DomainAuthorityPage';
 import s from './DataPage.module.css';
 
 const SECTIONS = [
@@ -18,6 +22,43 @@ const DIFF_BADGE  = { Easy: 'success', Medium: 'warning', Hard: 'danger' };
 const COMP_V      = { 'Very High': 'danger', High: 'warning', Medium: 'info', Low: 'success' };
 const INTENT_V    = { Transactional: 'success', Informational: 'info', Navigational: 'warning' };
 const rankColor   = v => { const n = parseInt(v?.replace(/\D.*$/, '')); return n <= 3 ? 'var(--c-success)' : n <= 8 ? 'var(--c-warning)' : 'var(--c-danger)'; };
+
+/* ── Static result view — renders a saved FullSEOReport (e.g. from History)
+   using the SAME full-fidelity components as each individual analysis page,
+   stacked with section dividers, rather than the live page's condensed tabs. */
+export function FullReportResultView({ result }) {
+  if (!result) return null;
+  const { competitor_analysis, keyword_volume, company_profile, domain_authority_strategy } = result;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      {competitor_analysis && (
+        <div>
+          <SectionHeader title="⚔ Competitors" />
+          <CompetitorsResultView data={competitor_analysis} />
+        </div>
+      )}
+      {keyword_volume && (
+        <div>
+          <SectionHeader title="🔑 Keywords" />
+          <KeywordsResultView data={keyword_volume} />
+        </div>
+      )}
+      {company_profile && (
+        <div>
+          <SectionHeader title="📋 Company Profile" />
+          <ProfileResultView data={company_profile} />
+        </div>
+      )}
+      {domain_authority_strategy && (
+        <div>
+          <SectionHeader title="📈 Domain Authority" />
+          <DomainAuthorityResultView data={domain_authority_strategy} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function FullReportPage() {
   const { state, runApi, toast } = useApp();

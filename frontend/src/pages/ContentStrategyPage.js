@@ -182,7 +182,7 @@ function SuggestedKeywords({ used, onPick }) {
 }
 
 /* ── One keyword's progress card ─────────────────────────────────────── */
-function KeywordCard({ kw, progress, index }) {
+export function KeywordCard({ kw, progress, index }) {
   const p = progress || { status: 'pending' };
   const bdd = p.backlinkDeepDive || p.report?.backlink_deep_dive;
 
@@ -391,6 +391,94 @@ function GeneratedContentBlock({ report }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Static result view — renders a saved ContentStrategyResponse (e.g. from
+   History) exactly like the live streaming page does, just with everything
+   already resolved instead of arriving incrementally. ─────────────────── */
+export function ContentStrategyResultView({ result }) {
+  if (!result) return null;
+  const reports = result.keyword_reports || [];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card padded={false}>
+        <div className={s.progressSummary}>
+          <Badge variant="brand">{reports.length} keyword{reports.length !== 1 ? 's' : ''}</Badge>
+          {Object.keys(result.failed_dates || {}).length > 0 && (
+            <span className={s.progressCount}>{Object.keys(result.failed_dates).length} failed</span>
+          )}
+        </div>
+      </Card>
+
+      <div className={s.kwGrid}>
+        {reports.map((kr, i) => (
+          <KeywordCard
+            key={kr.keyword}
+            kw={kr.keyword}
+            index={i}
+            progress={{
+              status: 'ready',
+              analysis: {
+                top_competitors: kr.top_competitors,
+                content_strategy_analysis: kr.content_strategy_analysis,
+                seo_factor_analysis: kr.seo_factor_analysis,
+                ranking_explanation: kr.ranking_explanation,
+              },
+              backlinkDeepDive: kr.backlink_deep_dive,
+              report: kr,
+            }}
+          />
+        ))}
+      </div>
+
+      {result.methodology_disclaimer && (
+        <div className={s.rankingBox} style={{ background: 'var(--c-warning-bg)', borderColor: 'var(--c-warning)' }}>
+          <strong>Methodology:</strong> {result.methodology_disclaimer}
+        </div>
+      )}
+
+      {result.repeated_high_value_platforms?.length > 0 && (
+        <Card>
+          <SectionHeader
+            title="Repeated high-value platforms"
+            subtitle="Recommended across 2+ of your keywords — computed directly from the analysis above, not a separate estimate"
+          />
+          <div className={s.bddGrid}>
+            {result.repeated_high_value_platforms.map((rp, i) => (
+              <div key={i} className={s.bddCategory}>
+                <div className={s.bddCategoryHead}>
+                  <a href={rp.url} target="_blank" rel="noreferrer" className={s.platformLink}>{rp.name} ↗</a>
+                  <Badge variant={TIER_VARIANT[rp.highest_authority_tier] || 'default'}>{rp.highest_authority_tier}</Badge>
+                </div>
+                <div className={s.bddMeta}>Relevant to: {rp.appears_for_keywords.join(', ')}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {result.backlink_target_directory?.length > 0 && (
+        <Card>
+          <SectionHeader title="Websites you can use for backlinks" subtitle="Every distinct platform recommended across all your keywords, deduped" />
+          <div className={s.tagRow}>
+            {result.backlink_target_directory.map((pl, i) => (
+              <a key={i} href={pl.url} target="_blank" rel="noreferrer" className={s.platformLink}>{pl.name} ↗</a>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {result.executive_summary?.length > 0 && (
+        <Card>
+          <SectionHeader title="Executive Summary" subtitle="Cross-keyword strategic priorities" />
+          <div className={ds.insights}>
+            {result.executive_summary.map((t, i) => <InsightCard key={i} {...t} index={i} />)}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
