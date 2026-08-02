@@ -164,3 +164,30 @@ def get_current_user_id(
         ),
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+# ── Payment gate ─────────────────────────────────────────────────────────────
+# Every endpoint in this app except auth (login/signup/forgot-password) sits
+# behind this dependency instead of get_current_user_id directly. It composes
+# on top of get_current_user_id (so it returns the exact same `user_id: str`
+# — swapping one Depends() for the other requires no other code changes in
+# the endpoints that use it) and additionally requires active paid access.
+SKIP_PAYMENT_VERIFICATION = os.getenv("SKIP_PAYMENT_VERIFICATION", "false").lower() == "true"
+
+
+def require_paid_access(user_id: str = Depends(get_current_user_id)) -> str:
+    if SKIP_PAYMENT_VERIFICATION:
+        return user_id
+
+    # Imported here (not at module top) to avoid a circular import — db.dynamo
+    # doesn't import from core.security, but keeping this lazy is cheap
+    # insurance either way and matches how other lazy imports are used
+    # elsewhere in this codebase.
+    from db.dynamo import is_user_paid
+
+    if not is_user_paid(user_id):
+        raise HTTPException(
+            status_code=402,  # Payment Required
+            detail="Payment required to access this feature.",
+        )
+    return user_id

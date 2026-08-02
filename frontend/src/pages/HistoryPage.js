@@ -142,6 +142,8 @@ export function HistoryPage() {
 
   const authCtx = { goScreen, logout };
 
+  const byNewestFirst = (a, b) => (b.created_at || '').localeCompare(a.created_at || '');
+
   const loadStats = useCallback(async () => {
     try {
       const data = await withTokenExpiry(historyApi.stats(), authCtx);
@@ -158,7 +160,10 @@ export function HistoryPage() {
     setLastKey(null);
     try {
       const data = await withTokenExpiry(historyApi.list({ analysisType: type || undefined, limit: 20 }), authCtx);
-      setItems(data.items || []);
+      // Backend already returns newest-first; sorting again here is just a
+      // cheap defensive guarantee that the list is never accidentally
+      // displayed out of order.
+      setItems((data.items || []).slice().sort(byNewestFirst));
       setLastKey(data.last_evaluated_key || null);
       setHasMore(!!data.last_evaluated_key);
     } catch (e) {
@@ -176,7 +181,7 @@ export function HistoryPage() {
         historyApi.list({ analysisType: filterType || undefined, limit: 20, lastKey }),
         authCtx
       );
-      setItems(prev => [...prev, ...(data.items || [])]);
+      setItems(prev => [...prev, ...(data.items || [])].sort(byNewestFirst));
       setLastKey(data.last_evaluated_key || null);
       setHasMore(!!data.last_evaluated_key);
     } catch (e) {

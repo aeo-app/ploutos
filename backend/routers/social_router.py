@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from core.security import get_current_user_id
+from core.security import require_paid_access
 from db import save_analysis
 from models.social_models import RelocationSocialRequest
 from services.social_service import (
@@ -48,7 +48,7 @@ def _save_social(*, user_id: str, req: RelocationSocialRequest, result_dict: dic
 )
 async def relocation_calendar(
     req: RelocationSocialRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """
     Generates a social media content calendar for relocation services
@@ -87,7 +87,7 @@ async def relocation_calendar(
 async def relocation_calendar_stream(
     req: RelocationSocialRequest,
     request: Request,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """
     Same generator as /relocation-calendar, streamed as SSE so days appear

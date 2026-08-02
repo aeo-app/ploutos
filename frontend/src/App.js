@@ -3,8 +3,10 @@ import './styles/globals.css';
 
 import { AppProvider, useApp }   from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { PaymentProvider, usePayment } from './context/PaymentContext';
 import { AppShell }              from './components/layout/AppShell';
 import { Toasts }                from './components/ui/Toast';
+import { CheckoutPage }          from './pages/CheckoutPage';
 
 // App pages
 import { HomePage }            from './pages/HomePage';
@@ -86,7 +88,38 @@ function Root() {
     );
   }
 
-  // Authenticated → show full app
+  // Authenticated → check payment status before showing the app at all
+  return (
+    <PaymentProvider>
+      <PaymentGate />
+    </PaymentProvider>
+  );
+}
+
+function PaymentGate() {
+  const { isPaid, checking } = usePayment();
+
+  if (checking) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--c-slate-50)',
+      }}>
+        <div style={{
+          width: 28, height: 28, border: '3px solid var(--c-slate-200)',
+          borderTopColor: 'var(--c-indigo-600)', borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+      </div>
+    );
+  }
+
+  // Not paid → the entire application is inaccessible until checkout completes
+  if (!isPaid) {
+    return <CheckoutPage />;
+  }
+
   return (
     <AppProvider>
       <AppShell>

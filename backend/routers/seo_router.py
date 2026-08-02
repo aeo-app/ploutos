@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from typing import Optional
 
-from core.security import get_current_user_id
+from core.security import require_paid_access
 from db import (
     delete_analysis,
     get_analysis,
@@ -76,7 +76,7 @@ def _response(result_model, analysis_id: str, user_id: str) -> dict:
 @router.post("/api/v1/seo/competitors", summary="Competitor analysis (Bedrock + web search)")
 async def competitor_analysis(
     req: AnalyseRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """Grounded competitor analysis. Saved to DynamoDB under user_id from JWT."""
     try:
@@ -91,7 +91,7 @@ async def competitor_analysis(
 @router.post("/api/v1/seo/keywords", summary="Keyword volume (Bedrock + web search)")
 async def keyword_volume(
     req: AnalyseRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """Grounded keyword volume research. Saved to DynamoDB."""
     try:
@@ -106,7 +106,7 @@ async def keyword_volume(
 @router.post("/api/v1/seo/profile", summary="Company profile (Bedrock + web search)")
 async def company_profile(
     req: AnalyseRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """Company profile from real scraped content. Saved to DynamoDB."""
     try:
@@ -121,7 +121,7 @@ async def company_profile(
 @router.post("/api/v1/seo/domain-authority", summary="DA strategy (Bedrock + web search)")
 async def domain_authority(
     req: AnalyseRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """DA strategy from real backlink data. Saved to DynamoDB."""
     try:
@@ -136,7 +136,7 @@ async def domain_authority(
 @router.post("/api/v1/seo/full-report", summary="Full SEO report — all 4 analyses (Bedrock)")
 async def full_report(
     req: AnalyseRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """All 4 analyses (~8 Bedrock calls). Saved to DynamoDB as one record."""
     try:
@@ -154,7 +154,7 @@ async def full_report(
 )
 async def content_strategy(
     req: ContentStrategyRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """
     Acts as a senior SEO competitor intelligence + content marketing expert.
@@ -200,7 +200,7 @@ async def content_strategy(
 async def content_strategy_stream(
     req: ContentStrategyRequest,
     request: Request,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """
     Same analysis as POST /api/v1/seo/content-strategy, but streamed as
@@ -277,7 +277,7 @@ async def list_my_analyses(
     analysis_type: Optional[str] = Query(None, description="Filter by type"),
     limit: int = Query(20, ge=1, le=100),
     last_key: Optional[str] = Query(None, description="Pagination cursor JSON"),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     """Returns metadata-only list for the authenticated user. No full payloads."""
     last_evaluated_key = None
@@ -304,7 +304,7 @@ async def list_my_analyses(
     response_model=UserStatsResponse,
     summary="Your analysis counts by type",
 )
-async def my_stats(user_id: str = Depends(get_current_user_id)):
+async def my_stats(user_id: str = Depends(require_paid_access)):
     try:
         return UserStatsResponse(**get_user_stats(user_id))
     except Exception as e:
@@ -318,7 +318,7 @@ async def my_stats(user_id: str = Depends(get_current_user_id)):
 )
 async def get_one(
     analysis_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     try:
         item = get_analysis(user_id, analysis_id)
@@ -336,7 +336,7 @@ async def get_one(
 )
 async def delete_one(
     analysis_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(require_paid_access),
 ):
     try:
         deleted = delete_analysis(user_id, analysis_id)

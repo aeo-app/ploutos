@@ -78,11 +78,23 @@ POST /api/v1/seo/content-strategy   — keyword → competitor → content strat
 POST /api/v1/seo/content-strategy/stream — same, streamed via SSE
 ```
 
-## Social Media Content (requires auth)
+## Social Media Content (requires auth + payment)
 ```
 POST /api/v1/social/relocation-calendar         — relocation content calendar for a date range (blocking)
 POST /api/v1/social/relocation-calendar/stream  — same, streamed via SSE (day-by-day)
 ```
+
+## Payments (Airwallex) — gates every endpoint above except auth
+```
+POST /api/v1/payment/create-intent  — requires auth only; creates a PaymentIntent
+GET  /api/v1/payment/status         — requires auth only; current entitlement (+ optional live poll)
+GET  /api/v1/payment/history        — requires auth only; past transactions
+POST /api/v1/payment/webhook        — no auth; verified via Airwallex HMAC signature instead
+```
+All SEO and Social endpoints above now require `core.security.require_paid_access`
+instead of plain auth — a 402 Payment Required is returned until the user
+completes payment. Only auth endpoints (login/signup/forgot-password) and the
+four payment endpoints above are exempt.
 ```
 
 ## History (requires auth)
@@ -121,10 +133,12 @@ app.add_middleware(
 from routers.auth_router import router as auth_router
 from routers.seo_router  import router as seo_router
 from routers.social_router import router as social_router
+from routers.payment_router import router as payment_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
 app.include_router(social_router)
+app.include_router(payment_router)
 
 
 @app.get("/", tags=["Health"])
