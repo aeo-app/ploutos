@@ -1,6 +1,6 @@
 import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
-// const BASE = "https://api.aeo-app.ai/api/v1";
+// export const BASE = "https://api.aeo-app.ai/api/v1";
 export const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
 
 // 🔹 Check Token & User Validity (forcefully redirect to login if missing)

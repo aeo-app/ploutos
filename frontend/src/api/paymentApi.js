@@ -59,7 +59,9 @@ async function post(path, body) {
 }
 
 export const paymentApi = {
-  createIntent: () => post("/payment/create-intent"),
+  getPlans: () => get("/payment/plans"),
+  /** @param {string} planId - "starter" | "growth" | "scale" */
+  createIntent: (planId) => post("/payment/create-intent", { plan_id: planId }),
   /** @param {string} [paymentIntentId] - if provided, also live-polls Airwallex before returning status */
   getStatus: (paymentIntentId) =>
     get(`/payment/status${paymentIntentId ? `?payment_intent_id=${encodeURIComponent(paymentIntentId)}` : ""}`),

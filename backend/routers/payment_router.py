@@ -6,7 +6,13 @@ NOT payment — that would be circular, since they're how a user becomes
 paid in the first place and how they check/see their own payment status
 and history. Every OTHER endpoint in the app (seo_router, social_router)
 requires core.security.require_paid_access instead.
+
+Three plans (Starter/Growth/Scale) differ by price only for now — every
+paid plan gets full access. Billing is manual-renewal (the user pays again
+each month), not auto-recurring — see PAID_ACCESS_DAYS below.
 """
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -16,18 +22,17 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.security import get_current_user_id
 from db.dynamo import (
-    get_payment_intent as db_get_payment_intent,
     get_user_entitlement,
     list_user_payments,
     save_payment_intent,
     set_user_paid,
     update_payment_intent_status,
 )
+from models.payment_models import CreatePaymentIntentRequest
 from services.airwallex_service import (
     AirwallexError,
-    PAYMENT_AMOUNT,
     PAYMENT_CURRENCY,
-    PAYMENT_DESCRIPTION,
+    PLANS,
     create_payment_intent as awx_create_payment_intent,
     get_payment_intent as awx_get_payment_intent,
     verify_webhook_signature,
@@ -41,10 +46,12 @@ router = APIRouter(tags=["Payments"])
 SUCCESS_STATUSES = {"SUCCEEDED"}
 FAILURE_STATUSES = {"FAILED", "CANCELLED", "EXPIRED"}
 
-# How long a successful payment grants access for. None (or 0) = forever
-# (true one-time purchase); set PAID_ACCESS_DAYS for subscription-style,
-# renewable access instead — see business-logic note in set_user_paid.
-PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "0"))
+# How long a successful payment grants access for. Billing here is
+# MANUAL-RENEWAL, not auto-recurring: the user pays again each cycle (no
+# card is stored on file, no automatic re-charge). 30 days is "monthly" in
+# the sense the plans are priced and marketed — set to 0 for one-time-forever
+# access instead, or change the number of days for a different cycle length.
+PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))
 
 
 def _compute_paid_until() -> str | None:
@@ -53,35 +60,83 @@ def _compute_paid_until() -> str | None:
     return (datetime.now(timezone.utc) + timedelta(days=PAID_ACCESS_DAYS)).isoformat().replace("+00:00", "Z")
 
 
-@router.post("/api/v1/payment/create-intent", summary="Create an Airwallex PaymentIntent to unlock access")
-async def create_intent(user_id: str = Depends(get_current_user_id)):
+@router.get("/api/v1/payment/plans", summary="List available plans (Starter/Growth/Scale)")
+async def list_plans(user_id: str = Depends(get_current_user_id)):
     """
-    Called when an unpaid user hits a protected feature (or the checkout
-    page loads). Amount/currency are fixed server-side — never trust a
-    client-supplied price. Returns the client_secret the frontend needs to
-    mount the Airwallex Drop-in Element.
+    Single source of truth for pricing AND display content — the dashboard's
+    pricing area should render its cards entirely from this response
+    (name, price, blurb, prompts, features, highlight) rather than
+    hardcoding any of it, so marketing copy and the actual checkout price
+    can never drift out of sync again (see the module note above PLANS).
+    """
+    return {
+        "currency": PAYMENT_CURRENCY,
+        "billing_cycle_days": PAID_ACCESS_DAYS,
+        "plans": [
+            {
+                "plan_id": plan_id,
+                "name": p["name"],
+                "amount": p["amount"],
+                "currency": PAYMENT_CURRENCY,
+                "blurb": p["blurb"],
+                "prompts": p["prompts"],
+                "features": p["features"],
+                "highlight": p["highlight"],
+            }
+            for plan_id, p in PLANS.items()
+        ],
+    }
+
+
+@router.post("/api/v1/payment/create-intent", summary="Create an Airwallex PaymentIntent for a chosen plan")
+async def create_intent(
+    req: CreatePaymentIntentRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Called when the user picks a plan on the pricing/dashboard screen (or an
+    unpaid user hits a protected feature and is routed to checkout). The
+    PRICE for `plan_id` is looked up server-side (services.airwallex_service.PLANS)
+    — never trust a client-supplied amount. Returns the client_secret the
+    frontend needs to mount the Airwallex Drop-in Element.
     """
     try:
-        intent = awx_create_payment_intent(user_id)
+        plan = PLANS[req.plan_id]
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Unknown plan_id '{req.plan_id}'. Valid: {list(PLANS)}")
+
+    try:
+        intent = awx_create_payment_intent(user_id, req.plan_id)
     except AirwallexError as e:
-        logger.error(f"[payment] create_intent failed for user={user_id}: {e}")
+        logger.error(f"[payment] create_intent failed for user={user_id} plan={req.plan_id}: {e}")
         raise HTTPException(status_code=502, detail=f"Could not start payment: {e}")
+
+    amount = plan["amount"]  # our own authoritative, correctly-formatted price string —
+                              # don't derive it from Airwallex's response, which may
+                              # echo the number back reformatted (e.g. "79.00" -> 79.0)
+    currency = intent.get("currency", PAYMENT_CURRENCY)
+    description = f"{plan['name']} plan"  # clean receipt/transaction text — the
+                                            # marketing blurb ("For founders...")
+                                            # is exposed separately via /payment/plans
 
     save_payment_intent(
         user_id=user_id,
         payment_intent_id=intent["id"],
-        amount=str(intent.get("amount", PAYMENT_AMOUNT)),
-        currency=intent.get("currency", PAYMENT_CURRENCY),
+        amount=amount,
+        currency=currency,
         status=intent.get("status", "CREATED"),
-        description=PAYMENT_DESCRIPTION,
+        description=description,
+        plan_id=req.plan_id,
     )
 
     return {
         "payment_intent_id": intent["id"],
         "client_secret": intent["client_secret"],
-        "amount": str(intent.get("amount", PAYMENT_AMOUNT)),
-        "currency": intent.get("currency", PAYMENT_CURRENCY),
-        "description": PAYMENT_DESCRIPTION,
+        "plan_id": req.plan_id,
+        "plan_name": plan["name"],
+        "amount": amount,
+        "currency": currency,
+        "description": description,
         "status": intent.get("status", "CREATED"),
     }
 
@@ -92,11 +147,11 @@ async def payment_status(
     user_id: str = Depends(get_current_user_id),
 ):
     """
-    Always returns the user's current entitlement. If `payment_intent_id`
-    is provided, ALSO actively polls Airwallex directly first (the
-    API-polling fallback the spec asks for, alongside webhooks) in case the
-    webhook hasn't arrived yet — e.g. right after the frontend's Drop-in
-    reports success, before Airwallex's webhook has landed.
+    Always returns the user's current entitlement (including which plan is
+    active). If `payment_intent_id` is provided, ALSO actively polls
+    Airwallex directly first (the API-polling fallback alongside webhooks)
+    in case the webhook hasn't arrived yet — e.g. right after the frontend's
+    Drop-in reports success, before Airwallex's webhook has landed.
     """
     if payment_intent_id:
         try:
@@ -104,17 +159,22 @@ async def payment_status(
             live_status = live.get("status", "")
             record = update_payment_intent_status(payment_intent_id, live_status)
             if record and live_status in SUCCESS_STATUSES:
-                set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until())
+                set_user_paid(
+                    user_id=record["user_id"], is_paid=True,
+                    paid_until=_compute_paid_until(), plan=record.get("plan_id") or "starter",
+                )
         except AirwallexError as e:
             # Don't fail the whole status check just because the live poll
             # failed — fall back to whatever we already know from webhooks/DB.
             logger.warning(f"[payment] live poll failed for {payment_intent_id}: {e}")
 
     ent = get_user_entitlement(user_id)
+    plan_id = ent.get("plan")
     return {
         "is_paid": ent.get("is_paid", False),
         "paid_until": ent.get("paid_until"),
-        "plan": ent.get("plan"),
+        "plan": plan_id,
+        "plan_name": PLANS.get(plan_id, {}).get("name") if plan_id else None,
     }
 
 
@@ -125,6 +185,7 @@ async def payment_history(user_id: str = Depends(get_current_user_id)):
         "items": [
             {
                 "payment_intent_id": i.get("payment_intent_id"),
+                "plan_id": i.get("plan_id"),
                 "amount": i.get("amount"),
                 "currency": i.get("currency"),
                 "status": i.get("status"),
@@ -176,8 +237,9 @@ async def airwallex_webhook(request: Request):
         return {"received": True}
 
     if status in SUCCESS_STATUSES:
-        set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until())
-        logger.info(f"[payment] user={record['user_id']} marked paid via webhook ({payment_intent_id})")
+        plan_id = record.get("plan_id") or "starter"
+        set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until(), plan=plan_id)
+        logger.info(f"[payment] user={record['user_id']} marked paid ({plan_id}) via webhook ({payment_intent_id})")
     elif status in FAILURE_STATUSES:
         logger.info(f"[payment] payment {payment_intent_id} failed/cancelled for user={record['user_id']}")
 

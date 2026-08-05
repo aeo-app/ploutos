@@ -5,6 +5,8 @@ seo_router.py — SEO analysis endpoints (Bedrock + DynamoDB + Cognito auth)
 - Persistence via DynamoDB (db/dynamo.py)
 - user_id extracted from Cognito access token (core/security.py)
 """
+from __future__ import annotations
+
 import json
 import logging
 
@@ -36,6 +38,7 @@ from services.bedrock_service import (
     generate_full_report,
     generate_keyword_volume,
     stream_content_strategy_events,
+    TokenUsageTracker,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +46,7 @@ router = APIRouter(tags=["SEO Intelligence"])
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────
-def _save(*, user_id: str, analysis_type: str, req: AnalyseRequest, result_model) -> str:
+def _save(*, user_id: str, analysis_type: str, req: AnalyseRequest, result_model, token_usage: dict | None = None) -> str:
     """Serialise and persist — never blocks response on failure."""
     try:
         result_dict = json.loads(result_model.model_dump_json())
@@ -57,17 +60,18 @@ def _save(*, user_id: str, analysis_type: str, req: AnalyseRequest, result_model
             result=result_dict,
             request_data=req.model_dump(),
             status="success",
+            token_usage=token_usage,
         )
-        logger.info(f"[seo] saved {analysis_type} aid={aid} user={user_id}")
+        logger.info(f"[seo] saved {analysis_type} aid={aid} user={user_id} tokens={token_usage}")
         return aid
     except Exception as e:
         logger.error(f"[seo] DynamoDB save failed ({analysis_type}): {e}", exc_info=True)
         return "save-failed"
 
 
-def _response(result_model, analysis_id: str, user_id: str) -> dict:
+def _response(result_model, analysis_id: str, user_id: str, token_usage: dict | None = None) -> dict:
     data = json.loads(result_model.model_dump_json())
-    data["_meta"] = {"analysis_id": analysis_id, "user_id": user_id}
+    data["_meta"] = {"analysis_id": analysis_id, "user_id": user_id, "token_usage": token_usage}
     return data
 
 
@@ -80,12 +84,14 @@ async def competitor_analysis(
 ):
     """Grounded competitor analysis. Saved to DynamoDB under user_id from JWT."""
     try:
-        result = generate_competitor_analysis(req)
+        tracker = TokenUsageTracker()
+        result = generate_competitor_analysis(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"competitor_analysis failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    aid = _save(user_id=user_id, analysis_type="competitors", req=req, result_model=result)
-    return _response(result, aid, user_id)
+    aid = _save(user_id=user_id, analysis_type="competitors", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
 
 
 @router.post("/api/v1/seo/keywords", summary="Keyword volume (Bedrock + web search)")
@@ -95,12 +101,14 @@ async def keyword_volume(
 ):
     """Grounded keyword volume research. Saved to DynamoDB."""
     try:
-        result = generate_keyword_volume(req)
+        tracker = TokenUsageTracker()
+        result = generate_keyword_volume(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"keyword_volume failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    aid = _save(user_id=user_id, analysis_type="keywords", req=req, result_model=result)
-    return _response(result, aid, user_id)
+    aid = _save(user_id=user_id, analysis_type="keywords", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
 
 
 @router.post("/api/v1/seo/profile", summary="Company profile (Bedrock + web search)")
@@ -110,12 +118,14 @@ async def company_profile(
 ):
     """Company profile from real scraped content. Saved to DynamoDB."""
     try:
-        result = generate_company_profile(req)
+        tracker = TokenUsageTracker()
+        result = generate_company_profile(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"company_profile failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    aid = _save(user_id=user_id, analysis_type="profile", req=req, result_model=result)
-    return _response(result, aid, user_id)
+    aid = _save(user_id=user_id, analysis_type="profile", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
 
 
 @router.post("/api/v1/seo/domain-authority", summary="DA strategy (Bedrock + web search)")
@@ -125,12 +135,14 @@ async def domain_authority(
 ):
     """DA strategy from real backlink data. Saved to DynamoDB."""
     try:
-        result = generate_da_strategy(req)
+        tracker = TokenUsageTracker()
+        result = generate_da_strategy(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"domain_authority failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    aid = _save(user_id=user_id, analysis_type="domain_authority", req=req, result_model=result)
-    return _response(result, aid, user_id)
+    aid = _save(user_id=user_id, analysis_type="domain_authority", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
 
 
 @router.post("/api/v1/seo/full-report", summary="Full SEO report — all 4 analyses (Bedrock)")
@@ -140,12 +152,14 @@ async def full_report(
 ):
     """All 4 analyses (~8 Bedrock calls). Saved to DynamoDB as one record."""
     try:
-        result = generate_full_report(req)
+        tracker = TokenUsageTracker()
+        result = generate_full_report(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"full_report failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    aid = _save(user_id=user_id, analysis_type="full_report", req=req, result_model=result)
-    return _response(result, aid, user_id)
+    aid = _save(user_id=user_id, analysis_type="full_report", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
 
 
 @router.post(
@@ -185,12 +199,14 @@ async def content_strategy(
     Also returns a cross-keyword executive summary. Saved to DynamoDB.
     """
     try:
-        result = generate_content_strategy(req)
+        tracker = TokenUsageTracker()
+        result = generate_content_strategy(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"content_strategy failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
-    aid = _save(user_id=user_id, analysis_type="content_strategy", req=req, result_model=result)
-    return _response(result, aid, user_id)
+    aid = _save(user_id=user_id, analysis_type="content_strategy", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
 
 
 @router.post(
@@ -229,12 +245,14 @@ async def content_strategy_stream(
     """
 
     async def event_source():
+        tracker = TokenUsageTracker()
         try:
             async for event, data in stream_content_strategy_events(
-                req, request.is_disconnected
+                req, request.is_disconnected, usage_tracker=tracker
             ):
                 yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
                 if event == "done":
+                    token_usage = data.get("token_usage") or tracker.as_dict()
                     try:
                         aid = save_analysis(
                             user_id=user_id,
@@ -246,8 +264,9 @@ async def content_strategy_stream(
                             result=data["result"],
                             request_data=req.model_dump(),
                             status="partial" if data.get("failed_keywords") else "success",
+                            token_usage=token_usage,
                         )
-                        yield f"event: saved\ndata: {json.dumps({'analysis_id': aid})}\n\n"
+                        yield f"event: saved\ndata: {json.dumps({'analysis_id': aid, 'token_usage': token_usage})}\n\n"
                     except Exception as e:
                         logger.error(f"[seo] DynamoDB save failed (content_strategy stream): {e}", exc_info=True)
                         yield f"event: saved\ndata: {json.dumps({'analysis_id': 'save-failed'})}\n\n"

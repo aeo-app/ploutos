@@ -102,9 +102,9 @@ MAX_TOKENS = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
 # article in ONE response routinely needs 6,000+ tokens and gets silently
 # truncated mid-JSON. We split that into two calls instead, each comfortably
 # bounded well under any model's output ceiling.
-ANALYSIS_MAX_TOKENS = int(os.getenv("BEDROCK_ANALYSIS_MAX_TOKENS", "9000"))
-BACKLINK_MAX_TOKENS = int(os.getenv("BEDROCK_BACKLINK_MAX_TOKENS", "9500"))
-CONTENT_MAX_TOKENS = int(os.getenv("BEDROCK_CONTENT_MAX_TOKENS", "9500"))
+ANALYSIS_MAX_TOKENS = int(os.getenv("BEDROCK_ANALYSIS_MAX_TOKENS", "3000"))
+BACKLINK_MAX_TOKENS = int(os.getenv("BEDROCK_BACKLINK_MAX_TOKENS", "3500"))
+CONTENT_MAX_TOKENS = int(os.getenv("BEDROCK_CONTENT_MAX_TOKENS", "3500"))
 EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
 EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
 EIGENAI_AWS_SESSION_TOKEN = os.getenv("EIGENAI_AWS_SESSION_TOKEN")
@@ -188,8 +188,48 @@ def _converse_with_retry(fn, *, max_attempts: int = 3, base_delay: float = 1.5):
             )
             time.sleep(delay)
 
+# ── Token usage tracking ─────────────────────────────────────────────────────
+# One tracker instance per top-level API request (created in the router,
+# threaded down through every generator function). A plain object with a
+# lock — not a contextvar — because content-strategy and the social calendar
+# both fan work out across ThreadPoolExecutor/asyncio workers, and
+# contextvars don't propagate into new threads without extra plumbing.
+# An explicit shared object with its own lock works correctly regardless of
+# how the call tree is executed.
+class TokenUsageTracker:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.input_tokens = 0
+        self.output_tokens = 0
+        self.total_tokens = 0
+        self.call_count = 0
+
+    def add(self, usage: dict | None) -> None:
+        if not usage:
+            return
+        with self._lock:
+            self.input_tokens += usage.get("inputTokens", 0) or 0
+            self.output_tokens += usage.get("outputTokens", 0) or 0
+            self.total_tokens += usage.get("totalTokens", 0) or 0
+            self.call_count += 1
+
+    def as_dict(self) -> dict:
+        with self._lock:
+            return {
+                "input_tokens": self.input_tokens,
+                "output_tokens": self.output_tokens,
+                "total_tokens": self.total_tokens,
+                "bedrock_call_count": self.call_count,
+            }
+
+
 # ── Core Converse wrapper ──────────────────────────────────────────────────────
-def _converse(system_text: str, user_text: str, max_tokens: int | None = None) -> str:
+def _converse(
+    system_text: str,
+    user_text: str,
+    max_tokens: int | None = None,
+    usage_tracker: "TokenUsageTracker | None" = None,
+) -> str:
     """
     Single Bedrock Converse call. Returns the assistant text response.
 
@@ -207,6 +247,9 @@ def _converse(system_text: str, user_text: str, max_tokens: int | None = None) -
         ))
         blocks = response.get("output", {}).get("message", {}).get("content", [])
         text = "\n".join(b["text"] for b in blocks if "text" in b).strip()
+
+        if usage_tracker is not None:
+            usage_tracker.add(response.get("usage"))
 
         stop_reason = response.get("stopReason")
         if stop_reason == "max_tokens":
@@ -295,7 +338,7 @@ CRITICAL RULES:
 
 
 # ── Generator: Competitor Analysis ────────────────────────────────────────────
-def generate_competitor_analysis(req: AnalyseRequest) -> CompetitorAnalysisResponse:
+def generate_competitor_analysis(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> CompetitorAnalysisResponse:
     logger.info(f"[bedrock] competitor_analysis — {req.company_name} / {req.market}")
 
     prompt = f"""
@@ -354,13 +397,13 @@ Return a JSON object with EXACTLY these keys:
 ]}}
 """
 
-    raw = _converse(SYSTEM_PROMPT, prompt)
+    raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     return CompetitorAnalysisResponse(**data)
 
 
 # ── Generator: Keyword Volume ──────────────────────────────────────────────────
-def generate_keyword_volume(req: AnalyseRequest) -> KeywordVolumeResponse:
+def generate_keyword_volume(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> KeywordVolumeResponse:
     logger.info(f"[bedrock] keyword_volume — {req.company_name} / {req.market}")
 
     prompt = f"""
@@ -401,13 +444,13 @@ For volume estimates, use realistic ranges based on typical search patterns in {
 for the {req.industry} sector. Head terms get higher volumes, long-tail get lower.
 For position estimates, assume {req.company_name} is a mid-tier player unless you know otherwise."""
 
-    raw = _converse(SYSTEM_PROMPT, prompt)
+    raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     return KeywordVolumeResponse(**data)
 
 
 # ── Generator: Company Profile ─────────────────────────────────────────────────
-def generate_company_profile(req: AnalyseRequest) -> CompanyProfile:
+def generate_company_profile(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> CompanyProfile:
     logger.info(f"[bedrock] company_profile — {req.company_name}")
 
     prompt = f"""
@@ -444,13 +487,13 @@ Return a JSON object with EXACTLY these keys:
   ]
 }}"""
 
-    raw = _converse(SYSTEM_PROMPT, prompt)
+    raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     return CompanyProfile(**data)
 
 
 # ── Generator: Domain Authority Strategy ──────────────────────────────────────
-def generate_da_strategy(req: AnalyseRequest) -> DomainAuthorityResponse:
+def generate_da_strategy(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> DomainAuthorityResponse:
     logger.info(f"[bedrock] da_strategy — {req.company_name}")
 
     prompt = f"""
@@ -497,7 +540,7 @@ If they are an established regional player, estimate mid-range (35-50).
 If they are a large global brand, estimate higher (50-70).
 Base all estimates on realistic industry patterns for {req.industry} companies in {req.market}."""
 
-    raw = _converse(SYSTEM_PROMPT, prompt)
+    raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
 
     # Ensure int fields are populated (belt-and-suspenders)
@@ -510,13 +553,15 @@ Base all estimates on realistic industry patterns for {req.industry} companies i
 
 
 # ── Full report ────────────────────────────────────────────────────────────────
-def generate_full_report(req: AnalyseRequest) -> FullSEOReport:
+def generate_full_report(
+    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None
+) -> FullSEOReport:
     """Run all four analyses. Each makes one Bedrock call (4 total)."""
     return FullSEOReport(
-        competitor_analysis=generate_competitor_analysis(req),
-        keyword_volume=generate_keyword_volume(req),
-        company_profile=generate_company_profile(req),
-        domain_authority_strategy=generate_da_strategy(req),
+        competitor_analysis=generate_competitor_analysis(req, usage_tracker=usage_tracker),
+        keyword_volume=generate_keyword_volume(req, usage_tracker=usage_tracker),
+        company_profile=generate_company_profile(req, usage_tracker=usage_tracker),
+        domain_authority_strategy=generate_da_strategy(req, usage_tracker=usage_tracker),
     )
 
 
@@ -571,7 +616,9 @@ CRITICAL RULES:
 
 
 # ── Generator: Step 1 — competitor + content/SEO analysis for ONE keyword ─────
-def _generate_keyword_analysis(req: ContentStrategyRequest, keyword: str) -> dict:
+def _generate_keyword_analysis(
+    req: ContentStrategyRequest, keyword: str, usage_tracker: TokenUsageTracker | None = None
+) -> dict:
     """Small, bounded call: competitors + content strategy + on-page SEO +
     ranking-explanation analysis. No long-form free text here, so this
     comfortably fits well under any Bedrock model's output token ceiling.
@@ -637,13 +684,14 @@ Keep every string value on a single line (no literal line breaks — use plain p
 Do not use double-quote characters inside any string value; use single quotes for emphasis
 if needed, since this must parse as strict JSON.
 """
-    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=ANALYSIS_MAX_TOKENS)
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=ANALYSIS_MAX_TOKENS, usage_tracker=usage_tracker)
     return _parse_json(raw)
 
 
 # ── Generator: Steps 3-5 — backlink deep-dive + replication plan ──────────────
 def _generate_backlink_deep_dive(
-    req: ContentStrategyRequest, keyword: str, analysis: dict
+    req: ContentStrategyRequest, keyword: str, analysis: dict,
+    usage_tracker: TokenUsageTracker | None = None,
 ) -> BacklinkDeepDive:
     """Real, named, stable platforms/categories where this type of backlink is
     genuinely earned, with step-by-step acquisition instructions — NOT
@@ -723,7 +771,7 @@ characters inside any string value; use single quotes instead, since this must p
 JSON. Every platform/site named must be a REAL, currently-operating website you have genuine
 training knowledge of — never invent one.
 """
-    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=BACKLINK_MAX_TOKENS)
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=BACKLINK_MAX_TOKENS, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     return BacklinkDeepDive(**data)
 
@@ -796,30 +844,32 @@ Return a JSON object with EXACTLY these keys:
 
 # ── Generator: Step 2 — the actual content piece, using Step 1 as context ─────
 def _generate_content_piece(
-    req: ContentStrategyRequest, keyword: str, analysis: dict
+    req: ContentStrategyRequest, keyword: str, analysis: dict,
+    usage_tracker: TokenUsageTracker | None = None,
 ) -> GeneratedContentPiece:
     """Separate, bounded call dedicated to the long-form output (the article
     body). Keeping this isolated from the analysis call means its token
     budget only ever has to cover ~500-700 words + a handful of short fields —
     comfortably inside any Bedrock model's output ceiling."""
     prompt = _build_content_prompt(req, keyword, analysis)
-    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=CONTENT_MAX_TOKENS)
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=CONTENT_MAX_TOKENS, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     return GeneratedContentPiece(**data)
 
 
 # ── Generator: one keyword → competitor analysis + generated content piece ────
 def generate_keyword_content_report(
-    req: ContentStrategyRequest, keyword: str
+    req: ContentStrategyRequest, keyword: str,
+    usage_tracker: TokenUsageTracker | None = None,
 ) -> KeywordContentReport:
     """Three bounded Bedrock calls per keyword — analysis, then backlink
     deep-dive, then content — instead of one oversized call. See
     ANALYSIS_MAX_TOKENS / BACKLINK_MAX_TOKENS / CONTENT_MAX_TOKENS above."""
     logger.info(f"[bedrock] content_strategy — {req.company_name} — keyword={keyword!r}")
 
-    analysis = _generate_keyword_analysis(req, keyword)
-    backlink_deep_dive = _generate_backlink_deep_dive(req, keyword, analysis)
-    content = _generate_content_piece(req, keyword, analysis)
+    analysis = _generate_keyword_analysis(req, keyword, usage_tracker=usage_tracker)
+    backlink_deep_dive = _generate_backlink_deep_dive(req, keyword, analysis, usage_tracker=usage_tracker)
+    content = _generate_content_piece(req, keyword, analysis, usage_tracker=usage_tracker)
 
     return KeywordContentReport(
         keyword=analysis.get("keyword", keyword),
@@ -834,7 +884,8 @@ def generate_keyword_content_report(
 
 # ── Generator: cross-keyword executive summary ─────────────────────────────────
 def _generate_executive_summary(
-    req: ContentStrategyRequest, keyword_reports: list[KeywordContentReport]
+    req: ContentStrategyRequest, keyword_reports: list[KeywordContentReport],
+    usage_tracker: TokenUsageTracker | None = None,
 ) -> list[SEOInsight]:
     findings = "\n".join(
         f'- "{r.keyword}": top competitors [{", ".join(c.company for c in r.top_competitors[:3])}]; '
@@ -861,7 +912,7 @@ Based on the findings above, return a JSON object with EXACTLY this key:
 }}
 """
 
-    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt)
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     return [SEOInsight(**item) for item in data.get("executive_summary", [])]
 
@@ -874,7 +925,8 @@ MAX_CONCURRENT_KEYWORDS = int(os.getenv("BEDROCK_MAX_CONCURRENT_KEYWORDS", "3"))
 
 
 def _run_keyword_reports_concurrently(
-    req: ContentStrategyRequest, keywords: list[str]
+    req: ContentStrategyRequest, keywords: list[str],
+    usage_tracker: TokenUsageTracker | None = None,
 ) -> tuple[list[KeywordContentReport], dict[str, str]]:
     """
     Runs generate_keyword_content_report() for every keyword IN PARALLEL
@@ -886,14 +938,17 @@ def _run_keyword_reports_concurrently(
     ceil(N / MAX_CONCURRENT_KEYWORDS) rounds instead of N sequential steps.
 
     A keyword that errors doesn't abort the whole request — it's recorded in
-    the returned failures dict and the rest still complete.
+    the returned failures dict and the rest still complete. usage_tracker is
+    a single shared object with its own lock (see TokenUsageTracker above),
+    so concurrent workers adding to it is safe.
     """
     reports: dict[str, KeywordContentReport] = {}
     failures: dict[str, str] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_KEYWORDS) as pool:
         future_to_kw = {
-            pool.submit(generate_keyword_content_report, req, kw): kw for kw in keywords
+            pool.submit(generate_keyword_content_report, req, kw, usage_tracker=usage_tracker): kw
+            for kw in keywords
         }
         for future in as_completed(future_to_kw):
             kw = future_to_kw[future]
@@ -961,7 +1016,9 @@ def _compute_backlink_aggregates(
 
 
 # ── Generator: full Content Strategy (keywords → competitors → content) ───────
-def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyResponse:
+def generate_content_strategy(
+    req: ContentStrategyRequest, usage_tracker: TokenUsageTracker | None = None
+) -> ContentStrategyResponse:
     """
     For every keyword (primary + additional, deduped, capped by MAX_TOTAL_KEYWORDS),
     run analysis + content generation CONCURRENTLY (bounded by
@@ -973,7 +1030,7 @@ def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyRes
         f"[bedrock] content_strategy — {req.company_name} — {len(keywords)} keyword(s): {keywords}"
     )
 
-    keyword_reports, failures = _run_keyword_reports_concurrently(req, keywords)
+    keyword_reports, failures = _run_keyword_reports_concurrently(req, keywords, usage_tracker=usage_tracker)
 
     if failures:
         logger.warning(f"[bedrock] content_strategy — {len(failures)} keyword(s) failed: {failures}")
@@ -981,7 +1038,7 @@ def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyRes
     if not keyword_reports:
         raise RuntimeError(f"All keywords failed to generate: {failures}")
 
-    executive_summary = _generate_executive_summary(req, keyword_reports)
+    executive_summary = _generate_executive_summary(req, keyword_reports, usage_tracker=usage_tracker)
     directory, repeated = _compute_backlink_aggregates(keyword_reports)
 
     return ContentStrategyResponse(
@@ -1005,7 +1062,10 @@ def generate_content_strategy(req: ContentStrategyRequest) -> ContentStrategyRes
 _SENTINEL = object()
 
 
-def _converse_stream_chunks(system_text: str, user_text: str, max_tokens: int):
+def _converse_stream_chunks(
+    system_text: str, user_text: str, max_tokens: int,
+    usage_tracker: TokenUsageTracker | None = None,
+):
     """Blocking generator over Bedrock's converse_stream deltas (sync — must
     be driven from a thread, see `_bridge_stream_to_asyncio` below)."""
     def _open():
@@ -1027,9 +1087,17 @@ def _converse_stream_chunks(system_text: str, user_text: str, max_tokens: int):
                 raise RuntimeError(
                     f"Bedrock stream truncated (stopReason=max_tokens, limit={max_tokens})."
                 )
+        elif "metadata" in event and usage_tracker is not None:
+            # converse_stream reports token usage in a trailing "metadata"
+            # event (unlike the blocking converse() call, where it's a
+            # top-level field on the single response) — same shape either way.
+            usage_tracker.add(event["metadata"].get("usage"))
 
 
-async def _bridge_stream_to_asyncio(system_text: str, user_text: str, max_tokens: int):
+async def _bridge_stream_to_asyncio(
+    system_text: str, user_text: str, max_tokens: int,
+    usage_tracker: TokenUsageTracker | None = None,
+):
     """Bridges the blocking converse_stream generator onto the running event
     loop via a background thread + asyncio.Queue, so it can be consumed with
     `async for` without blocking other concurrent keyword tasks."""
@@ -1038,7 +1106,7 @@ async def _bridge_stream_to_asyncio(system_text: str, user_text: str, max_tokens
 
     def _worker():
         try:
-            for chunk in _converse_stream_chunks(system_text, user_text, max_tokens):
+            for chunk in _converse_stream_chunks(system_text, user_text, max_tokens, usage_tracker=usage_tracker):
                 loop.call_soon_threadsafe(q.put_nowait, chunk)
         except Exception as e:  # noqa: BLE001 — forwarded to the consumer below
             loop.call_soon_threadsafe(q.put_nowait, e)
@@ -1056,7 +1124,10 @@ async def _bridge_stream_to_asyncio(system_text: str, user_text: str, max_tokens
         yield item
 
 
-async def astream_keyword_report(req: ContentStrategyRequest, keyword: str):
+async def astream_keyword_report(
+    req: ContentStrategyRequest, keyword: str,
+    usage_tracker: TokenUsageTracker | None = None,
+):
     """
     Async generator yielding (event, data) tuples for ONE keyword:
       "analysis"          — once the (fast, non-streamed) competitor/content/SEO
@@ -1067,15 +1138,19 @@ async def astream_keyword_report(req: ContentStrategyRequest, keyword: str):
       "content_delta"     — real Bedrock token deltas as the article is written
       "keyword_report"    — the final, fully assembled KeywordContentReport
     """
-    analysis = await asyncio.to_thread(_generate_keyword_analysis, req, keyword)
+    analysis = await asyncio.to_thread(_generate_keyword_analysis, req, keyword, usage_tracker=usage_tracker)
     yield ("analysis", {"keyword": keyword, "analysis": analysis})
 
-    backlink_deep_dive = await asyncio.to_thread(_generate_backlink_deep_dive, req, keyword, analysis)
+    backlink_deep_dive = await asyncio.to_thread(
+        _generate_backlink_deep_dive, req, keyword, analysis, usage_tracker=usage_tracker
+    )
     yield ("backlink_deep_dive", {"keyword": keyword, "backlink_deep_dive": backlink_deep_dive.model_dump()})
 
     prompt = _build_content_prompt(req, keyword, analysis)
     chunks: list[str] = []
-    async for delta in _bridge_stream_to_asyncio(CONTENT_SYSTEM_PROMPT, prompt, CONTENT_MAX_TOKENS):
+    async for delta in _bridge_stream_to_asyncio(
+        CONTENT_SYSTEM_PROMPT, prompt, CONTENT_MAX_TOKENS, usage_tracker=usage_tracker
+    ):
         chunks.append(delta)
         yield ("content_delta", {"keyword": keyword, "text": delta})
 
@@ -1093,7 +1168,10 @@ async def astream_keyword_report(req: ContentStrategyRequest, keyword: str):
     yield ("keyword_report", {"keyword": keyword, "report": report.model_dump()})
 
 
-async def stream_content_strategy_events(req: ContentStrategyRequest, is_disconnected):
+async def stream_content_strategy_events(
+    req: ContentStrategyRequest, is_disconnected,
+    usage_tracker: TokenUsageTracker | None = None,
+):
     """
     Top-level async generator producing (event, data) tuples for the SSE
     endpoint. Runs keyword workers CONCURRENTLY (bounded semaphore), streams
@@ -1111,7 +1189,7 @@ async def stream_content_strategy_events(req: ContentStrategyRequest, is_disconn
     async def _worker(kw: str):
         async with sem:
             try:
-                async for event, data in astream_keyword_report(req, kw):
+                async for event, data in astream_keyword_report(req, kw, usage_tracker=usage_tracker):
                     await out_queue.put((event, data))
                     if event == "keyword_report":
                         reports[kw] = KeywordContentReport(**data["report"])
@@ -1140,7 +1218,7 @@ async def stream_content_strategy_events(req: ContentStrategyRequest, is_disconn
     if reports:
         try:
             executive_summary = await asyncio.to_thread(
-                _generate_executive_summary, req, list(reports.values())
+                _generate_executive_summary, req, list(reports.values()), usage_tracker=usage_tracker
             )
             yield ("executive_summary", {"insights": [s.model_dump() for s in executive_summary]})
         except Exception as e:
@@ -1161,4 +1239,11 @@ async def stream_content_strategy_events(req: ContentStrategyRequest, is_disconn
         backlink_target_directory=directory,
         repeated_high_value_platforms=repeated_platforms,
     )
-    yield ("done", {"failed_keywords": failures, "result": result.model_dump()})
+    yield (
+        "done",
+        {
+            "failed_keywords": failures,
+            "result": result.model_dump(),
+            "token_usage": usage_tracker.as_dict() if usage_tracker else None,
+        },
+    )

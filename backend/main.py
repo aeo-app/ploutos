@@ -67,7 +67,7 @@ All SEO and history endpoints require a valid Cognito access token.
 5. POST /api/v1/auth/refresh     → renew access_token without password
 ```
 
-## SEO Analysis (requires auth)
+## SEO Analysis (requires auth + payment)
 ```
 POST /api/v1/seo/competitors
 POST /api/v1/seo/keywords
@@ -86,18 +86,18 @@ POST /api/v1/social/relocation-calendar/stream  — same, streamed via SSE (day-
 
 ## Payments (Airwallex) — gates every endpoint above except auth
 ```
-POST /api/v1/payment/create-intent  — requires auth only; creates a PaymentIntent
+GET  /api/v1/payment/plans          — requires auth only; the plan catalog (Starter/Growth/Scale)
+POST /api/v1/payment/create-intent  — requires auth only; {"plan_id": ...} creates a PaymentIntent
 GET  /api/v1/payment/status         — requires auth only; current entitlement (+ optional live poll)
 GET  /api/v1/payment/history        — requires auth only; past transactions
 POST /api/v1/payment/webhook        — no auth; verified via Airwallex HMAC signature instead
 ```
-All SEO and Social endpoints above now require `core.security.require_paid_access`
+All SEO and Social endpoints above require `core.security.require_paid_access`
 instead of plain auth — a 402 Payment Required is returned until the user
 completes payment. Only auth endpoints (login/signup/forgot-password) and the
 four payment endpoints above are exempt.
-```
 
-## History (requires auth)
+## History (requires auth + payment)
 ```
 GET    /api/v1/history            — your analyses (paginated)
 GET    /api/v1/history/stats      — counts by type
@@ -114,7 +114,7 @@ No external search APIs required. Uses a two-call anti-hallucination pipeline:
 `"not found"` string fields = not in Bedrock's confirmed knowledge.
 `current_da = 0` = DA score not confirmed — check Moz/Ahrefs directly.
 """,
-    version="4.0.0",
+    version="4.1.0",
     lifespan=lifespan,
 )
 
@@ -145,7 +145,7 @@ app.include_router(payment_router)
 async def root():
     return {
         "service":  "APAC SEO Intelligence API",
-        "version":  "4.0.0",
+        "version":  "4.1.0",
         "ai":       os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0"),
         "auth":     "AWS Cognito",
         "db":       f"DynamoDB / {os.getenv('APAC_SEO_TABLE', 'apac_seo_analyses')}",
@@ -155,4 +155,4 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "version": "4.0.0"}
+    return {"status": "ok", "version": "4.1.0"}

@@ -6,6 +6,17 @@ from pydantic import BaseModel, Field
 from typing import Any, Optional
 
 
+class TokenUsage(BaseModel):
+    """Bedrock token usage measured for one flow — see
+    services.bedrock_service.TokenUsageTracker for how this is accumulated
+    (a single call for /profile, several for /full-report or
+    /content-strategy, one per day for the relocation calendar, etc.)."""
+    input_tokens:      int = 0
+    output_tokens:     int = 0
+    total_tokens:      int = 0
+    bedrock_call_count: int = 0
+
+
 class AnalysisMeta(BaseModel):
     """Lightweight summary row — used in list responses (no full result payload)."""
     analysis_id:   str
@@ -16,6 +27,7 @@ class AnalysisMeta(BaseModel):
     industry:      str
     created_at:    str
     status:        str
+    token_usage:   TokenUsage = TokenUsage()
 
 
 class AnalysisRecord(AnalysisMeta):
@@ -40,10 +52,13 @@ class ListAnalysesResponse(BaseModel):
 
 
 class UserStatsResponse(BaseModel):
-    """Aggregate counts per analysis type for a user."""
-    user_id: str
-    total:   int
-    by_type: dict[str, int]
+    """Aggregate counts AND Bedrock token usage per analysis type ("per
+    flow") for a user — see db.dynamo.get_user_stats."""
+    user_id:            str
+    total:              int
+    by_type:            dict[str, int]
+    token_usage_by_type: dict[str, TokenUsage] = {}
+    token_usage_total:  TokenUsage = TokenUsage()
 
 
 class DeleteResponse(BaseModel):

@@ -27,7 +27,7 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
-from services.bedrock_service import _converse, _parse_json
+from services.bedrock_service import _converse, _parse_json, TokenUsageTracker
 
 from models.social_models import (
     CATEGORIES,
@@ -220,9 +220,11 @@ Return a JSON object with EXACTLY this shape:
 """
 
 
-def _generate_day_posts(req: RelocationSocialRequest, day: dict) -> DailySchedule:
+def _generate_day_posts(
+    req: RelocationSocialRequest, day: dict, usage_tracker: TokenUsageTracker | None = None
+) -> DailySchedule:
     prompt = _build_day_prompt(req, day)
-    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=DAY_MAX_TOKENS)
+    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=DAY_MAX_TOKENS, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     posts = [SocialPost(**p) for p in data["posts"]]
     return DailySchedule(
@@ -234,14 +236,16 @@ def _generate_day_posts(req: RelocationSocialRequest, day: dict) -> DailySchedul
 
 
 def _run_days_concurrently(
-    req: RelocationSocialRequest, day_slots: list[dict]
+    req: RelocationSocialRequest, day_slots: list[dict],
+    usage_tracker: TokenUsageTracker | None = None,
 ) -> tuple[list[DailySchedule], dict[str, str]]:
     schedules: dict[str, DailySchedule] = {}
     failures: dict[str, str] = {}
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_DAYS) as pool:
         future_to_date = {
-            pool.submit(_generate_day_posts, req, day): day["date"] for day in day_slots
+            pool.submit(_generate_day_posts, req, day, usage_tracker=usage_tracker): day["date"]
+            for day in day_slots
         }
         for future in as_completed(future_to_date):
             d = future_to_date[future]
@@ -255,12 +259,14 @@ def _run_days_concurrently(
     return ordered, failures
 
 
-def generate_relocation_calendar(req: RelocationSocialRequest) -> RelocationSocialResponse:
+def generate_relocation_calendar(
+    req: RelocationSocialRequest, usage_tracker: TokenUsageTracker | None = None
+) -> RelocationSocialResponse:
     day_slots = _build_schedule_slots(req.start_date, req.end_date)
     period_label = _format_period_label(req.start_date, req.end_date)
     logger.info(f"[social] relocation_calendar — {req.country} — {period_label} ({len(day_slots)} days)")
 
-    days, failures = _run_days_concurrently(req, day_slots)
+    days, failures = _run_days_concurrently(req, day_slots, usage_tracker=usage_tracker)
     if not days:
         raise RuntimeError(f"All days failed to generate: {failures}")
 
@@ -274,7 +280,10 @@ def generate_relocation_calendar(req: RelocationSocialRequest) -> RelocationSoci
 
 
 # ── Streaming (SSE) path ────────────────────────────────────────────────────
-async def stream_relocation_calendar_events(req: RelocationSocialRequest, is_disconnected):
+async def stream_relocation_calendar_events(
+    req: RelocationSocialRequest, is_disconnected,
+    usage_tracker: TokenUsageTracker | None = None,
+):
     """Async generator yielding (event, data) tuples:
       start        — {"period_label", "total_days"}
       day_ready    — one DailySchedule as soon as it's generated
@@ -292,7 +301,7 @@ async def stream_relocation_calendar_events(req: RelocationSocialRequest, is_dis
     async def _worker(day: dict):
         async with sem:
             try:
-                schedule = await asyncio.to_thread(_generate_day_posts, req, day)
+                schedule = await asyncio.to_thread(_generate_day_posts, req, day, usage_tracker=usage_tracker)
                 schedules[day["date"]] = schedule
                 await out_queue.put(("day_ready", schedule.model_dump()))
             except Exception as e:
@@ -322,4 +331,11 @@ async def stream_relocation_calendar_events(req: RelocationSocialRequest, is_dis
         days=ordered_days,
         failed_dates=failures,
     )
-    yield ("done", {"failed_dates": failures, "result": result.model_dump()})
+    yield (
+        "done",
+        {
+            "failed_dates": failures,
+            "result": result.model_dump(),
+            "token_usage": usage_tracker.as_dict() if usage_tracker else None,
+        },
+    )

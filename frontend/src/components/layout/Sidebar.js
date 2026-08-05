@@ -36,6 +36,7 @@ const NAV = [
     section: 'Account',
     items: [
       { id: 'history', icon: '🗂️', label: 'History' },
+      { id: 'billing', icon: '💳', label: 'Billing & Plans' },
     ],
   },
 ];
@@ -96,6 +97,7 @@ export function Sidebar({ open, onClose }) {
                   : item.id === 'contentStrategy' ? !!state.results.contentStrategy
                   : item.id === 'relocationCalendar' ? !!state.results.relocationCalendar
                   : item.id === 'history' ? false
+                  : item.id === 'billing' ? false
                   : !!state.results[item.id] || !!state.results.fullReport;
                 return (
                   <button

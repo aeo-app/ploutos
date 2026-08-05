@@ -42,9 +42,82 @@ AIRWALLEX_API_KEY = os.getenv("AIRWALLEX_API_KEY", "")
 AIRWALLEX_WEBHOOK_SECRET = os.getenv("AIRWALLEX_WEBHOOK_SECRET", "")
 
 # The price is fixed here (server-side), never trusted from the client.
-PAYMENT_AMOUNT = os.getenv("PAYMENT_AMOUNT", "49.00")
+# The price is fixed here (server-side) per plan, never trusted from the
+# client — the client only selects WHICH plan_id to pay for, not the amount.
+# Same currency across all plans (simplest, standard for a single-market
+# SaaS product); add a per-plan currency override later if needed.
 PAYMENT_CURRENCY = os.getenv("PAYMENT_CURRENCY", "USD")
-PAYMENT_DESCRIPTION = os.getenv("PAYMENT_DESCRIPTION", "APAC SEO Platform — full access")
+
+PLANS: dict[str, dict] = {
+    "starter": {
+        "name": "Starter",
+        "amount": os.getenv("PLAN_STARTER_PRICE", "50.00"),
+        "blurb": "For founders putting AI search on the map.",
+        "prompts": "10",
+        "highlight": False,
+        "features": [
+            "1 domain · 10 tracked prompts",
+            "Weekly visibility refresh",
+            "Tracks 5 answer engines",
+            "Monthly site audit",
+            "AI agent · 10 messages / day",
+            "Email support",
+            "Weekly 2 posts on Facebook, Instagram, Google My Business & LinkedIn",
+            "Monthly 2 videos",
+        ],
+    },
+    "growth": {
+        "name": "Growth",
+        # Kept in sync with the marketing landing page's Pricing section
+        # ("Simple pricing, priced by prompts") — was 79.00, mismatched.
+        "amount": os.getenv("PLAN_GROWTH_PRICE", "150.00"),
+        "blurb": "For marketing teams shipping content weekly.",
+        "prompts": "50",
+        "highlight": True,
+        "features": [
+            "3 domains · 50 tracked prompts",
+            "Daily refresh · all engines",
+            "Automated audit fixes",
+            "Content engine + brand voice",
+            "Unlimited AI agent + Slack alerts",
+            "Competitor benchmarking (3 rivals)",
+            "Priority support · 4h SLA",
+            "Weekly 8 posts on Facebook, Instagram, Google My Business & LinkedIn",
+            "Monthly 5 videos",
+        ],
+    },
+    "scale": {
+        "name": "Scale",
+        # Kept in sync with the marketing landing page — was 199.00, mismatched.
+        "amount": os.getenv("PLAN_SCALE_PRICE", "500.00"),
+        "blurb": "For agencies and multi-brand portfolios.",
+        "prompts": "100",
+        "highlight": False,
+        "features": [
+            "10 domains · 100 tracked prompts",
+            "Hourly refresh + custom engines",
+            "Unlimited automations + pull requests",
+            "White-label reports + client portal",
+            "API, webhooks & Postgres mirror",
+            "Dedicated AEO strategist · 1h SLA",
+            "Weekly 15 posts on Facebook, Instagram, Google My Business & LinkedIn",
+            "Monthly 8 videos",
+        ],
+    },
+}
+# IMPORTANT — these per-plan feature lists are marketing copy carried over
+# verbatim from the landing page. The backend does NOT currently enforce any
+# of these as usage caps or feature gates: every paid plan (any plan_id)
+# grants identical full access via require_paid_access — see
+# core/security.py. Only the PRICE differs today. If usage limits are ever
+# enforced to match this copy, that's a separate quota-tracking subsystem,
+# not something this catalog implies is already live.
+
+
+def get_plan(plan_id: str) -> dict:
+    """Raises KeyError (caller turns this into a 400) for an unknown plan_id —
+    never silently falls back to a default price."""
+    return PLANS[plan_id]
 
 REQUEST_TIMEOUT = int(os.getenv("AIRWALLEX_TIMEOUT_SECONDS", "15"))
 
@@ -121,17 +194,22 @@ def _request_with_retry(method: str, path: str, **kwargs) -> dict:
 
 
 # ── Payment Intents ──────────────────────────────────────────────────────────
-def create_payment_intent(user_id: str) -> dict:
+def create_payment_intent(user_id: str, plan_id: str) -> dict:
     """
-    Creates a PaymentIntent for the fixed, server-decided price. Returns the
-    raw Airwallex response (contains `id`, `client_secret`, `status`, ...).
+    Creates a PaymentIntent for the fixed, server-decided price of `plan_id`
+    (looked up from PLANS — never trusted from the client). Returns the raw
+    Airwallex response (contains `id`, `client_secret`, `status`, ...).
+
+    Raises KeyError if plan_id isn't in PLANS — the router turns this into a
+    400, not a 500 (it's a client input error, not a server failure).
     """
+    plan = get_plan(plan_id)  # raises KeyError for an unknown plan_id
     body = {
         "request_id": str(uuid.uuid4()),  # idempotency key
-        "amount": float(PAYMENT_AMOUNT),
+        "amount": float(plan["amount"]),
         "currency": PAYMENT_CURRENCY,
-        "merchant_order_id": f"user_{user_id}_{uuid.uuid4().hex[:12]}",
-        "descriptor": PAYMENT_DESCRIPTION[:126],  # Airwallex caps descriptor length
+        "merchant_order_id": f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:12]}",
+        "descriptor": f"{plan['name']} plan"[:126],  # Airwallex caps descriptor length
     }
     return _request_with_retry("POST", "/api/v1/pa/payment_intents/create", json=body)
 

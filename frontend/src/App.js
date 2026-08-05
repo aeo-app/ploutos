@@ -18,6 +18,7 @@ import { FullReportPage }      from './pages/FullReportPage';
 import { ContentStrategyPage } from './pages/ContentStrategyPage';
 import { RelocationCalendarPage } from './pages/RelocationCalendarPage';
 import { HistoryPage } from './pages/HistoryPage';
+import { BillingPage } from './pages/BillingPage';
 
 // Auth pages
 import { SignupPage }       from './pages/auth/SignupPage';
@@ -40,6 +41,7 @@ const APP_PAGES = {
   contentStrategy: ContentStrategyPage,
   relocationCalendar: RelocationCalendarPage,
   history: HistoryPage,
+  billing: BillingPage,
 };
 
 const AUTH_SCREENS = {

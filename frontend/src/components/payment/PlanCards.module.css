@@ -1,0 +1,88 @@
+/* ── Section header (eyebrow + title + subtitle) — mirrors the landing
+   page's "Simple pricing, priced by prompts." hierarchy, scaled to the
+   app's own dashboard typography rather than the marketing hero size. ──── */
+.head { text-align: center; max-width: 640px; margin: 0 auto 28px; display: flex; flex-direction: column; gap: 12px; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--c-indigo-500);
+}
+.eyebrowDot { width: 6px; height: 6px; border-radius: 50%; background: var(--c-indigo-500); }
+.title { font-family: var(--font-display); font-size: 28px; font-weight: 800; color: var(--c-slate-900); letter-spacing: -0.01em; line-height: 1.2; }
+.title em { font-style: italic; color: var(--c-indigo-600); font-weight: 700; }
+.subtitle { font-size: 14px; color: var(--c-slate-500); line-height: 1.6; }
+
+/* ── Monthly / Annual cycle toggle ───────────────────────────────────── */
+.cycleRow { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 28px; }
+.cycle { display: inline-flex; gap: 2px; background: var(--c-slate-100); border-radius: var(--r-lg); padding: 4px; }
+.cycleBtn {
+  border: none; background: none; padding: 8px 18px; border-radius: var(--r-md); cursor: pointer;
+  font-size: 13px; font-weight: 600; color: var(--c-slate-500); display: flex; align-items: center; gap: 6px;
+  transition: all var(--t-fast);
+}
+.cycleBtnOn { background: var(--c-white); color: var(--c-slate-900); box-shadow: var(--shadow-xs); }
+.cycleSave { font-size: 10.5px; font-weight: 700; color: var(--c-success); background: var(--c-success-bg); padding: 2px 6px; border-radius: 10px; }
+.cycleNote { font-size: 11.5px; color: var(--c-slate-400); }
+
+/* ── Plan cards ──────────────────────────────────────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; align-items: stretch; }
+
+.card {
+  position: relative; border: 1.5px solid var(--c-slate-200); border-radius: var(--r-xl);
+  padding: 26px 22px; background: var(--c-white); text-align: left;
+  display: flex; flex-direction: column; gap: 4px; transition: all var(--t-normal);
+}
+.cardHi { border-color: var(--c-indigo-300); box-shadow: var(--shadow-lg); transform: translateY(-4px); }
+.cardSelected { border-color: var(--c-indigo-500); box-shadow: 0 0 0 3px var(--c-indigo-100); }
+
+.badge {
+  position: absolute; top: -12px; left: 22px; background: var(--grad-brand); color: white;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 4px 12px; border-radius: 20px; box-shadow: var(--shadow-brand);
+}
+.checkmark {
+  position: absolute; top: 16px; right: 16px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--c-indigo-600); color: white; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+
+.planName { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--c-slate-900); margin-top: 6px; }
+.planPrompts { font-size: 12px; font-weight: 600; color: var(--c-indigo-500); }
+.planPrompts span { font-family: var(--font-mono); }
+.planBlurb { font-size: 13px; color: var(--c-slate-500); line-height: 1.5; margin: 6px 0 14px; min-height: 38px; }
+
+.priceRow { display: flex; align-items: baseline; gap: 2px; }
+.priceCurrency { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--c-slate-800); }
+.priceAmount { font-family: var(--font-display); font-size: 34px; font-weight: 800; color: var(--c-slate-900); letter-spacing: -0.02em; }
+.pricePeriod { font-size: 13px; color: var(--c-slate-400); margin-left: 2px; }
+.priceCycle { font-size: 11.5px; color: var(--c-slate-400); margin-bottom: 18px; }
+
+.featList { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.featList li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--c-slate-600); line-height: 1.4; }
+.featTick { color: var(--c-success); flex-shrink: 0; margin-top: 1px; }
+
+.cta {
+  width: 100%; padding: 11px 18px; border-radius: var(--r-md); font-size: 13.5px; font-weight: 700;
+  cursor: pointer; border: none; transition: all var(--t-fast); display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.ctaPrimary { background: var(--grad-brand); color: white; box-shadow: var(--shadow-brand); }
+.ctaPrimary:hover:not(:disabled) { filter: brightness(1.06); }
+.ctaGhost { background: var(--c-slate-50); color: var(--c-slate-700); border: 1.5px solid var(--c-slate-200); }
+.ctaGhost:hover:not(:disabled) { border-color: var(--c-indigo-400); color: var(--c-indigo-700); }
+.cta:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.currentBadge {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700;
+  color: var(--c-success); background: var(--c-success-bg); padding: 3px 9px; border-radius: 20px;
+  width: fit-content; margin-bottom: 10px;
+}
+
+/* ── Footer ("Need custom pricing? Talk to sales") ───────────────────── */
+.foot { text-align: center; font-size: 13px; color: var(--c-slate-500); margin-top: 24px; }
+.foot a { color: var(--c-indigo-600); font-weight: 600; text-decoration: none; }
+.foot a:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .grid { grid-template-columns: 1fr; }
+  .cardHi { transform: none; }
+}

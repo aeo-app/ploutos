@@ -192,6 +192,7 @@ def save_analysis(
     request_data: dict,
     status: str = "success",
     error_message: Optional[str] = None,
+    token_usage: Optional[dict] = None,
 ) -> str:
     """
     Persist one analysis result to DynamoDB.
@@ -223,6 +224,13 @@ def save_analysis(
         "created_at": now_iso,
         "created_at_ts": now_ts,
         "status": status,
+        # Bedrock token usage for this flow — see services.bedrock_service.TokenUsageTracker.
+        # Stored inline (not JSON-encoded) since it's a small, flat dict —
+        # this is what makes "measure token usage per flow" queryable later
+        # (e.g. a stats scan summing input_tokens/output_tokens by analysis_type).
+        "token_usage": token_usage or {
+            "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "bedrock_call_count": 0,
+        },
         # Payload (stored as JSON string to avoid Decimal issues with deep nesting)
         "result": json.dumps(result, default=str),
         "request": json.dumps(request_data, default=str),
@@ -239,11 +247,11 @@ def save_analysis(
     try:
         table.put_item(Item=_to_dynamo(item))
         logger.info(
-            '[dynamo] saved analysis_id={} type={} user={}', analysis_id, analysis_type, user_id
+            f"[dynamo] saved analysis_id={analysis_id} type={analysis_type} user={user_id}"
         )
         return analysis_id
     except ClientError as e:
-        logger.error('[dynamo] put_item failed: {}', e.response['Error'])
+        logger.error(f"[dynamo] put_item failed: {e.response['Error']}")
         raise
 
 
@@ -265,6 +273,12 @@ def get_analysis(user_id: str, analysis_id: str) -> Optional[dict]:
         # Verify ownership
         if item.get("user_id") != user_id:
             return None
+        # This GSI is shared with payment transaction records (see the
+        # module note above save_payment_intent) — a payment_intent_id could
+        # theoretically be passed in here and match. Payment records have no
+        # `analysis_type`, so reject anything that isn't a real analysis.
+        if "analysis_type" not in item:
+            return None
         # Deserialise JSON payload fields
         for key in ("result", "request"):
             if key in item and isinstance(item[key], str):
@@ -274,7 +288,7 @@ def get_analysis(user_id: str, analysis_id: str) -> Optional[dict]:
                     pass
         return item
     except ClientError as e:
-        logger.error('[dynamo] get_analysis failed: {}', e.response['Error'])
+        logger.error(f"[dynamo] get_analysis failed: {e.response['Error']}")
         raise
 
 
@@ -303,22 +317,19 @@ def list_analyses(
         "Limit": limit,
         "ProjectionExpression": (
             "analysis_id, analysis_type, company_name, #u, market, "
-            "industry, created_at, created_at_ts, #s"
+            "industry, created_at, created_at_ts, #s, token_usage"
         ),
         "ExpressionAttributeNames": {
             "#u": "url",
             "#s": "status",
     },}
 
-    if analysis_type:
-        # FilterExpression (not an SK prefix, now that SK is timestamp-first)
-        # — applied after the key condition, so results stay in true
-        # chronological (SK) order and pagination still works via
-        # last_evaluated_key, though a filtered page may return fewer than
-        # `limit` items if many non-matching items were scanned in between
-        # (normal DynamoDB filter behaviour — Limit caps items scanned, not
-        # items returned post-filter).
-        kwargs["FilterExpression"] = Attr("analysis_type").eq(analysis_type)
+    # Always exclude payment/entitlement records — they share the same PK
+    # (user_id) as analyses but have no `analysis_type` attribute at all.
+    # Without this, an unfiltered ("All types") list would sweep them in.
+    kwargs["FilterExpression"] = (
+        Attr("analysis_type").eq(analysis_type) if analysis_type else Attr("analysis_type").exists()
+    )
 
     if last_evaluated_key:
         kwargs["ExclusiveStartKey"] = last_evaluated_key
@@ -332,7 +343,7 @@ def list_analyses(
             "last_evaluated_key": resp.get("LastEvaluatedKey"),
         }
     except ClientError as e:
-        logger.error('[dynamo] list_analyses failed: {}', e.response['Error'])
+        logger.error(f"[dynamo] list_analyses failed: {e.response['Error']}")
         raise
 
 
@@ -352,36 +363,59 @@ def delete_analysis(user_id: str, analysis_id: str) -> bool:
                 "PK": item["PK"],
                 "SK": item["SK"],
         })
-        logger.info('[dynamo] deleted analysis_id={} user={}', analysis_id, user_id)
+        logger.info(f"[dynamo] deleted analysis_id={analysis_id} user={user_id}")
         return True
     except ClientError as e:
-        logger.error('[dynamo] delete_item failed: {}', e.response['Error'])
+        logger.error(f"[dynamo] delete_item failed: {e.response['Error']}")
         raise
 
 
 def get_user_stats(user_id: str) -> dict:
     """
-    Count analyses by type for a user (lightweight summary).
+    Count analyses by type for a user, plus Bedrock token usage aggregated
+    per flow (per analysis_type) — see services.bedrock_service.TokenUsageTracker
+    for where token_usage is measured, and save_analysis for where it's stored.
+
+    Filtered to actual analysis records only: payment transactions and the
+    entitlement record share the same PK (user_id) as analyses but have no
+    `analysis_type` attribute — a plain PK-only query would otherwise sweep
+    them in and miscount them as an "unknown" analysis type.
     """
     table = _get_table()
     try:
         resp = table.query(
             KeyConditionExpression=Key("PK").eq(_pk(user_id)),
-            ProjectionExpression="analysis_type, #s",
+            FilterExpression=Attr("analysis_type").exists(),
+            ProjectionExpression="analysis_type, #s, token_usage",
             ExpressionAttributeNames={"#s": "status"},
         )
         items = resp.get("Items", [])
         counts: dict[str, int] = {}
+        tokens_by_type: dict[str, dict] = {}
+        totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "bedrock_call_count": 0}
+
         for item in items:
             t = item.get("analysis_type", "unknown")
             counts[t] = counts.get(t, 0) + 1
+
+            usage = item.get("token_usage") or {}
+            bucket = tokens_by_type.setdefault(
+                t, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "bedrock_call_count": 0}
+            )
+            for key in totals:
+                v = int(usage.get(key, 0) or 0)
+                bucket[key] += v
+                totals[key] += v
+
         return {
             "user_id": user_id,
             "total": len(items),
             "by_type": counts,
+            "token_usage_by_type": tokens_by_type,
+            "token_usage_total": totals,
         }
     except ClientError as e:
-        logger.error('[dynamo] get_user_stats failed: {}', e.response['Error'])
+        logger.error(f"[dynamo] get_user_stats failed: {e.response['Error']}")
         raise
 
 
@@ -415,6 +449,7 @@ def save_payment_intent(
     currency: str,
     status: str,
     description: str = "",
+    plan_id: Optional[str] = None,
 ) -> None:
     """Create (or overwrite, on retry) the transaction record for one
     Airwallex PaymentIntent."""
@@ -427,6 +462,7 @@ def save_payment_intent(
         "analysis_id": payment_intent_id,   # GSI hash key — see module note above
         "user_id": user_id,
         "payment_intent_id": payment_intent_id,
+        "plan_id": plan_id,
         "amount": amount,
         "currency": currency,
         "status": status,
@@ -436,7 +472,7 @@ def save_payment_intent(
     }
     try:
         table.put_item(Item=_to_dynamo(item))
-        logger.info(f"[dynamo] saved payment_intent={payment_intent_id} user={user_id} status={status}")
+        logger.info(f"[dynamo] saved payment_intent={payment_intent_id} user={user_id} plan={plan_id} status={status}")
     except ClientError as e:
         logger.error(f"[dynamo] save_payment_intent failed: {e.response['Error']}")
         raise
@@ -574,7 +610,7 @@ def create_table_if_not_exists() -> None:
     )
     existing = client.list_tables().get("TableNames", [])
     if TABLE_NAME in existing:
-        logger.info("[dynamo] Table '{}' already exists", TABLE_NAME)
+        logger.info(f"[dynamo] Table '{TABLE_NAME}' already exists")
         return
 
     client.create_table(
@@ -607,6 +643,6 @@ def create_table_if_not_exists() -> None:
                 "Enabled": True,
                 "AttributeName": "expires_at",
         },)
-        logger.info("[dynamo] TTL enabled on 'expires_at' ({} days)", TTL_DAYS)
+        logger.info(f"[dynamo] TTL enabled on 'expires_at' ({TTL_DAYS} days)")
 
-    logger.info("[dynamo] Table '{}' created with GSI '{}'", TABLE_NAME, GSI_NAME)
+    logger.info(f"[dynamo] Table '{TABLE_NAME}' created with GSI '{GSI_NAME}'")

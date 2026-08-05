@@ -2,6 +2,8 @@
 routers/social_router.py — Relocation social media content calendar endpoints
 ================================================================================
 """
+from __future__ import annotations
+
 import json
 import logging
 
@@ -15,12 +17,16 @@ from services.social_service import (
     generate_relocation_calendar,
     stream_relocation_calendar_events,
 )
+from services.bedrock_service import TokenUsageTracker
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Social Media Content"])
 
 
-def _save_social(*, user_id: str, req: RelocationSocialRequest, result_dict: dict, status: str = "success") -> str:
+def _save_social(
+    *, user_id: str, req: RelocationSocialRequest, result_dict: dict,
+    status: str = "success", token_usage: dict | None = None,
+) -> str:
     """Persist to the same DynamoDB table as SEO analyses, under its own
     analysis_type. Never blocks the response on failure."""
     try:
@@ -34,8 +40,9 @@ def _save_social(*, user_id: str, req: RelocationSocialRequest, result_dict: dic
             result=result_dict,
             request_data=req.model_dump(mode="json"),
             status=status,
+            token_usage=token_usage,
         )
-        logger.info(f"[social] saved relocation_social_calendar aid={aid} user={user_id}")
+        logger.info(f"[social] saved relocation_social_calendar aid={aid} user={user_id} tokens={token_usage}")
         return aid
     except Exception as e:
         logger.error(f"[social] DynamoDB save failed: {e}", exc_info=True)
@@ -68,15 +75,17 @@ async def relocation_calendar(
     `failed_dates` in the response.
     """
     try:
-        result = generate_relocation_calendar(req)
+        tracker = TokenUsageTracker()
+        result = generate_relocation_calendar(req, usage_tracker=tracker)
+        token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"relocation_calendar failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
     result_dict = json.loads(result.model_dump_json())
     status = "partial" if result.failed_dates else "success"
-    aid = _save_social(user_id=user_id, req=req, result_dict=result_dict, status=status)
-    result_dict["_meta"] = {"analysis_id": aid, "user_id": user_id}
+    aid = _save_social(user_id=user_id, req=req, result_dict=result_dict, status=status, token_usage=token_usage)
+    result_dict["_meta"] = {"analysis_id": aid, "user_id": user_id, "token_usage": token_usage}
     return result_dict
 
 
@@ -100,14 +109,21 @@ async def relocation_calendar_stream(
     """
 
     async def event_source():
+        tracker = TokenUsageTracker()
         try:
-            async for event, data in stream_relocation_calendar_events(req, request.is_disconnected):
+            async for event, data in stream_relocation_calendar_events(
+                req, request.is_disconnected, usage_tracker=tracker
+            ):
                 yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
                 if event == "done":
+                    token_usage = data.get("token_usage") or tracker.as_dict()
                     status = "partial" if data.get("failed_dates") else "success"
                     try:
-                        aid = _save_social(user_id=user_id, req=req, result_dict=data["result"], status=status)
-                        yield f"event: saved\ndata: {json.dumps({'analysis_id': aid})}\n\n"
+                        aid = _save_social(
+                            user_id=user_id, req=req, result_dict=data["result"],
+                            status=status, token_usage=token_usage,
+                        )
+                        yield f"event: saved\ndata: {json.dumps({'analysis_id': aid, 'token_usage': token_usage})}\n\n"
                     except Exception as e:
                         logger.error(f"[social] save failed: {e}", exc_info=True)
                         yield f"event: saved\ndata: {json.dumps({'analysis_id': 'save-failed'})}\n\n"

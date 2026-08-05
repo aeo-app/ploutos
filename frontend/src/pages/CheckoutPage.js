@@ -4,6 +4,7 @@ import { usePayment } from '../context/PaymentContext';
 import { useAuth } from '../context/AuthContext';
 import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
+import { PlanCards, PricingSectionHeader, CycleToggle, PricingFooter } from '../components/payment/PlanCards';
 import s from './CheckoutPage.module.css';
 
 // 'demo' (sandbox) | 'prod' — flip when deploying, same convention as the
@@ -20,32 +21,59 @@ export function CheckoutPage() {
   const { refresh: refreshPayment } = usePayment();
   const { goScreen, logout } = useAuth();
 
-  const [intent, setIntent] = useState(null);       // { payment_intent_id, client_secret, amount, currency, description }
-  const [loading, setLoading] = useState(true);
+  const [catalog, setCatalog] = useState(null);      // { currency, billing_cycle_days, plans: [...] }
+  const [catalogError, setCatalogError] = useState(null);
+  const [cycle, setCycle] = useState('monthly');
+  const [selectedPlanId, setSelectedPlanId] = useState(null);
+  const [intent, setIntent] = useState(null);        // { payment_intent_id, client_secret, plan_id, plan_name, amount, currency, description }
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [stage, setStage] = useState('loading');     // loading | ready | confirming | success | failed
+  const [stage, setStage] = useState('plans');        // plans | loading | ready | confirming | success | failed
   const containerRef = useRef(null);
   const elementRef = useRef(null);
 
   const authCtx = { goScreen, logout };
 
-  const startCheckout = useCallback(async () => {
+  // Load the plan catalog once on mount — the dashboard pricing cards
+  // always reflect real, current prices from the backend, never hardcoded.
+  useEffect(() => {
+    withTokenExpiry(paymentApi.getPlans(), authCtx)
+      .then(setCatalog)
+      .catch(e => { if (e?.code !== 'TokenExpired') setCatalogError(e.message || 'Could not load plans.'); });
+    // eslint-disable-next-line
+  }, []);
+
+  const startCheckout = useCallback(async (planId) => {
     setLoading(true);
     setError(null);
     setStage('loading');
     try {
-      const data = await withTokenExpiry(paymentApi.createIntent(), authCtx);
+      const data = await withTokenExpiry(paymentApi.createIntent(planId), authCtx);
       setIntent(data);
       setStage('ready');
     } catch (e) {
-      if (e?.code !== 'TokenExpired') setError(e.message || 'Could not start checkout.');
+      if (e?.code !== 'TokenExpired') {
+        setError(e.message || 'Could not start checkout.');
+        setStage('plans');
+      }
     } finally {
       setLoading(false);
     }
     // eslint-disable-next-line
   }, []);
 
-  useEffect(() => { startCheckout(); }, [startCheckout]);
+  const selectPlan = (planId) => {
+    setSelectedPlanId(planId);
+    startCheckout(planId);
+  };
+
+  const backToPlans = () => {
+    elementRef.current?.destroy?.();
+    elementRef.current = null;
+    setIntent(null);
+    setError(null);
+    setStage('plans');
+  };
 
   // Mount the Airwallex Drop-in element once we have a client_secret and the container is in the DOM.
   useEffect(() => {
@@ -111,21 +139,50 @@ export function CheckoutPage() {
   const retry = () => {
     elementRef.current?.destroy?.();
     elementRef.current = null;
-    startCheckout();
+    startCheckout(selectedPlanId);
   };
 
   return (
     <div className={s.wrap}>
-      <div className={s.card}>
-        <div className={s.header}>
-          <span className={s.icon}>🔒</span>
-          <span className={s.title}>Payment required to access this feature</span>
-          <span className={s.subtitle}>
-            Your account is set up — one quick payment unlocks the full platform.
-          </span>
-        </div>
+      <div className={s.card} style={stage === 'plans' ? { maxWidth: 1020 } : undefined}>
+        {stage === 'plans' ? (
+          <PricingSectionHeader
+            eyebrow="Pricing"
+            title="Simple pricing,"
+            accent="priced by prompts."
+            subtitle="Pick the number of prompts you want tracked — 10, 50 or 100. Every plan includes site audits, automated fixes and your own AI agent. No overage fees. Cancel anytime."
+          />
+        ) : (
+          <div className={s.header}>
+            <span className={s.icon}>🔒</span>
+            <span className={s.title}>Complete your payment</span>
+            <span className={s.subtitle}>Your account is set up — one quick payment unlocks the full platform.</span>
+          </div>
+        )}
 
-        {intent && stage !== 'success' && (
+        {stage === 'plans' && (
+          <>
+            {catalogError && <div className={s.errorBox}>{catalogError}</div>}
+            {!catalog && !catalogError && (
+              <div className={s.loadingRow}><span className={s.spinner} /><span>Loading plans…</span></div>
+            )}
+            {catalog && (
+              <>
+                <CycleToggle cycle={cycle} onChange={setCycle} />
+                <PlanCards
+                  plans={catalog.plans}
+                  cycle={cycle}
+                  selectedPlanId={selectedPlanId}
+                  onSelect={selectPlan}
+                  ctaLabel="Start now"
+                />
+                <PricingFooter />
+              </>
+            )}
+          </>
+        )}
+
+        {stage !== 'plans' && intent && stage !== 'success' && (
           <>
             <div className={s.priceBox}>
               <span className={s.priceAmount}>{intent.amount}</span>
@@ -142,7 +199,7 @@ export function CheckoutPage() {
           </div>
         )}
 
-        {error && (
+        {error && stage !== 'plans' && (
           <div className={s.errorBox}>{error}</div>
         )}
 
@@ -167,6 +224,12 @@ export function CheckoutPage() {
 
         {stage === 'failed' && (
           <button type="button" className={s.retryBtn} onClick={retry}>Try again</button>
+        )}
+
+        {(stage === 'ready' || stage === 'failed') && (
+          <button type="button" className={s.logoutLink} onClick={backToPlans} style={{ alignSelf: 'center' }}>
+            ← Choose a different plan
+          </button>
         )}
 
         <div className={s.logoutRow}>
