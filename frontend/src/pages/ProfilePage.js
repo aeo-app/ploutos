@@ -4,9 +4,11 @@ import { useApp } from '../context/AppContext';
 import { seoApi } from '../api/seoApi';
 import { AnalyseForm } from '../components/forms/AnalyseForm';
 import { Card, Badge, SectionHeader, SkeletonCard, Empty, ErrorCard, Tag, CopyButton, CharCount } from '../components/ui/UI';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { UnlockBanner } from '../components/payment/UnlockBanner';
 import s from './DataPage.module.css';
 
-function ProfileBlock({ title, icon, text, max, platform, helper }) {
+function ProfileBlock({ title, icon, text, max, platform, helper, locked }) {
   const [expanded, setExpanded] = useState(false);
   const preview = text?.slice(0, 240);
   const needsTruncate = text?.length > 240;
@@ -16,16 +18,17 @@ function ProfileBlock({ title, icon, text, max, platform, helper }) {
       <div className={s.profileBlockHead}>
         <span style={{ fontSize: '22px' }}>{icon}</span>
         <div className={s.profileBlockTitle}>{title}</div>
-        {helper && <span style={{ fontSize: '12px', color: 'var(--c-slate-500)' }}>{helper}</span>}
-        <CharCount text={text} max={max} />
-        <CopyButton text={text || ''} />
+        {locked && <Badge variant="warning">🔒 Locked</Badge>}
+        {helper && !locked && <span style={{ fontSize: '12px', color: 'var(--c-slate-500)' }}>{helper}</span>}
+        {!locked && <CharCount text={text} max={max} />}
+        {!locked && <CopyButton text={text || ''} />}
       </div>
-      {platform && (
+      {platform && !locked && (
         <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--c-slate-500)' }}>
           📍 Paste into: <Badge variant="brand">{platform}</Badge>
         </div>
       )}
-      <div className={s.profileText}>
+      <div className={s.profileText} style={locked ? { filter: 'blur(3px)', opacity: 0.5, userSelect: 'none' } : undefined}>
         {needsTruncate && !expanded ? preview + '…' : text}
       </div>
       {needsTruncate && (
@@ -62,6 +65,7 @@ export function ProfileResultView({ data }) {
         max={2000}
         platform="LinkedIn → Edit page → Overview"
         helper="Up to 2,000 characters"
+        locked={data.locked_fields?.includes('linkedin_overview')}
       />
 
       {/* Google Business */}
@@ -72,6 +76,7 @@ export function ProfileResultView({ data }) {
         max={750}
         platform="Google Business → Edit profile → Description"
         helper="Up to 750 characters"
+        locked={data.locked_fields?.includes('google_business_description')}
       />
 
       {/* LinkedIn Specialties */}
@@ -123,11 +128,14 @@ export function ProfilePage() {
   const loading = state.loading.profile;
   const error   = state.errors.profile;
   const data    = state.results.profile || state.results.fullReport?.company_profile;
+  const [showUnlock, setShowUnlock] = useState(false);
 
   const run = async (req) => {
     try { await runApi('profile', seoApi.profile, req); toast({ type: 'success', message: '✓ Company profiles generated.' }); }
     catch (_) {}
   };
+
+  const lockedCount = data?.locked_fields?.length || 0;
 
   return (
     <div className={s.page}>
@@ -136,9 +144,20 @@ export function ProfilePage() {
       {error && !loading && <ErrorCard message={error} />}
 
       {data && !loading && <ProfileResultView data={data} />}
+      {data && !loading && lockedCount > 0 && (
+        <UnlockBanner count={lockedCount} label="section" onUnlock={() => setShowUnlock(true)} />
+      )}
 
       {!data && !loading && !error && (
         <Empty icon="📋" title="No profiles yet" body="Generate AI-written LinkedIn and Google Business descriptions for any company." />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock company profiles"
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(state.request); }}
+        />
       )}
     </div>
   );

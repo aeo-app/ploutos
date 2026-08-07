@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import './styles/globals.css';
 
 import { AppProvider, useApp }   from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { PaymentProvider, usePayment } from './context/PaymentContext';
+import { PaymentProvider } from './context/PaymentContext';
 import { AppShell }              from './components/layout/AppShell';
 import { Toasts }                from './components/ui/Toast';
-import { CheckoutPage }          from './pages/CheckoutPage';
+import { authApi } from './api/authApi';
+import { CompleteProfilePage } from './pages/auth/CompleteProfilePage';
 
 // App pages
 import { HomePage }            from './pages/HomePage';
@@ -69,6 +70,52 @@ function AppRouter() {
   );
 }
 
+function ProfileGate({ children }) {
+  const [checking, setChecking] = useState(true);
+  const [hasProfile, setHasProfile] = useState(true); // optimistic default — don't flash the gate for the common case
+  const [profile, setProfile] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    authApi.getProfile()
+      .then(data => {
+        if (cancelled) return;
+        setProfile(data);
+        setHasProfile(!!data.has_profile);
+      })
+      .catch(err => {
+        // GET /auth/profile calls Cognito's own get_user API directly on the
+        // backend (not the local JWT-decode path other endpoints use), so it
+        // does NOT respect SKIP_JWT_VERIFICATION — if Cognito isn't fully
+        // configured/reachable in this environment, this is the single most
+        // likely place prepopulation quietly breaks. Logged, not swallowed,
+        // so it's visible in devtools instead of just "nothing happens".
+        console.warn('[ProfileGate] GET /auth/profile failed — profile-based prepopulation will fall back to history only:', err?.message || err);
+        if (!cancelled) setHasProfile(true);
+      }) // fail open — a transient error shouldn't lock anyone out
+      .finally(() => { if (!cancelled) setChecking(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (checking) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--c-slate-50)' }}>
+        <div style={{ width: 28, height: 28, border: '3px solid var(--c-slate-200)', borderTopColor: 'var(--c-indigo-600)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
+      </div>
+    );
+  }
+
+  // Existing accounts that signed up before company_name/domain were
+  // required must complete this once — blocks everything else, same
+  // principle as the payment gate but for profile data instead of payment.
+  if (!hasProfile) {
+    return <CompleteProfilePage onComplete={(p) => { setProfile(p); setHasProfile(true); }} />;
+  }
+
+  return children(profile);
+}
+
 function Root() {
   const { auth } = useAuth();
 
@@ -90,45 +137,26 @@ function Root() {
     );
   }
 
-  // Authenticated → check payment status before showing the app at all
+  // Authenticated → profile completion (domain/company_name) is checked
+  // once, then straight into the app. Payment is no longer a blanket gate
+  // here — it's triggered contextually instead: either by a 402 from a
+  // still-gated endpoint (competitors/keywords/profile/domain-authority/
+  // full-report), or by clicking a locked teaser card on the content-strategy
+  // /relocation-calendar pages. PaymentProvider still wraps everything so
+  // usePayment() works wherever it's needed (Billing page, unlock modals).
   return (
-    <PaymentProvider>
-      <PaymentGate />
-    </PaymentProvider>
-  );
-}
-
-function PaymentGate() {
-  const { isPaid, checking } = usePayment();
-
-  if (checking) {
-    return (
-      <div style={{
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--c-slate-50)',
-      }}>
-        <div style={{
-          width: 28, height: 28, border: '3px solid var(--c-slate-200)',
-          borderTopColor: 'var(--c-indigo-600)', borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-        <style>{'@keyframes spin { to { transform: rotate(360deg); } }'}</style>
-      </div>
-    );
-  }
-
-  // Not paid → the entire application is inaccessible until checkout completes
-  if (!isPaid) {
-    return <CheckoutPage />;
-  }
-
-  return (
-    <AppProvider>
-      <AppShell>
-        <AppRouter />
-      </AppShell>
-      <Toasts />
-    </AppProvider>
+    <ProfileGate>
+      {(profile) => (
+        <PaymentProvider>
+          <AppProvider>
+            <AppShell profile={profile}>
+              <AppRouter />
+            </AppShell>
+            <Toasts />
+          </AppProvider>
+        </PaymentProvider>
+      )}
+    </ProfileGate>
   );
 }
 

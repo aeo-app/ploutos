@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { authApi, withTokenExpiry } from '../../api/authApi';
 import s from './Auth.module.css';
 
-function validate(name, email, password, confirmPassword) {
+function validate(name, email, password, confirmPassword, companyName, domain) {
   if (!name.trim())                    return 'Full name is required';
   if (name.trim().length < 2)          return 'Name must be at least 2 characters';
   if (!email.trim())                   return 'Email address is required';
@@ -14,6 +14,8 @@ function validate(name, email, password, confirmPassword) {
   if (!password.trim())                return 'Password is required';
   if (password.length < 8)             return 'Password must be at least 8 characters';
   if (password !== confirmPassword)    return 'Passwords do not match';
+  if (!companyName.trim())             return 'Company name is required';
+  if (!domain.trim())                  return 'Your company domain/website is required';
   return null;
 }
 
@@ -23,9 +25,13 @@ export function SignupPage() {
   const [email,           setEmail]           = useState('');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [companyName,     setCompanyName]     = useState('');
+  const [domain,          setDomain]          = useState('');
   const [error,           setError]           = useState('');
   const [loading,         setLoading]         = useState(false);
-  const [touched,         setTouched]         = useState({ name: false, email: false, password: false, confirmPassword: false });
+  const [touched,         setTouched]         = useState({
+    name: false, email: false, password: false, confirmPassword: false, companyName: false, domain: false,
+  });
 
   const nameErr = touched.name && !name.trim() ? 'Full name is required' : '';
   const emailErr = touched.email && (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
@@ -37,16 +43,21 @@ export function SignupPage() {
   const confirmPasswordErr = touched.confirmPassword && (!confirmPassword.trim() || password !== confirmPassword)
     ? (!confirmPassword.trim() ? 'Confirm password is required' : 'Passwords do not match')
     : '';
+  const companyNameErr = touched.companyName && !companyName.trim() ? 'Company name is required' : '';
+  const domainErr = touched.domain && !domain.trim() ? 'Your company domain/website is required' : '';
 
   const handleSubmit = async e => {
     e.preventDefault();
-    setTouched({ name: true, email: true, password: true, confirmPassword: true });
-    const err = validate(name, email, password, confirmPassword);
+    setTouched({ name: true, email: true, password: true, confirmPassword: true, companyName: true, domain: true });
+    const err = validate(name, email, password, confirmPassword, companyName, domain);
     if (err) { setError(err); return; }
     setError('');
     setLoading(true);
     try {
-      const data = await withTokenExpiry(authApi.signup({ full_name: name.trim(), email: email.trim(), password }), { goScreen });
+      const data = await withTokenExpiry(authApi.signup({
+        full_name: name.trim(), email: email.trim(), password,
+        company_name: companyName.trim(), domain: domain.trim(),
+      }), { goScreen });
       setPending(email.trim(), name.trim(), password);
       goScreen('signup-verify');
     } catch (e) {
@@ -106,6 +117,47 @@ export function SignupPage() {
               aria-invalid={!!nameErr}
             />
             {nameErr && <div className={s.fieldErr}>⚠ {nameErr}</div>}
+          </div>
+
+          {/* Company name */}
+          <div className={s.fieldWrap}>
+            <label className={s.fieldLabel}>
+              Company Name<span className={s.fieldRequired}>*</span>
+            </label>
+            <input
+              type="text"
+              autoComplete="organization"
+              value={companyName}
+              placeholder="Acme Relocation"
+              className={`${s.input} ${companyNameErr ? s.inputError : ''}`}
+              onChange={e => setCompanyName(e.target.value)}
+              onBlur={() => setTouched(p => ({ ...p, companyName: true }))}
+              disabled={loading}
+              aria-invalid={!!companyNameErr}
+            />
+            {companyNameErr && <div className={s.fieldErr}>⚠ {companyNameErr}</div>}
+          </div>
+
+          {/* Domain — locked to this account permanently, one domain per account */}
+          <div className={s.fieldWrap}>
+            <label className={s.fieldLabel}>
+              Company Website / Domain<span className={s.fieldRequired}>*</span>
+            </label>
+            <input
+              type="text"
+              autoComplete="url"
+              value={domain}
+              placeholder="acmerelocation.com"
+              className={`${s.input} ${domainErr ? s.inputError : ''}`}
+              onChange={e => setDomain(e.target.value)}
+              onBlur={() => setTouched(p => ({ ...p, domain: true }))}
+              disabled={loading}
+              aria-invalid={!!domainErr}
+            />
+            {domainErr && <div className={s.fieldErr}>⚠ {domainErr}</div>}
+            <div style={{ fontSize: 11.5, color: 'var(--c-slate-400)', marginTop: 4 }}>
+              One domain per account — this can't be changed later, so double-check it's right.
+            </div>
           </div>
 
           {/* Email */}

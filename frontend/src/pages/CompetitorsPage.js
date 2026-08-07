@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useApp } from '../context/AppContext';
 import { seoApi } from '../api/seoApi';
 import { AnalyseForm } from '../components/forms/AnalyseForm';
 import { Card, Badge, DataTable, ProgressBar, SectionHeader, SkeletonCard, Empty, ErrorCard, InsightCard } from '../components/ui/UI';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { UnlockBanner } from '../components/payment/UnlockBanner';
 import s from './DataPage.module.css';
 
 const DIFF_BADGE = { 'Very High': 'danger', High: 'warning', Medium: 'info', Low: 'success' };
@@ -114,11 +116,18 @@ export function CompetitorsPage() {
   const loading = state.loading.competitors;
   const error   = state.errors.competitors;
   const data    = state.results.competitors || state.results.fullReport?.competitor_analysis;
+  const [showUnlock, setShowUnlock] = useState(false);
 
   const run = async (req) => {
+    // No paid check here — the endpoint itself now returns a real partial
+    // result for unpaid users (a couple of real rows, the rest locked
+    // placeholders), rather than a flat 402. See services.bedrock_service's
+    // free-preview row limits.
     try { await runApi('competitors', seoApi.competitors, req); toast({ type: 'success', message: '✓ Competitor analysis complete.' }); }
     catch (_) {}
   };
+
+  const lockedCount = data ? (data.competitor_overview || []).filter(r => r.locked).length : 0;
 
   return (
     <div className={s.page}>
@@ -128,9 +137,20 @@ export function CompetitorsPage() {
       {error && !loading && <ErrorCard message={error} />}
 
       {data && !loading && <CompetitorsResultView data={data} />}
+      {data && !loading && lockedCount > 0 && (
+        <UnlockBanner count={lockedCount} label="competitor row" onUnlock={() => setShowUnlock(true)} />
+      )}
 
       {!data && !loading && !error && (
         <Empty icon="⚔" title="No competitor analysis yet" body="Fill in the company details above and click Analyse Competitors to generate a full competitive intelligence report." />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock competitor analysis"
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(state.request); }}
+        />
       )}
     </div>
   );

@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useApp } from '../context/AppContext';
 import { seoApi } from '../api/seoApi';
 import { AnalyseForm } from '../components/forms/AnalyseForm';
 import { Card, Badge, DataTable, ProgressBar, SectionHeader, SkeletonCard, Empty, ErrorCard, InsightCard, StatTile } from '../components/ui/UI';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { UnlockBanner } from '../components/payment/UnlockBanner';
 import s from './DataPage.module.css';
 
 const DIFF_BADGE = { Easy: 'success', Medium: 'warning', Hard: 'danger' };
@@ -123,11 +125,17 @@ export function DomainAuthorityPage() {
   const loading = state.loading.domainAuthority;
   const error   = state.errors.domainAuthority;
   const data    = state.results.domainAuthority || state.results.fullReport?.domain_authority_strategy;
+  const [showUnlock, setShowUnlock] = useState(false);
 
   const run = async (req) => {
     try { await runApi('domainAuthority', seoApi.domainAuthority, req); toast({ type: 'success', message: '✓ DA strategy generated.' }); }
     catch (_) {}
   };
+
+  const lockedCount = data
+    ? [...(data.gap_analysis || []), ...(data.backlink_opportunities || []), ...(data.top_5_priority_actions || [])]
+        .filter(r => r.locked).length
+    : 0;
 
   return (
     <div className={s.page}>
@@ -136,9 +144,20 @@ export function DomainAuthorityPage() {
       {error && !loading && <ErrorCard message={error} />}
 
       {data && !loading && <DomainAuthorityResultView data={data} />}
+      {data && !loading && lockedCount > 0 && (
+        <UnlockBanner count={lockedCount} label="insight" onUnlock={() => setShowUnlock(true)} />
+      )}
 
       {!data && !loading && !error && (
         <Empty icon="📈" title="No DA strategy yet" body="Run an analysis to get a full domain authority growth plan with backlink opportunities and a 12-month roadmap." />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock domain authority strategy"
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(state.request); }}
+        />
       )}
     </div>
   );

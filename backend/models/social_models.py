@@ -143,10 +143,26 @@ CONTENT_DISCLAIMER = (
 )
 
 
+class DayScheduleSlot(BaseModel):
+    """
+    One day's slot in the response. Unpaid users get exactly ONE real day
+    fully generated (token cost incurred) — every other day they asked for
+    comes back `locked=True` with no `schedule` at all (zero Bedrock cost).
+    Paid users get every day unlocked. See
+    services.social_service.generate_relocation_calendar for where this is
+    decided — always checked server-side via db.dynamo.is_user_paid.
+    """
+    date: str
+    day_of_week: str
+    locked: bool
+    schedule: Optional[DailySchedule] = None
+    preview_text: Optional[str] = None  # shown only when locked
+
+
 class RelocationSocialResponse(BaseModel):
     country: str
     company: CompanyDetails
     period_label: str            # e.g. "Sep 1 - Sep 14, 2026"
     content_disclaimer: str = CONTENT_DISCLAIMER
-    days: list[DailySchedule]
+    days: list[DayScheduleSlot]
     failed_dates: dict[str, str] = {}   # ISO date -> error message, for partial failures

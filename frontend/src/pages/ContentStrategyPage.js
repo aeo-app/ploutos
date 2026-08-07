@@ -6,6 +6,9 @@ import { seoApi } from '../api/seoApi';
 import { withTokenExpiry } from '../api/authApi';
 import { Card, Badge, SectionHeader, Empty, ErrorCard, InsightCard, CopyButton } from '../components/ui/UI';
 import { Button } from '../components/ui/Button';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { LockedTeaser } from '../components/payment/LockedTeaser';
+import { historyApi } from '../api/historyApi';
 import s from './ContentStrategyPage.module.css';
 import ds from './DataPage.module.css';
 
@@ -14,11 +17,11 @@ const MAX_TOTAL = 8;
 
 const STATUS_LABEL = {
   pending: 'Queued', analyzing: 'Analysing competitors', backlinks: 'Building backlink plan',
-  writing: 'Writing content', ready: 'Ready', error: 'Failed',
+  writing: 'Writing content', ready: 'Ready', error: 'Failed', locked: 'Locked',
 };
 const STATUS_CLASS = {
   pending: s.statusPending, analyzing: s.statusAnalyzing, backlinks: s.statusAnalyzing,
-  writing: s.statusWriting, ready: s.statusReady, error: s.statusError,
+  writing: s.statusWriting, ready: s.statusReady, error: s.statusError, locked: s.statusPending,
 };
 const TIER_VARIANT = { high: 'success', medium: 'info', foundational: 'default' };
 
@@ -182,7 +185,7 @@ function SuggestedKeywords({ used, onPick }) {
 }
 
 /* ── One keyword's progress card ─────────────────────────────────────── */
-export function KeywordCard({ kw, progress, index }) {
+export function KeywordCard({ kw, progress, index, onUnlock }) {
   const p = progress || { status: 'pending' };
   const bdd = p.backlinkDeepDive || p.report?.backlink_deep_dive;
 
@@ -193,11 +196,18 @@ export function KeywordCard({ kw, progress, index }) {
           <span className={s.kwTitle}>{kw}</span>
           <span className={`${s.statusBadge} ${STATUS_CLASS[p.status]}`}>
             {['analyzing', 'backlinks', 'writing'].includes(p.status) && <span className={s.statusDot} />}
+            {p.status === 'locked' && '🔒 '}
             {STATUS_LABEL[p.status]}
           </span>
         </div>
 
-        {(p.status !== 'pending') && (
+        {p.status === 'locked' && (
+          <div className={s.kwBody}>
+            <LockedTeaser previewText={p.previewText} onUnlock={() => onUnlock?.(kw)} />
+          </div>
+        )}
+
+        {(p.status !== 'pending' && p.status !== 'locked') && (
           <div className={s.kwBody}>
             {p.analysis && (
               <>
@@ -414,21 +424,25 @@ export function ContentStrategyResultView({ result }) {
       </Card>
 
       <div className={s.kwGrid}>
-        {reports.map((kr, i) => (
+        {reports.map((slot, i) => (
           <KeywordCard
-            key={kr.keyword}
-            kw={kr.keyword}
+            key={slot.keyword}
+            kw={slot.keyword}
             index={i}
-            progress={{
+            onUnlock={() => {}} // read-only history snapshot — re-run the analysis with an active plan to unlock fresh
+            progress={slot.locked ? {
+              status: 'locked',
+              previewText: slot.preview_text,
+            } : {
               status: 'ready',
               analysis: {
-                top_competitors: kr.top_competitors,
-                content_strategy_analysis: kr.content_strategy_analysis,
-                seo_factor_analysis: kr.seo_factor_analysis,
-                ranking_explanation: kr.ranking_explanation,
+                top_competitors: slot.report.top_competitors,
+                content_strategy_analysis: slot.report.content_strategy_analysis,
+                seo_factor_analysis: slot.report.seo_factor_analysis,
+                ranking_explanation: slot.report.ranking_explanation,
               },
-              backlinkDeepDive: kr.backlink_deep_dive,
-              report: kr,
+              backlinkDeepDive: slot.report.backlink_deep_dive,
+              report: slot.report,
             }}
           />
         ))}
@@ -500,6 +514,7 @@ export function ContentStrategyPage() {
   const [repeatedPlatforms, setRepeatedPlatforms] = useState([]);
   const [streaming, setStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
+  const [showUnlock, setShowUnlock] = useState(false);
   const abortRef = useRef(null);
 
   const loading = state.loading.contentStrategy || streaming;
@@ -507,6 +522,28 @@ export function ContentStrategyPage() {
   const totalKeywords = primary.length + additional.length;
 
   useEffect(() => () => abortRef.current?.abort(), []); // cancel stream on unmount
+
+  useEffect(() => {
+    if (primary.length > 0 || additional.length > 0) return; // already filled this session
+    historyApi.list({ analysisType: 'content_strategy', limit: 1 })
+      .then(data => {
+        const latest = data?.items?.[0];
+        if (!latest) return;
+        return historyApi.getOne(latest.analysis_id);
+      })
+      .then(full => {
+        const savedReq = full?.request;
+        if (!savedReq) return;
+        if (Array.isArray(savedReq.primary_keywords) && savedReq.primary_keywords.length) {
+          setPrimary(savedReq.primary_keywords);
+        }
+        if (Array.isArray(savedReq.additional_keywords) && savedReq.additional_keywords.length) {
+          setAdditional(savedReq.additional_keywords);
+        }
+      })
+      .catch(err => console.warn('[ContentStrategyPage] history prepopulation failed:', err?.message || err));
+    // eslint-disable-next-line
+  }, []);
 
   const patchProgress = useCallback((kw, patch) => {
     setProgress(prev => ({ ...prev, [kw]: { ...prev[kw], ...patch } }));
@@ -536,6 +573,10 @@ export function ContentStrategyPage() {
         break;
       case 'keyword_report':
         patchProgress(data.keyword, { status: 'ready', report: data.report });
+        break;
+      case 'keyword_locked':
+        // Zero-cost teaser slot — no Bedrock call was made for this keyword.
+        patchProgress(data.keyword, { status: 'locked', previewText: data.slot?.preview_text });
         break;
       case 'keyword_error':
         patchProgress(data.keyword, { status: 'error', error: data.error });
@@ -596,8 +637,11 @@ export function ContentStrategyPage() {
       toast({ type: 'success', message: '✓ Content strategy generated.' });
     } catch (e) {
       if (e?.name !== 'AbortError' && e?.code !== 'TokenExpired') {
-        setStreamError(e.message || 'Request failed.');
-        toast({ type: 'error', message: e.message || 'Request failed.' });
+        const msg = e?.code === 'DomainMismatch'
+          ? e.message
+          : (e.message || 'Request failed.');
+        setStreamError(msg);
+        toast({ type: 'error', message: msg });
       }
     } finally {
       setStreaming(false);
@@ -609,6 +653,7 @@ export function ContentStrategyPage() {
 
   const readyCount = Object.values(progress).filter(p => p.status === 'ready').length;
   const errorCount = Object.values(progress).filter(p => p.status === 'error').length;
+  const lockedCount = Object.values(progress).filter(p => p.status === 'locked').length;
   const hasStarted = order.length > 0;
 
   return (
@@ -692,12 +737,17 @@ export function ContentStrategyPage() {
               <Badge variant={errorCount ? 'warning' : 'brand'}>
                 {readyCount}/{order.length} keyword{order.length !== 1 ? 's' : ''} ready
               </Badge>
+              {lockedCount > 0 && (
+                <Badge variant="warning">🔒 {lockedCount} locked — upgrade to unlock</Badge>
+              )}
               {errorCount > 0 && <span className={s.progressCount}>{errorCount} failed — others continued</span>}
             </div>
           </Card>
 
           <div className={s.kwGrid}>
-            {order.map((kw, i) => <KeywordCard key={kw} kw={kw} progress={progress[kw]} index={i} />)}
+            {order.map((kw, i) => (
+              <KeywordCard key={kw} kw={kw} progress={progress[kw]} index={i} onUnlock={() => setShowUnlock(true)} />
+            ))}
           </div>
 
           <AnimatePresence>
@@ -760,11 +810,28 @@ export function ContentStrategyPage() {
 
       {streamError && !hasStarted && <ErrorCard message={streamError} />}
 
-      {!hasStarted && !loading && !streamError && (
+      {/* No live run this session, but a previous result was rehydrated from
+          history on load (see AppShell) — show it as-is rather than "no
+          content strategy yet", so refreshing the page doesn't lose what
+          was already generated. */}
+      {!hasStarted && !loading && !streamError && state.results.contentStrategy && (
+        <ContentStrategyResultView result={state.results.contentStrategy} />
+      )}
+
+      {!hasStarted && !loading && !streamError && !state.results.contentStrategy && (
         <Empty
           icon="✍️"
           title="No content strategy yet"
           body="Add up to 5 primary keywords above and generate competitor-informed, SEO-optimised content for each — streamed in as it's written."
+        />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock every keyword"
+          subtitle="Your free preview covers one keyword. Choose a plan to unlock the rest instantly."
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(); }}
         />
       )}
     </div>

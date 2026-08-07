@@ -2,7 +2,7 @@
 routers/auth_router.py — Cognito authentication endpoints
 ==========================================================
 
-POST /api/v1/auth/signup              Sign up with email + password → sends OTP
+POST /api/v1/auth/signup              Sign up with email + password + company_name + domain → sends OTP
 POST /api/v1/auth/verify              Confirm email with 6-digit OTP
 POST /api/v1/auth/resend-code         Resend OTP
 POST /api/v1/auth/login               Email + password → access_token + refresh_token
@@ -10,6 +10,8 @@ POST /api/v1/auth/refresh             Refresh access token without password
 POST /api/v1/auth/forgot-password     Send password reset code to email
 POST /api/v1/auth/reset-password      Confirm new password with reset code
 GET  /api/v1/auth/me                  Get current user (Bearer token required)
+GET  /api/v1/auth/profile             Get company_name/domain + whether profile is complete
+POST /api/v1/auth/profile             Set company_name/domain (existing users who signed up before this existed)
 """
 import logging
 
@@ -20,10 +22,12 @@ from models.auth_models import (
     ForgotPasswordRequest,
     LoginRequest,
     MessageResponse,
+    ProfileResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
     ResendCodeRequest,
     ResendCodeResponse,
+    SetProfileRequest,
     SignUpRequest,
     SignUpResponse,
     TokenResponse,
@@ -41,7 +45,9 @@ from services.cognito_service import (
     refresh_tokens,
     resend_confirmation_code,
     sign_up,
+    update_user_profile,
 )
+from db.dynamo import check_and_lock_domain, DomainMismatchError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
@@ -87,13 +93,31 @@ async def signup(req: SignUpRequest):
     Password policy (configurable in User Pool):
     - Minimum 8 characters
     - At least one uppercase, lowercase, digit, and special character
+
+    **company_name** and **domain** are required and permanently locked to
+    this account — every analysis endpoint validates its `url` against this
+    domain (see db.dynamo.check_and_lock_domain). One domain per account.
     """
     try:
-        return SignUpResponse(**sign_up(req.email, req.password, req.full_name))
+        result = sign_up(req.email, req.password, req.full_name, req.company_name, req.domain)
     except CognitoError as e:
         raise _err(e)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+    # Lock the domain immediately (not waiting for the first analysis call) —
+    # user_sub is the Cognito user's permanent, stable identifier, same one
+    # used as user_id everywhere else once they're logged in.
+    try:
+        check_and_lock_domain(result["user_sub"], req.domain, req.company_name)
+    except DomainMismatchError:
+        pass  # first signup for this sub — can't collide with itself
+    except Exception as e:
+        logger.error(f"[auth] failed to pre-lock domain at signup for {result['user_sub']}: {e}", exc_info=True)
+        # Non-fatal — check_and_lock_domain will simply run again (and lock
+        # correctly) on this user's first real analysis call instead.
+
+    return SignUpResponse(**result)
 
 
 # ── POST /verify ───────────────────────────────────────────────────────────────
@@ -265,3 +289,85 @@ async def get_me(request: Request):
         raise _err(e)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+
+def _bearer_token(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization: Bearer <access_token> header required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = auth.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Empty Bearer token")
+    return token
+
+
+# ── GET /profile ─────────────────────────────────────────────────────────────
+@router.get(
+    "/profile",
+    response_model=ProfileResponse,
+    summary="Get company_name/domain, and whether the user must complete their profile",
+)
+async def get_profile(request: Request):
+    """
+    `has_profile=False` means this account signed up before company_name/
+    domain were required (or something went wrong at signup) — the frontend
+    should block everything except this profile-completion step until
+    **POST /profile** is called successfully.
+    """
+    token = _bearer_token(request)
+    try:
+        user = get_user(token)
+    except CognitoError as e:
+        raise _err(e)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    company_name = user.get("custom:company_name") or None
+    domain = user.get("custom:domain") or None
+    return ProfileResponse(company_name=company_name, domain=domain, has_profile=bool(domain))
+
+
+# ── POST /profile ────────────────────────────────────────────────────────────
+@router.post(
+    "/profile",
+    response_model=ProfileResponse,
+    summary="Set company_name/domain — for existing users completing their profile once",
+)
+async def set_profile(req: SetProfileRequest, request: Request):
+    """
+    One-time completion step for accounts that signed up before company_name/
+    domain existed. Sets both as Cognito custom attributes AND locks the
+    domain in the one-to-one user<->domain mapping (db.dynamo) in the same
+    call — a domain already locked to this account (or attempted domain
+    already used and mismatched) is rejected with 403, same as any other
+    analysis endpoint.
+    """
+    token = _bearer_token(request)
+    try:
+        user = get_user(token)
+    except CognitoError as e:
+        raise _err(e)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    user_id = user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Could not resolve user identity from token")
+
+    try:
+        check_and_lock_domain(user_id, req.domain, req.company_name)
+    except DomainMismatchError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+    try:
+        update_user_profile(token, req.company_name, req.domain)
+    except CognitoError as e:
+        raise _err(e)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    return ProfileResponse(company_name=req.company_name, domain=req.domain, has_profile=True)

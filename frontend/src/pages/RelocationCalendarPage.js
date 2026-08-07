@@ -6,6 +6,9 @@ import { socialApi } from '../api/socialApi';
 import { withTokenExpiry } from '../api/authApi';
 import { Card, Badge, SectionHeader, Empty, ErrorCard, CopyButton } from '../components/ui/UI';
 import { Button } from '../components/ui/Button';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { LockedTeaser } from '../components/payment/LockedTeaser';
+import { historyApi } from '../api/historyApi';
 import s from './RelocationCalendarPage.module.css';
 
 const PLATFORMS = [
@@ -92,21 +95,33 @@ function PostCard({ post }) {
 }
 
 /* ── One day's card (collapsible) ────────────────────────────────────── */
-export function DayCard({ day, index, defaultOpen }) {
+export function DayCard({ day, index, defaultOpen, onUnlock }) {
   const [open, setOpen] = useState(!!defaultOpen);
-  const rt = day.recommended_times;
+  const schedule = day.schedule; // DayScheduleSlot wraps the real DailySchedule here — null if locked
+  const rt = schedule?.recommended_times;
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * 0.02, 0.4) }}>
       <div className={s.dayCard}>
-        <div className={s.dayHead} onClick={() => setOpen(o => !o)}>
+        <div className={s.dayHead} onClick={() => !day.locked && setOpen(o => !o)}>
           <div className={s.dayTitle}>
             <span className={s.dayDate}>{day.date}</span>
             <span className={s.dayWeekday}>{day.day_of_week}</span>
           </div>
-          <span className={s.dayToggle}>{open ? '▲ Hide' : '▼ Show 2 posts'}</span>
+          {day.locked ? (
+            <span className={s.dayToggle}>🔒 Locked</span>
+          ) : (
+            <span className={s.dayToggle}>{open ? '▲ Hide' : '▼ Show 2 posts'}</span>
+          )}
         </div>
-        {open && (
+
+        {day.locked && (
+          <div className={s.dayBody}>
+            <LockedTeaser previewText={day.preview_text} onUnlock={() => onUnlock?.(day.date)} />
+          </div>
+        )}
+
+        {!day.locked && open && (
           <>
             <div className={s.dayTimesRow}>
               <span className={s.dayTimeChip}>IG: {rt.instagram.join(' / ')}</span>
@@ -115,7 +130,7 @@ export function DayCard({ day, index, defaultOpen }) {
               <span className={s.dayTimeChip}>GBP: {rt.google_business}</span>
             </div>
             <div className={s.dayBody}>
-              {day.posts.map((post, i) => <PostCard key={i} post={post} />)}
+              {schedule.posts.map((post, i) => <PostCard key={i} post={post} />)}
             </div>
           </>
         )}
@@ -150,7 +165,9 @@ export function RelocationCalendarResultView({ result }) {
         </div>
       )}
 
-      {days.map((day, i) => <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} />)}
+      {days.map((day, i) => (
+        <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => {}} />
+      ))}
     </div>
   );
 }
@@ -167,6 +184,28 @@ export function RelocationCalendarPage() {
   });
   const updateCompany = (field, value) => setCompany(c => ({ ...c, [field]: value }));
 
+  const prepopulatedRef = useRef(false);
+
+  useEffect(() => {
+    if (prepopulatedRef.current) return;
+    prepopulatedRef.current = true;
+    historyApi.list({ analysisType: 'relocation_social_calendar', limit: 1 })
+      .then(data => {
+        const latest = data?.items?.[0];
+        if (!latest) return;
+        return historyApi.getOne(latest.analysis_id);
+      })
+      .then(full => {
+        const savedReq = full?.request;
+        if (!savedReq) return;
+        if (savedReq.country) setCountry(savedReq.country);
+        if (savedReq.company) {
+          setCompany(c => ({ ...c, ...savedReq.company }));
+        }
+      })
+      .catch(err => console.warn('[RelocationCalendarPage] history prepopulation failed:', err?.message || err));
+  }, []);
+
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const twoWeeksOut = new Date(); twoWeeksOut.setDate(twoWeeksOut.getDate() + 14);
   const [startDate, setStartDate] = useState(toISODate(tomorrow));
@@ -179,6 +218,7 @@ export function RelocationCalendarPage() {
   const [disclaimer, setDisclaimer] = useState(null);
   const [streaming, setStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
+  const [showUnlock, setShowUnlock] = useState(false);
   const abortRef = useRef(null);
 
   const loading = state.loading.relocationCalendar || streaming;
@@ -192,7 +232,17 @@ export function RelocationCalendarPage() {
         setTotalDays(data.total_days);
         break;
       case 'day_ready':
-        setDays(prev => [...prev, data].sort((a, b) => a.date.localeCompare(b.date)));
+        // The backend emits the raw DailySchedule here (not wrapped in a
+        // slot, unlike day_locked) — wrap it locally so DayCard can treat
+        // every day uniformly as { date, day_of_week, locked, schedule }.
+        setDays(prev => [
+          ...prev,
+          { date: data.date, day_of_week: data.day_of_week, locked: false, schedule: data },
+        ].sort((a, b) => a.date.localeCompare(b.date)));
+        break;
+      case 'day_locked':
+        // Zero-cost teaser slot — no Bedrock call was made for this day.
+        setDays(prev => [...prev, data.slot].sort((a, b) => a.date.localeCompare(b.date)));
         break;
       case 'day_error':
         setFailedDates(prev => ({ ...prev, [data.date]: data.error }));
@@ -252,8 +302,9 @@ export function RelocationCalendarPage() {
       toast({ type: 'success', message: '✓ Content calendar generated.' });
     } catch (e) {
       if (e?.name !== 'AbortError' && e?.code !== 'TokenExpired') {
-        setStreamError(e.message || 'Request failed.');
-        toast({ type: 'error', message: e.message || 'Request failed.' });
+        const msg = e?.code === 'DomainMismatch' ? e.message : (e.message || 'Request failed.');
+        setStreamError(msg);
+        toast({ type: 'error', message: msg });
       }
     } finally {
       setStreaming(false);
@@ -265,6 +316,7 @@ export function RelocationCalendarPage() {
 
   const hasStarted = totalDays > 0;
   const errorCount = Object.keys(failedDates).length;
+  const lockedCount = days.filter(d => d.locked).length;
   const progressPct = totalDays ? Math.round((days.length / totalDays) * 100) : 0;
 
   return (
@@ -329,6 +381,7 @@ export function RelocationCalendarPage() {
               <Badge variant={errorCount ? 'warning' : 'brand'}>{periodLabel}</Badge>
               <div className={s.progressBarWrap}><div className={s.progressBarFill} style={{ width: `${progressPct}%` }} /></div>
               <span className={s.progressCount}>{days.length}/{totalDays} days</span>
+              {lockedCount > 0 && <Badge variant="warning">🔒 {lockedCount} locked — upgrade to unlock</Badge>}
               {errorCount > 0 && <span className={s.progressCount}>{errorCount} failed</span>}
             </div>
           </Card>
@@ -343,17 +396,36 @@ export function RelocationCalendarPage() {
             )}
           </AnimatePresence>
 
-          {days.map((day, i) => <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} />)}
+          {days.map((day, i) => (
+            <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} />
+          ))}
         </motion.div>
       )}
 
       {streamError && !hasStarted && <ErrorCard message={streamError} />}
 
-      {!hasStarted && !loading && !streamError && (
+      {/* No live run this session, but a previous result was rehydrated from
+          history on load (see AppShell) — show it as-is rather than "no
+          calendar generated yet", so refreshing doesn't lose what was
+          already generated. */}
+      {!hasStarted && !loading && !streamError && state.results.relocationCalendar && (
+        <RelocationCalendarResultView result={state.results.relocationCalendar} />
+      )}
+
+      {!hasStarted && !loading && !streamError && !state.results.relocationCalendar && (
         <Empty
           icon="📅"
           title="No calendar generated yet"
           body="Enter a destination country and a date range above and generate relocation content — streamed in day by day."
+        />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock every day"
+          subtitle="Your free preview covers one day. Choose a plan to unlock the full calendar instantly."
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(); }}
         />
       )}
     </div>

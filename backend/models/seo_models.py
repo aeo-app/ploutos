@@ -22,6 +22,7 @@ class CompetitorOverview(BaseModel):
     focus: str
     scale: str
     accreditation: str
+    locked: bool = False  # True for zero-cost placeholder rows shown to unpaid users
 
 
 # ── SEO Visibility ─────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ class SEOVisibility(BaseModel):
     domain_authority_estimate: int
     has_blog: bool
     google_rating: float
+    locked: bool = False
 
 
 # ── Keyword Ranking ────────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ class KeywordRanking(BaseModel):
     crown_rank: str
     allied_rank: str
     asiatic_rank: str
+    locked: bool = False
 
 
 # ── Competitor Score ───────────────────────────────────────────────────────────
@@ -54,6 +57,7 @@ class CompetitorScore(BaseModel):
     score: int = Field(..., ge=0, le=100)
     key_strengths: str
     key_weaknesses: str
+    locked: bool = False
 
 
 # ── SEO Insight ────────────────────────────────────────────────────────────────
@@ -61,6 +65,7 @@ class CompetitorScore(BaseModel):
 class SEOInsight(BaseModel):
     insight: str
     detail: str
+    locked: bool = False
 
 
 # ── Full Competitor Analysis Response ─────────────────────────────────────────
@@ -84,6 +89,7 @@ class KeywordVolumeEntry(BaseModel):
     competition: str
     intent: str
     apac_estimated_position: str
+    locked: bool = False
 
 
 class KeywordVolumeResponse(BaseModel):
@@ -105,6 +111,11 @@ class CompanyProfile(BaseModel):
     google_business_description: str
     linkedin_specialties: list[str]
     google_business_categories: list[str]
+    # Names of fields that are placeholder-only for unpaid users (e.g.
+    # ["linkedin_overview", "google_business_description"]) — those specific
+    # fields hold static filler text, not Bedrock output, and Bedrock was
+    # never asked to generate them for this request. Empty for paid users.
+    locked_fields: list[str] = []
 
 
 # ── Domain Authority Strategy ──────────────────────────────────────────────────
@@ -115,6 +126,7 @@ class DomainAuthorityGap(BaseModel):
     six_month_target: str
     twelve_month_target: str
     benchmark: str
+    locked: bool = False
 
 
 class BacklinkOpportunity(BaseModel):
@@ -124,6 +136,7 @@ class BacklinkOpportunity(BaseModel):
     estimated_da: str
     difficulty: str
     estimated_monthly_links: Optional[str] = None
+    locked: bool = False
 
 
 class DomainAuthorityResponse(BaseModel):
@@ -280,6 +293,23 @@ METHODOLOGY_DISCLAIMER = (
 )
 
 
+class KeywordReportSlot(BaseModel):
+    """
+    One keyword's slot in the response. Unpaid users get exactly ONE real,
+    fully-generated `report` (token cost incurred) — every other keyword
+    they asked for comes back `locked=True` with no `report` at all (zero
+    Bedrock cost: no analysis, backlink, or content calls were made for it).
+    Paid users get every keyword unlocked. See
+    services.bedrock_service.generate_content_strategy for where this is
+    decided — never trust a client to say "I'm paid," always check
+    db.dynamo.is_user_paid server-side.
+    """
+    keyword: str
+    locked: bool
+    report: Optional[KeywordContentReport] = None
+    preview_text: Optional[str] = None  # shown only when locked — a teaser line, not real content
+
+
 class ContentStrategyResponse(BaseModel):
     company: str
     url: str
@@ -287,10 +317,10 @@ class ContentStrategyResponse(BaseModel):
     industry: str
     methodology_disclaimer: str = METHODOLOGY_DISCLAIMER
     keywords_analyzed: list[str]
-    keyword_reports: list[KeywordContentReport]
-    executive_summary: list[SEOInsight]
-    # Both computed deterministically in Python from keyword_reports below —
-    # not separate model calls. See _compute_backlink_directory in
+    keyword_reports: list[KeywordReportSlot]
+    executive_summary: list[SEOInsight]   # computed only from unlocked reports
+    # Both computed deterministically in Python from the UNLOCKED keyword_reports
+    # only — not separate model calls. See _compute_backlink_directory in
     # bedrock_service.py.
     backlink_target_directory: list[PlatformLink] = []       # flat, deduped "websites to target"
     repeated_high_value_platforms: list[RepeatedPlatform] = []  # appear across 2+ keywords

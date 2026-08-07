@@ -1,7 +1,7 @@
 import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
-// export const BASE = "https://api.aeo-app.ai/api/v1";
-export const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
+export const BASE = "https://api.aeo-app.ai/api/v1";
+// export const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
 
 // 🔹 Check Token & User Validity (forcefully redirect to login if missing)
 // Exported so every other API module (socialApi.js, etc.) reuses THIS exact
@@ -56,6 +56,20 @@ async function post(path, body) {
       throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
     }
 
+    // 402 Payment Required — FastAPI's HTTPException(402, ...) returns just
+    // {"detail": "..."}, no "code" field, so without this explicit check
+    // every 402 would fall through to the generic "ServerError" branch below
+    // and callers couldn't tell "you need to pay" apart from "something broke".
+    if (res.status === 402) {
+      throw new ApiError("PaymentRequired", data?.detail || "Payment required to access this feature.");
+    }
+
+    // 403 here specifically means the one-to-one user<->domain lock rejected
+    // a different domain — distinct from a generic permissions error.
+    if (res.status === 403) {
+      throw new ApiError("DomainMismatch", data?.detail || "This account is linked to a different domain.");
+    }
+
     if (!res.ok) {
       const errorCode = data?.code || data?.error_code || "ServerError";
       const errorMessage = data?.detail || data?.message || `Request failed (${res.status})`;
@@ -108,6 +122,14 @@ export const seoApi = {
       localStorage.removeItem("access_token");
       localStorage.removeItem("user_id");
       throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
+    }
+    if (res.status === 402) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError("PaymentRequired", data?.detail || "Payment required to access this feature.");
+    }
+    if (res.status === 403) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError("DomainMismatch", data?.detail || "This account is linked to a different domain.");
     }
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));

@@ -51,7 +51,7 @@ PAYMENT_CURRENCY = os.getenv("PAYMENT_CURRENCY", "USD")
 PLANS: dict[str, dict] = {
     "starter": {
         "name": "Starter",
-        "amount": os.getenv("PLAN_STARTER_PRICE", "50.00"),
+        "amount": os.getenv("PLAN_STARTER_PRICE", "29.00"),
         "blurb": "For founders putting AI search on the map.",
         "prompts": "10",
         "highlight": False,
@@ -70,7 +70,7 @@ PLANS: dict[str, dict] = {
         "name": "Growth",
         # Kept in sync with the marketing landing page's Pricing section
         # ("Simple pricing, priced by prompts") — was 79.00, mismatched.
-        "amount": os.getenv("PLAN_GROWTH_PRICE", "150.00"),
+        "amount": os.getenv("PLAN_GROWTH_PRICE", "99.00"),
         "blurb": "For marketing teams shipping content weekly.",
         "prompts": "50",
         "highlight": True,
@@ -89,7 +89,7 @@ PLANS: dict[str, dict] = {
     "scale": {
         "name": "Scale",
         # Kept in sync with the marketing landing page — was 199.00, mismatched.
-        "amount": os.getenv("PLAN_SCALE_PRICE", "500.00"),
+        "amount": os.getenv("PLAN_SCALE_PRICE", "179.00"),
         "blurb": "For agencies and multi-brand portfolios.",
         "prompts": "100",
         "highlight": False,

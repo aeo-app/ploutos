@@ -77,6 +77,43 @@ resource "aws_cognito_user_pool" "main" {
         }
   }
 
+  # Custom attributes captured at signup (or via profile completion for
+  # existing users who signed up before this existed) — the source of truth
+  # for "which domain/company does this account belong to", used to
+  # prepopulate every analysis form and enforce the one-to-one user<->domain
+  # mapping (see db.dynamo.check_and_lock_domain, which validates against
+  # whatever ends up here).
+  #
+  # IMPORTANT: Cognito custom attribute schemas are immutable once a User
+  # Pool is created — adding these `schema` blocks via `terraform apply`
+  # against an ALREADY-DEPLOYED pool will fail (Cognito rejects schema
+  # changes to existing pools). For an existing production pool, either
+  # (a) provision a new pool with this schema and migrate users, or
+  # (b) fall back to storing company_name/domain in DynamoDB only (already
+  # implemented — see db.dynamo's domain-lock functions) without the Cognito
+  # attributes. This schema is here for fresh deployments.
+  schema {
+    name                = "company_name"
+    attribute_data_type = "String"
+    developer_only_attribute = false
+    mutable             = true
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 200
+    }
+  }
+
+  schema {
+    name                = "domain"
+    attribute_data_type = "String"
+    developer_only_attribute = false
+    mutable             = true
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 253
+    }
+  }
+
   # Token lifetimes
   user_pool_add_ons {
     advanced_security_mode = "ENFORCED"
@@ -115,6 +152,13 @@ resource "aws_cognito_user_pool_client" "api" {
 
   # Prevent user existence errors from leaking
   prevent_user_existence_errors = "ENABLED"
+
+  # Explicit about exactly what this client can read/write (otherwise Cognito
+  # defaults to "all schema attributes", which works but is less clear about
+  # intent) — must list the new custom:company_name/custom:domain attributes
+  # here too, or AdminUpdateUserAttributes/GetUser calls for them will fail.
+  read_attributes  = ["email", "name", "custom:company_name", "custom:domain"]
+  write_attributes = ["email", "name", "custom:company_name", "custom:domain"]
 }
 
 # ── Outputs ───────────────────────────────────────────────────────────────────

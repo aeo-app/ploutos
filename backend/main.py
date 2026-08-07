@@ -67,7 +67,7 @@ All SEO and history endpoints require a valid Cognito access token.
 5. POST /api/v1/auth/refresh     → renew access_token without password
 ```
 
-## SEO Analysis (requires auth + payment)
+## SEO Analysis (requires auth — free-preview partial results for unpaid users)
 ```
 POST /api/v1/seo/competitors
 POST /api/v1/seo/keywords
@@ -77,27 +77,33 @@ POST /api/v1/seo/full-report
 POST /api/v1/seo/content-strategy   — keyword → competitor → content strategy generator
 POST /api/v1/seo/content-strategy/stream — same, streamed via SSE
 ```
+None of these require payment to call. Unpaid users get a real but partial
+result — a couple of real rows per table (or, for content-strategy, one
+fully-generated keyword), with the rest returned as zero-Bedrock-cost locked
+placeholder rows/items (`locked: true`) padded back up to the normal display
+count. Paid users get every row/item unlocked. See services/bedrock_service.py's
+free-preview row limits and services/social_service.py's day limits.
 
-## Social Media Content (requires auth + payment)
+## Social Media Content (requires auth — same free-preview behaviour)
 ```
 POST /api/v1/social/relocation-calendar         — relocation content calendar for a date range (blocking)
 POST /api/v1/social/relocation-calendar/stream  — same, streamed via SSE (day-by-day)
 ```
 
-## Payments (Airwallex) — gates every endpoint above except auth
+## Payments (Airwallex) — triggered contextually, never as a blanket gate
 ```
-GET  /api/v1/payment/plans          — requires auth only; the plan catalog (Starter/Growth/Scale)
-POST /api/v1/payment/create-intent  — requires auth only; {"plan_id": ...} creates a PaymentIntent
-GET  /api/v1/payment/status         — requires auth only; current entitlement (+ optional live poll)
-GET  /api/v1/payment/history        — requires auth only; past transactions
+GET  /api/v1/payment/plans          — the plan catalog (Starter/Growth/Scale)
+POST /api/v1/payment/create-intent  — {"plan_id": ...} creates a PaymentIntent
+GET  /api/v1/payment/status         — current entitlement (+ optional live poll)
+GET  /api/v1/payment/history        — past transactions
 POST /api/v1/payment/webhook        — no auth; verified via Airwallex HMAC signature instead
 ```
-All SEO and Social endpoints above require `core.security.require_paid_access`
-instead of plain auth — a 402 Payment Required is returned until the user
-completes payment. Only auth endpoints (login/signup/forgot-password) and the
-four payment endpoints above are exempt.
+No endpoint in this API requires payment to be *called* — payment is only
+ever triggered by the frontend explicitly (a locked row's "Unlock" button),
+never by the backend blocking a request outright. This also means signing
+up, logging in, and browsing the app never forces a payment screen.
 
-## History (requires auth + payment)
+## History (requires auth only)
 ```
 GET    /api/v1/history            — your analyses (paginated)
 GET    /api/v1/history/stats      — counts by type

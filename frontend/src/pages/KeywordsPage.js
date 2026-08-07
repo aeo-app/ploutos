@@ -4,6 +4,8 @@ import { useApp } from '../context/AppContext';
 import { seoApi } from '../api/seoApi';
 import { AnalyseForm } from '../components/forms/AnalyseForm';
 import { Card, Badge, DataTable, SectionHeader, SkeletonCard, Empty, ErrorCard, InsightCard, StatTile } from '../components/ui/UI';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { UnlockBanner } from '../components/payment/UnlockBanner';
 import s from './DataPage.module.css';
 
 const INTENT_V = { Transactional: 'success', Informational: 'info', Navigational: 'warning' };
@@ -94,11 +96,17 @@ export function KeywordsPage() {
   const loading = state.loading.keywords;
   const error   = state.errors.keywords;
   const data    = state.results.keywords || state.results.fullReport?.keyword_volume;
+  const [showUnlock, setShowUnlock] = useState(false);
 
   const run = async (req) => {
     try { await runApi('keywords', seoApi.keywords, req); toast({ type: 'success', message: '✓ Keyword data ready.' }); }
     catch (_) {}
   };
+
+  const lockedCount = data
+    ? [...(data.high_volume_head_terms || []), ...(data.mid_volume_service_terms || []), ...(data.long_tail_high_intent || [])]
+        .filter(r => r.locked).length
+    : 0;
 
   return (
     <div className={s.page}>
@@ -107,9 +115,20 @@ export function KeywordsPage() {
       {error && !loading && <ErrorCard message={error} />}
 
       {data && !loading && <KeywordsResultView data={data} />}
+      {data && !loading && lockedCount > 0 && (
+        <UnlockBanner count={lockedCount} label="keyword" onUnlock={() => setShowUnlock(true)} />
+      )}
 
       {!data && !loading && !error && (
         <Empty icon="🔑" title="No keyword data yet" body="Run an analysis to get search volume, intent, competition and position data for your market." />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock keyword data"
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(state.request); }}
+        />
       )}
     </div>
   );

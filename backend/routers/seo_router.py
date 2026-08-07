@@ -14,11 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from typing import Optional
 
-from core.security import require_paid_access
+from core.security import get_current_user_id
 from db import (
+    check_and_lock_domain,
     delete_analysis,
+    DomainMismatchError,
     get_analysis,
     get_user_stats,
+    is_user_paid,
     list_analyses,
     save_analysis,
 )
@@ -75,17 +78,30 @@ def _response(result_model, analysis_id: str, user_id: str, token_usage: dict | 
     return data
 
 
+def _enforce_domain(user_id: str, req: AnalyseRequest) -> None:
+    """
+    One-to-one user<->domain mapping: the first domain a user analyzes
+    becomes permanently theirs. Called at the top of every analysis
+    endpoint, before any Bedrock work happens.
+    """
+    try:
+        check_and_lock_domain(user_id, req.url, req.company_name)
+    except DomainMismatchError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
 # ── Analysis endpoints ────────────────────────────────────────────────────────
 
 @router.post("/api/v1/seo/competitors", summary="Competitor analysis (Bedrock + web search)")
 async def competitor_analysis(
     req: AnalyseRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Grounded competitor analysis. Saved to DynamoDB under user_id from JWT."""
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_competitor_analysis(req, usage_tracker=tracker)
+        result = generate_competitor_analysis(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"competitor_analysis failed: {e}", exc_info=True)
@@ -97,12 +113,13 @@ async def competitor_analysis(
 @router.post("/api/v1/seo/keywords", summary="Keyword volume (Bedrock + web search)")
 async def keyword_volume(
     req: AnalyseRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Grounded keyword volume research. Saved to DynamoDB."""
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_keyword_volume(req, usage_tracker=tracker)
+        result = generate_keyword_volume(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"keyword_volume failed: {e}", exc_info=True)
@@ -114,12 +131,13 @@ async def keyword_volume(
 @router.post("/api/v1/seo/profile", summary="Company profile (Bedrock + web search)")
 async def company_profile(
     req: AnalyseRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Company profile from real scraped content. Saved to DynamoDB."""
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_company_profile(req, usage_tracker=tracker)
+        result = generate_company_profile(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"company_profile failed: {e}", exc_info=True)
@@ -131,12 +149,13 @@ async def company_profile(
 @router.post("/api/v1/seo/domain-authority", summary="DA strategy (Bedrock + web search)")
 async def domain_authority(
     req: AnalyseRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """DA strategy from real backlink data. Saved to DynamoDB."""
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_da_strategy(req, usage_tracker=tracker)
+        result = generate_da_strategy(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"domain_authority failed: {e}", exc_info=True)
@@ -148,12 +167,13 @@ async def domain_authority(
 @router.post("/api/v1/seo/full-report", summary="Full SEO report — all 4 analyses (Bedrock)")
 async def full_report(
     req: AnalyseRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """All 4 analyses (~8 Bedrock calls). Saved to DynamoDB as one record."""
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_full_report(req, usage_tracker=tracker)
+        result = generate_full_report(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"full_report failed: {e}", exc_info=True)
@@ -168,7 +188,7 @@ async def full_report(
 )
 async def content_strategy(
     req: ContentStrategyRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Acts as a senior SEO competitor intelligence + content marketing expert.
@@ -196,11 +216,18 @@ async def content_strategy(
     ranking order, and platform recommendations are realistic AI estimates
     for strategic planning, not a live crawl.
 
-    Also returns a cross-keyword executive summary. Saved to DynamoDB.
+    No payment required to CALL this endpoint — but unpaid users only get
+    ONE keyword fully generated (real Bedrock cost); every other requested
+    keyword comes back `locked: true` with no Bedrock calls made for it at
+    all (see KeywordReportSlot). Paid users get every keyword unlocked.
+
+    Also returns a cross-keyword executive summary (computed only from
+    unlocked keywords). Saved to DynamoDB.
     """
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_content_strategy(req, usage_tracker=tracker)
+        result = generate_content_strategy(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"content_strategy failed: {e}", exc_info=True)
@@ -216,7 +243,7 @@ async def content_strategy(
 async def content_strategy_stream(
     req: ContentStrategyRequest,
     request: Request,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Same analysis as POST /api/v1/seo/content-strategy, but streamed as
@@ -224,7 +251,7 @@ async def content_strategy_stream(
 
       event: start             — {"keywords": [...], "total": N}
       event: analysis          — per-keyword competitor/content/SEO analysis,
-                                  as soon as it's ready
+                                  as soon as it's ready (unlocked keywords only)
       event: backlink_deep_dive — real, named platform categories + step-by-step
                                   acquisition plan for that keyword (not
                                   fabricated backlink URLs — see
@@ -232,9 +259,10 @@ async def content_strategy_stream(
       event: content_delta     — real token-by-token deltas as the article
                                   for that keyword is generated
       event: keyword_report    — the fully assembled report for one keyword
+                                  (unlocked) or a locked placeholder slot
       event: keyword_error     — a keyword failed; the rest keep going
-      event: executive_summary — cross-keyword synthesis, once all keywords
-                                  that succeeded are done
+      event: executive_summary — cross-keyword synthesis over unlocked
+                                  keywords only, once they're all done
       event: done              — {"failed_keywords": {...}, "result": {...}}
                                   — the final saved response
 
@@ -242,13 +270,18 @@ async def content_strategy_stream(
     keyword typically arrive within seconds instead of after the entire
     multi-keyword report finishes. The connection closes automatically if
     the client disconnects (remaining Bedrock calls are cancelled).
+
+    No payment required to CALL this endpoint — unpaid users get one real
+    unlocked keyword and locked placeholders for the rest (no Bedrock cost
+    for locked ones) — see KeywordReportSlot.
     """
+    _enforce_domain(user_id, req)
 
     async def event_source():
         tracker = TokenUsageTracker()
         try:
             async for event, data in stream_content_strategy_events(
-                req, request.is_disconnected, usage_tracker=tracker
+                req, request.is_disconnected, usage_tracker=tracker, is_paid=is_user_paid(user_id)
             ):
                 yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
                 if event == "done":
@@ -296,7 +329,7 @@ async def list_my_analyses(
     analysis_type: Optional[str] = Query(None, description="Filter by type"),
     limit: int = Query(20, ge=1, le=100),
     last_key: Optional[str] = Query(None, description="Pagination cursor JSON"),
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Returns metadata-only list for the authenticated user. No full payloads."""
     last_evaluated_key = None
@@ -323,7 +356,7 @@ async def list_my_analyses(
     response_model=UserStatsResponse,
     summary="Your analysis counts by type",
 )
-async def my_stats(user_id: str = Depends(require_paid_access)):
+async def my_stats(user_id: str = Depends(get_current_user_id)):
     try:
         return UserStatsResponse(**get_user_stats(user_id))
     except Exception as e:
@@ -337,7 +370,7 @@ async def my_stats(user_id: str = Depends(require_paid_access)):
 )
 async def get_one(
     analysis_id: str,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     try:
         item = get_analysis(user_id, analysis_id)
@@ -355,7 +388,7 @@ async def get_one(
 )
 async def delete_one(
     analysis_id: str,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     try:
         deleted = delete_analysis(user_id, analysis_id)

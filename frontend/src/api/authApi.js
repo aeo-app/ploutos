@@ -1,5 +1,5 @@
-// const BASE_URL = "https://api.aeo-app.ai/api/v1";
-const BASE_URL = "http://127.0.0.1:8000/api/v1"; // Local development
+export const BASE_URL = "https://api.aeo-app.ai/api/v1";
+// const BASE_URL = "http://127.0.0.1:8000/api/v1"; // Local development
 
 // 🔹 Error message mapping
 const ERROR_MESSAGES = {
@@ -260,6 +260,16 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  /** Get company_name/domain + has_profile — requires access_token (Cognito access token, not id_token) */
+  getProfile: () => fetchClient("/auth/profile", { method: "GET" }, true),
+
+  /** One-time profile completion for accounts missing company_name/domain — { company_name, domain } */
+  setProfile: (payload) =>
+    fetchClient("/auth/profile", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, true),
 };
 
 // const BASE = "https://api.aeo-app.ai";

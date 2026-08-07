@@ -33,6 +33,7 @@ from models.social_models import (
     CATEGORIES,
     CTA_STYLES,
     DailySchedule,
+    DayScheduleSlot,
     RecommendedTimes,
     RelocationSocialRequest,
     RelocationSocialResponse,
@@ -259,22 +260,53 @@ def _run_days_concurrently(
     return ordered, failures
 
 
+def _locked_day_slot(day: dict) -> DayScheduleSlot:
+    """Zero Bedrock cost — no generation call is made for a locked day at all."""
+    return DayScheduleSlot(
+        date=day["date"],
+        day_of_week=day["day_of_week"],
+        locked=True,
+        schedule=None,
+        preview_text="Both posts for this day are ready to generate — unlock to view.",
+    )
+
+
 def generate_relocation_calendar(
-    req: RelocationSocialRequest, usage_tracker: TokenUsageTracker | None = None
+    req: RelocationSocialRequest,
+    usage_tracker: TokenUsageTracker | None = None,
+    is_paid: bool = True,
 ) -> RelocationSocialResponse:
+    """
+    - Paid users: every day in the requested range is fully generated
+      (concurrently, bounded by MAX_CONCURRENT_DAYS).
+    - Unpaid users: ONLY THE FIRST day is generated for real — a genuine,
+      complete, Bedrock-backed result. Every other requested day comes back
+      as a `locked` placeholder slot with NO Bedrock call made for it at all.
+    """
     day_slots = _build_schedule_slots(req.start_date, req.end_date)
     period_label = _format_period_label(req.start_date, req.end_date)
-    logger.info(f"[social] relocation_calendar — {req.country} — {period_label} ({len(day_slots)} days)")
 
-    days, failures = _run_days_concurrently(req, day_slots, usage_tracker=usage_tracker)
-    if not days:
+    real_slots = day_slots if is_paid else day_slots[:1]
+    locked_slots_src = [] if is_paid else day_slots[1:]
+
+    logger.info(
+        f"[social] relocation_calendar — {req.country} — {period_label} "
+        f"({len(day_slots)} days requested, {len(real_slots)} to generate for real, is_paid={is_paid})"
+    )
+
+    days, failures = _run_days_concurrently(req, real_slots, usage_tracker=usage_tracker)
+    if not days and locked_slots_src == []:
         raise RuntimeError(f"All days failed to generate: {failures}")
+
+    slots = [DayScheduleSlot(date=d.date, day_of_week=d.day_of_week, locked=False, schedule=d) for d in days]
+    slots += [_locked_day_slot(day) for day in locked_slots_src]
+    slots.sort(key=lambda s: s.date)
 
     return RelocationSocialResponse(
         country=req.country,
         company=req.company,
         period_label=period_label,
-        days=days,
+        days=slots,
         failed_dates=failures,
     )
 
@@ -283,19 +315,30 @@ def generate_relocation_calendar(
 async def stream_relocation_calendar_events(
     req: RelocationSocialRequest, is_disconnected,
     usage_tracker: TokenUsageTracker | None = None,
+    is_paid: bool = True,
 ):
     """Async generator yielding (event, data) tuples:
-      start        — {"period_label", "total_days"}
-      day_ready    — one DailySchedule as soon as it's generated
+      start        — {"period_label", "total_days", "unlocked_count"}
+      day_ready    — one real DailySchedule as soon as it's generated
+      day_locked   — a locked placeholder day, emitted immediately (zero
+                     Bedrock cost — no generation call was made for it)
       day_error    — a day failed; the rest keep going
       done         — {"failed_dates": {...}, "result": {...}}
+
+    Same free-preview rule as generate_relocation_calendar: unpaid users get
+    only the FIRST requested day generated for real; every other day is
+    emitted immediately as `day_locked` with no Bedrock call made for it.
     """
     day_slots = _build_schedule_slots(req.start_date, req.end_date)
     period_label = _format_period_label(req.start_date, req.end_date)
 
+    real_slots = day_slots if is_paid else day_slots[:1]
+    locked_slots_src = [] if is_paid else day_slots[1:]
+
     sem = asyncio.Semaphore(MAX_CONCURRENT_DAYS)
     out_queue: asyncio.Queue = asyncio.Queue()
     schedules: dict[str, DailySchedule] = {}
+    locked_by_date: dict[str, DayScheduleSlot] = {}
     failures: dict[str, str] = {}
 
     async def _worker(day: dict):
@@ -309,11 +352,17 @@ async def stream_relocation_calendar_events(
                 failures[day["date"]] = str(e)
                 await out_queue.put(("day_error", {"date": day["date"], "error": str(e)}))
 
-    tasks = [asyncio.create_task(_worker(day)) for day in day_slots]
-    yield ("start", {"period_label": period_label, "total_days": len(day_slots)})
+    tasks = [asyncio.create_task(_worker(day)) for day in real_slots]
+    yield ("start", {"period_label": period_label, "total_days": len(day_slots), "unlocked_count": len(real_slots)})
+
+    # Locked days need no worker at all — emit immediately, no Bedrock calls.
+    for day in locked_slots_src:
+        slot = _locked_day_slot(day)
+        locked_by_date[day["date"]] = slot
+        yield ("day_locked", {"date": day["date"], "slot": slot.model_dump()})
 
     finished = 0
-    while finished < len(day_slots):
+    while finished < len(real_slots):
         if await is_disconnected():
             logger.info("[social] client disconnected — cancelling remaining day tasks")
             for t in tasks:
@@ -323,12 +372,16 @@ async def stream_relocation_calendar_events(
         yield (event, data)
         finished += 1
 
-    ordered_days = [schedules[day["date"]] for day in day_slots if day["date"] in schedules]
+    ordered_real = [schedules[day["date"]] for day in real_slots if day["date"] in schedules]
+    all_slots = [DayScheduleSlot(date=d.date, day_of_week=d.day_of_week, locked=False, schedule=d) for d in ordered_real]
+    all_slots += list(locked_by_date.values())
+    all_slots.sort(key=lambda s: s.date)
+
     result = RelocationSocialResponse(
         country=req.country,
         company=req.company,
         period_label=period_label,
-        days=ordered_days,
+        days=all_slots,
         failed_dates=failures,
     )
     yield (

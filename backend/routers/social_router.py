@@ -1,6 +1,9 @@
 """
 routers/social_router.py — Relocation social media content calendar endpoints
 ================================================================================
+No payment required to CALL these endpoints — unpaid users get one real day
+generated (real Bedrock cost) and locked placeholders for the rest (zero
+Bedrock cost). See services/social_service.py's free-preview logic.
 """
 from __future__ import annotations
 
@@ -10,8 +13,8 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from core.security import require_paid_access
-from db import save_analysis
+from core.security import get_current_user_id
+from db import check_and_lock_domain, DomainMismatchError, is_user_paid, save_analysis
 from models.social_models import RelocationSocialRequest
 from services.social_service import (
     generate_relocation_calendar,
@@ -21,6 +24,17 @@ from services.bedrock_service import TokenUsageTracker
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Social Media Content"])
+
+
+def _enforce_domain(user_id: str, req: RelocationSocialRequest) -> None:
+    """Same one-to-one user<->domain mapping as seo_router.py. `company.website`
+    is optional here — if not given, there's nothing to check or lock."""
+    if not req.company.website:
+        return
+    try:
+        check_and_lock_domain(user_id, req.company.website, req.company.name)
+    except DomainMismatchError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 def _save_social(
@@ -55,7 +69,7 @@ def _save_social(
 )
 async def relocation_calendar(
     req: RelocationSocialRequest,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Generates a social media content calendar for relocation services
@@ -73,10 +87,16 @@ async def relocation_calendar(
     writes the creative captions for each day (one bounded call per day, run
     concurrently). Partial failures don't abort the whole range — see
     `failed_dates` in the response.
+
+    No payment required to CALL this endpoint — but unpaid users only get
+    ONE day fully generated (real Bedrock cost); every other requested day
+    comes back `locked: true` with no Bedrock call made for it at all (see
+    DayScheduleSlot). Paid users get every day unlocked.
     """
+    _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_relocation_calendar(req, usage_tracker=tracker)
+        result = generate_relocation_calendar(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"relocation_calendar failed: {e}", exc_info=True)
@@ -96,23 +116,30 @@ async def relocation_calendar(
 async def relocation_calendar_stream(
     req: RelocationSocialRequest,
     request: Request,
-    user_id: str = Depends(require_paid_access),
+    user_id: str = Depends(get_current_user_id),
 ):
     """
     Same generator as /relocation-calendar, streamed as SSE so days appear
     as they're generated instead of waiting for the whole range:
 
-      event: start      — {"period_label", "total_days"}
-      event: day_ready   — one day's full schedule (2 posts), as it completes
-      event: day_error   — a day failed; the rest keep going
-      event: done        — {"failed_dates": {...}, "result": {...}} (final, saved)
+      event: start        — {"period_label", "total_days", "unlocked_count"}
+      event: day_ready    — one real day's full schedule (2 posts), as it completes
+      event: day_locked   — a locked placeholder day, emitted immediately
+                            (zero Bedrock cost)
+      event: day_error    — a day failed; the rest keep going
+      event: done         — {"failed_dates": {...}, "result": {...}} (final, saved)
+
+    No payment required to CALL this endpoint — unpaid users get one real
+    unlocked day and locked placeholders for the rest.
     """
+    _enforce_domain(user_id, req)
+    is_paid = is_user_paid(user_id)
 
     async def event_source():
         tracker = TokenUsageTracker()
         try:
             async for event, data in stream_relocation_calendar_events(
-                req, request.is_disconnected, usage_tracker=tracker
+                req, request.is_disconnected, usage_tracker=tracker, is_paid=is_paid
             ):
                 yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
                 if event == "done":

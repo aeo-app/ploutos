@@ -145,10 +145,14 @@ def _map_error(e: ClientError) -> CognitoError:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def sign_up(email: str, password: str, full_name: str) -> dict:
+def sign_up(email: str, password: str, full_name: str, company_name: str, domain: str) -> dict:
     """
-    Register a new user with email + password.
-    Cognito sends a 6-digit OTP to the email address.
+    Register a new user with email + password + company_name + domain.
+    Cognito sends a 6-digit OTP to the email address. company_name/domain
+    are stored as custom attributes — the source of truth for which
+    domain this account is permanently linked to (one domain per account;
+    see db.dynamo.check_and_lock_domain, which validates every analysis
+    request against this).
 
     Returns:
         {"user_sub": str, "confirmed": bool, "delivery": str}
@@ -164,9 +168,11 @@ def sign_up(email: str, password: str, full_name: str) -> dict:
             UserAttributes=[
                 {"Name": "email", "Value": email},
                 {"Name": "name", "Value": full_name},
+                {"Name": "custom:company_name", "Value": company_name},
+                {"Name": "custom:domain", "Value": domain},
         ],)
         destination = resp.get("CodeDeliveryDetails", {}).get("Destination", email)
-        logger.info(f"[cognito] sign_up OK — sub={resp['UserSub']} email={email}")
+        logger.info(f"[cognito] sign_up OK — sub={resp['UserSub']} email={email} domain={domain}")
         return {
             "user_sub": resp["UserSub"],
             "confirmed": resp["UserConfirmed"],
@@ -303,6 +309,35 @@ def get_user(access_token: str) -> dict:
             "sub": attrs.get("sub", ""),
             **{k: v for k, v in attrs.items() if k not in ("email", "name", "sub")},
         }
+    except ClientError as e:
+        raise _map_error(e)
+
+
+def update_user_profile(access_token: str, company_name: str, domain: str) -> dict:
+    """
+    Sets custom:company_name / custom:domain for the CURRENTLY authenticated
+    user (via their own access token — no admin credentials needed). Used
+    for the one-time profile-completion flow: existing users who signed up
+    before these attributes existed are prompted once to fill them in
+    (frontend gates on ProfileResponse.has_profile being False).
+
+    Note: this only sets the Cognito attributes. The actual one-to-one
+    domain enforcement happens in db.dynamo.check_and_lock_domain, called
+    separately by the router right after this succeeds, so both stay
+    in sync.
+    """
+    _require_config()
+    client = _get_client()
+    try:
+        client.update_user_attributes(
+            AccessToken=access_token,
+            UserAttributes=[
+                {"Name": "custom:company_name", "Value": company_name},
+                {"Name": "custom:domain", "Value": domain},
+            ],
+        )
+        logger.info(f"[cognito] update_user_profile OK — domain={domain}")
+        return {"company_name": company_name, "domain": domain}
     except ClientError as e:
         raise _map_error(e)
 

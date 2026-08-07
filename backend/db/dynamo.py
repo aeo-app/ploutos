@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -335,12 +336,57 @@ def list_analyses(
         kwargs["ExclusiveStartKey"] = last_evaluated_key
 
     try:
-        resp = table.query(**kwargs)
-        items = [_from_dynamo(i) for i in resp.get("Items", [])]
+        if not analysis_type:
+            # No filter beyond "is a real analysis" — DynamoDB's Limit caps
+            # items scanned, which is also exactly how many can be returned
+            # here (nothing is being filtered OUT except non-analysis
+            # records, which are rare/absent in normal use), so a single
+            # query call is correct and sufficient.
+            resp = table.query(**kwargs)
+            items = [_from_dynamo(i) for i in resp.get("Items", [])]
+            return {
+                "items": items,
+                "count": resp.get("Count", len(items)),
+                "last_evaluated_key": resp.get("LastEvaluatedKey"),
+            }
+
+        # With a specific analysis_type filter, DynamoDB's Limit caps how
+        # many items are SCANNED before the FilterExpression is applied —
+        # NOT how many MATCHING items are returned. A single query with
+        # Limit=1 only finds a match if the single newest item overall
+        # happens to already be that type; anything else silently returns
+        # zero items, even if a matching one exists further back. Paginate
+        # internally (bounded, so this can't run away) until `limit`
+        # matching items are collected or we run out of data.
+        MAX_PAGES = 10
+        SCAN_PAGE_SIZE = 100  # items examined per underlying query, not returned count
+        matched: list[dict] = []
+        exclusive_start_key = kwargs.get("ExclusiveStartKey")
+        final_last_evaluated_key = None
+
+        for _ in range(MAX_PAGES):
+            page_kwargs = dict(kwargs)
+            page_kwargs["Limit"] = SCAN_PAGE_SIZE
+            if exclusive_start_key:
+                page_kwargs["ExclusiveStartKey"] = exclusive_start_key
+            elif "ExclusiveStartKey" in page_kwargs:
+                del page_kwargs["ExclusiveStartKey"]
+
+            resp = table.query(**page_kwargs)
+            matched.extend(_from_dynamo(i) for i in resp.get("Items", []))
+            exclusive_start_key = resp.get("LastEvaluatedKey")
+            final_last_evaluated_key = exclusive_start_key
+
+            if len(matched) >= limit or not exclusive_start_key:
+                break
+
         return {
-            "items": items,
-            "count": resp.get("Count", len(items)),
-            "last_evaluated_key": resp.get("LastEvaluatedKey"),
+            "items": matched[:limit],
+            "count": len(matched[:limit]),
+            # Only expose a "next page" cursor if we actually have more than
+            # `limit` matched items still pending or DynamoDB has more pages —
+            # keeps pagination behaviour sane for callers.
+            "last_evaluated_key": final_last_evaluated_key if len(matched) > limit or exclusive_start_key else None,
         }
     except ClientError as e:
         logger.error(f"[dynamo] list_analyses failed: {e.response['Error']}")
@@ -589,6 +635,99 @@ def is_user_paid(user_id: str) -> bool:
         # silently granting access on bad data.
         logger.warning(f"[dynamo] unparseable paid_until={paid_until!r} for user={user_id}; denying access")
         return False
+
+
+# ── One-to-one user <-> domain lock ─────────────────────────────────────────
+# Same single-table design again: SK = "DOMAIN_LOCK" (one per user). The
+# FIRST domain a user successfully analyzes becomes permanently theirs —
+# every analysis endpoint (competitors/keywords/profile/domain-authority/
+# full-report/content-strategy/relocation-calendar) calls
+# check_and_lock_domain() before doing any real work.
+
+def _domain_lock_sk() -> str:
+    return "DOMAIN_LOCK"
+
+
+def normalize_domain(url: str) -> str:
+    """
+    Reduce a URL down to a bare, comparable domain: strip scheme, leading
+    'www.', path/query/fragment, port, and lowercase everything. So
+    "https://WWW.Example.com/foo?x=1" and "example.com:8080" both normalize
+    to "example.com" for comparison purposes.
+    """
+    if not url:
+        return ""
+    u = url.strip().lower()
+    u = re.sub(r"^[a-z]+://", "", u)       # strip scheme (http://, https://, ftp://...)
+    u = re.sub(r"^www\.", "", u)           # strip leading www.
+    u = u.split("/")[0]                     # drop path/query/fragment
+    u = u.split("?")[0].split("#")[0]       # belt-and-suspenders if no leading slash
+    u = u.split(":")[0]                     # drop port
+    return u.rstrip(".")
+
+
+def get_user_domain_lock(user_id: str) -> Optional[dict]:
+    """Returns {"domain": ..., "company_name": ..., "locked_at": ...} or None
+    if this user hasn't locked in a domain yet."""
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _domain_lock_sk()})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_user_domain_lock failed: {e.response['Error']}")
+        raise
+
+
+def _set_user_domain_lock(user_id: str, domain: str, company_name: str) -> None:
+    table = _get_table()
+    item = {
+        "PK": _pk(user_id),
+        "SK": _domain_lock_sk(),
+        "user_id": user_id,
+        "domain": domain,
+        "company_name": company_name,
+        "locked_at": _now_iso(),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] domain locked for user={user_id}: {domain}")
+    except ClientError as e:
+        logger.error(f"[dynamo] _set_user_domain_lock failed: {e.response['Error']}")
+        raise
+
+
+class DomainMismatchError(Exception):
+    """Raised when a user tries to analyze a different domain than the one
+    already locked to their account. Routers turn this into a 403."""
+    def __init__(self, locked_domain: str, attempted_domain: str):
+        self.locked_domain = locked_domain
+        self.attempted_domain = attempted_domain
+        super().__init__(
+            f"This account is linked to '{locked_domain}'. Each account can only "
+            f"analyze one domain — '{attempted_domain}' doesn't match."
+        )
+
+
+def check_and_lock_domain(user_id: str, url: str, company_name: str) -> None:
+    """
+    Enforces a strict one-to-one user<->domain mapping:
+      - No URL given (e.g. an optional website field left blank) -> no-op,
+        nothing to check or lock.
+      - First time this user analyzes ANY domain -> that domain is locked
+        to their account permanently.
+      - Same domain as already locked -> fine, proceeds silently.
+      - Different domain than already locked -> raises DomainMismatchError.
+    """
+    domain = normalize_domain(url)
+    if not domain:
+        return
+    existing = get_user_domain_lock(user_id)
+    if existing is None:
+        _set_user_domain_lock(user_id, domain, company_name)
+        return
+    if existing["domain"] != domain:
+        raise DomainMismatchError(existing["domain"], domain)
 
 
 # ── Table bootstrap (for local dev / CI) ──────────────────────────────────────

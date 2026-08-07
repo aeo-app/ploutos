@@ -4,6 +4,8 @@ import { useApp } from '../context/AppContext';
 import { seoApi } from '../api/seoApi';
 import { AnalyseForm } from '../components/forms/AnalyseForm';
 import { Card, Badge, DataTable, ProgressBar, SectionHeader, SkeletonCard, Empty, ErrorCard, InsightCard, StatTile, Tag, CopyButton } from '../components/ui/UI';
+import { UnlockModal } from '../components/payment/UnlockModal';
+import { UnlockBanner } from '../components/payment/UnlockBanner';
 import { CompetitorsResultView } from './CompetitorsPage';
 import { KeywordsResultView } from './KeywordsPage';
 import { ProfileResultView } from './ProfilePage';
@@ -66,6 +68,7 @@ export function FullReportPage() {
   const loading = state.loading.fullReport;
   const error   = state.errors.fullReport;
   const report  = state.results.fullReport;
+  const [showUnlock, setShowUnlock] = useState(false);
 
   const run = async (req) => {
     try {
@@ -80,6 +83,14 @@ export function FullReportPage() {
   const prof = report?.company_profile;
   const da   = report?.domain_authority_strategy;
   const totalKws = kw ? (kw.high_volume_head_terms?.length||0)+(kw.mid_volume_service_terms?.length||0)+(kw.long_tail_high_intent?.length||0) : null;
+
+  const lockedCount = report ? [
+    ...(comp?.competitor_overview || []), ...(comp?.seo_visibility || []), ...(comp?.keyword_rankings || []),
+    ...(comp?.competitor_scores || []), ...(comp?.key_takeaways || []),
+    ...(kw?.high_volume_head_terms || []), ...(kw?.mid_volume_service_terms || []), ...(kw?.long_tail_high_intent || []),
+    ...(kw?.strategic_priority_summary || []),
+    ...(da?.gap_analysis || []), ...(da?.backlink_opportunities || []), ...(da?.top_5_priority_actions || []),
+  ].filter(r => r.locked).length + (prof?.locked_fields?.length || 0) : 0;
 
   return (
     <div className={s.page}>
@@ -296,8 +307,20 @@ export function FullReportPage() {
         </motion.div>
       )}
 
+      {report && !loading && lockedCount > 0 && (
+        <UnlockBanner count={lockedCount} label="insight" onUnlock={() => setShowUnlock(true)} />
+      )}
+
       {!report && !loading && !error && (
         <Empty icon="⚡" title="No full report yet" body="Run a Full Report to get all 4 analyses — competitor intelligence, keywords, company profile, and domain authority — in one call." />
+      )}
+
+      {showUnlock && (
+        <UnlockModal
+          title="Unlock full report"
+          onClose={() => setShowUnlock(false)}
+          onUnlocked={() => { setShowUnlock(false); run(state.request); }}
+        />
       )}
     </div>
   );

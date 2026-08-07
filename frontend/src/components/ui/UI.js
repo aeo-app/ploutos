@@ -102,13 +102,14 @@ export function DataTable({ cols, rows, keyFn }) {
         </thead>
         <tbody>
           {rows.map((row, ri) => (
-            <tr key={keyFn ? keyFn(row, ri) : ri} className={s.tr}>
+            <tr key={keyFn ? keyFn(row, ri) : ri} className={`${s.tr} ${row.locked ? s.trLocked : ''}`}>
               {cols.map(c => (
                 <td
                   key={c.key}
                   className={[s.td, c.right ? s.tdRight : '', c.mono ? s.tdMono : '', c.bold ? s.tdBold : ''].join(' ')}
                 >
-                  {c.render ? c.render(row[c.key], row) : (row[c.key] ?? '—')}
+                  {row.locked ? (c.lockedRender ? c.lockedRender() : <span className={s.tdLockedMask}>██████</span>)
+                    : (c.render ? c.render(row[c.key], row) : (row[c.key] ?? '—'))}
                 </td>
               ))}
             </tr>

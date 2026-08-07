@@ -18,6 +18,12 @@ async function post(path, body) {
       localStorage.removeItem("user_id");
       throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
     }
+    if (res.status === 402) {
+      throw new ApiError("PaymentRequired", data?.detail || "Payment required to access this feature.");
+    }
+    if (res.status === 403) {
+      throw new ApiError("DomainMismatch", data?.detail || "This account is linked to a different domain.");
+    }
     if (!res.ok) {
       const errorCode = data?.code || data?.error_code || "ServerError";
       const errorMessage = data?.detail || data?.message || `Request failed (${res.status})`;
@@ -56,6 +62,14 @@ export const socialApi = {
       localStorage.removeItem("access_token");
       localStorage.removeItem("user_id");
       throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
+    }
+    if (res.status === 402) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError("PaymentRequired", data?.detail || "Payment required to access this feature.");
+    }
+    if (res.status === 403) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError("DomainMismatch", data?.detail || "This account is linked to a different domain.");
     }
     if (!res.ok || !res.body) {
       const data = await res.json().catch(() => ({}));

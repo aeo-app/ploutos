@@ -70,21 +70,29 @@ load_dotenv()
 from models.seo_models import (
     AnalyseRequest,
     BacklinkDeepDive,
+    BacklinkOpportunity,
     CompanyProfile,
     CompetitorAnalysisResponse,
+    CompetitorOverview,
+    CompetitorScore,
     ContentStrategyAnalysis,
     ContentStrategyRequest,
     ContentStrategyResponse,
+    DomainAuthorityGap,
     DomainAuthorityResponse,
     FullSEOReport,
     GeneratedContentPiece,
     KeywordContentReport,
+    KeywordRanking,
+    KeywordReportSlot,
+    KeywordVolumeEntry,
     KeywordVolumeResponse,
     PlatformLink,
     RankingExplanation,
     RepeatedPlatform,
     SEOFactorAnalysis,
     SEOInsight,
+    SEOVisibility,
 )
 
 
@@ -223,6 +231,66 @@ class TokenUsageTracker:
             }
 
 
+# ── Free-preview row limits (single-call analyses) ──────────────────────────
+# For content-strategy/relocation-calendar, the free preview is "1 of N items
+# fully generated, the rest zero-cost placeholders" across SEPARATE Bedrock
+# calls. These 4 analyses are each a single call, so the equivalent applies
+# WITHIN one call instead: the prompt asks for fewer real rows (genuine token
+# savings — Bedrock generates less), and the response is padded with static,
+# zero-cost locked rows back up to the normal display count, so the page
+# looks the same shape either way — just some rows are real, some locked.
+FREE_PREVIEW_ROWS = 2
+
+MASK = "██████"
+
+
+def _pad_rows(real_rows: list, target_count: int, make_locked_row) -> list:
+    """Pad a list of real Pydantic row instances up to target_count with
+    locked placeholder rows — no additional Bedrock cost, pure Python."""
+    if len(real_rows) >= target_count:
+        return real_rows
+    padded = list(real_rows)
+    for _ in range(target_count - len(real_rows)):
+        padded.append(make_locked_row())
+    return padded
+
+
+def _locked_competitor_overview() -> CompetitorOverview:
+    return CompetitorOverview(rank=0, company=MASK, hq=MASK, focus=MASK, scale=MASK, accreditation=MASK, locked=True)
+
+
+def _locked_seo_visibility() -> SEOVisibility:
+    return SEOVisibility(company=MASK, seo_visibility_score=0, organic_traffic_estimate=MASK,
+                          domain_authority_estimate=0, has_blog=False, google_rating=0.0, locked=True)
+
+
+def _locked_keyword_ranking() -> KeywordRanking:
+    return KeywordRanking(keyword=MASK, monthly_searches_estimate=MASK, apac_rank=MASK,
+                           crown_rank=MASK, allied_rank=MASK, asiatic_rank=MASK, locked=True)
+
+
+def _locked_competitor_score() -> CompetitorScore:
+    return CompetitorScore(rank=0, company=MASK, score=0, key_strengths=MASK, key_weaknesses=MASK, locked=True)
+
+
+def _locked_seo_insight() -> SEOInsight:
+    return SEOInsight(insight=MASK, detail=MASK, locked=True)
+
+
+def _locked_keyword_volume_entry() -> KeywordVolumeEntry:
+    return KeywordVolumeEntry(rank=0, keyword=MASK, monthly_volume_estimate=MASK, competition=MASK,
+                               intent=MASK, apac_estimated_position=MASK, locked=True)
+
+
+def _locked_da_gap() -> DomainAuthorityGap:
+    return DomainAuthorityGap(metric=MASK, current=MASK, six_month_target=MASK, twelve_month_target=MASK, benchmark=MASK, locked=True)
+
+
+def _locked_backlink_opportunity() -> BacklinkOpportunity:
+    return BacklinkOpportunity(pillar=MASK, action=MASK, platform_or_target=MASK, estimated_da=MASK,
+                                difficulty=MASK, estimated_monthly_links=None, locked=True)
+
+
 # ── Core Converse wrapper ──────────────────────────────────────────────────────
 def _converse(
     system_text: str,
@@ -338,8 +406,17 @@ CRITICAL RULES:
 
 
 # ── Generator: Competitor Analysis ────────────────────────────────────────────
-def generate_competitor_analysis(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> CompetitorAnalysisResponse:
-    logger.info(f"[bedrock] competitor_analysis — {req.company_name} / {req.market}")
+def generate_competitor_analysis(
+    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
+) -> CompetitorAnalysisResponse:
+    logger.info(f"[bedrock] competitor_analysis — {req.company_name} / {req.market} (is_paid={is_paid})")
+
+    # Unpaid users get fewer REAL rows asked of Bedrock (genuine token
+    # savings), padded back up to the normal 7/8/5 display counts with
+    # zero-cost locked placeholder rows below.
+    n_competitors = 7 if is_paid else FREE_PREVIEW_ROWS
+    n_keywords = 8 if is_paid else FREE_PREVIEW_ROWS
+    n_takeaways = 5 if is_paid else 1
 
     prompt = f"""
 Analyse the competitive landscape for:
@@ -360,7 +437,7 @@ Return a JSON object with EXACTLY these keys:
       "scale": "string",
       "accreditation": "string"
     }}
-    // 7-8 top competitors including {req.company_name}
+    // exactly {n_competitors} top competitors including {req.company_name}
   ],
   "seo_visibility": [{{
       "company": "string",
@@ -370,7 +447,7 @@ Return a JSON object with EXACTLY these keys:
       "has_blog": true/false,
       "google_rating": float
     }}
-    // same 7-8 companies
+    // same {n_competitors} companies
   ],
   "keyword_rankings": [{{
       "keyword": "string",
@@ -380,7 +457,7 @@ Return a JSON object with EXACTLY these keys:
       "allied_rank": "string",
       "asiatic_rank": "string"
     }}
-    // 8 key industry keywords
+    // exactly {n_keywords} key industry keywords
   ],
   "competitor_scores": [{{
       "rank": 1,
@@ -389,22 +466,38 @@ Return a JSON object with EXACTLY these keys:
       "key_strengths": "string",
       "key_weaknesses": "string"
     }}
-    // same 7-8 companies ranked by overall score
+    // same {n_competitors} companies ranked by overall score
   ],
   "key_takeaways": [
     {{"insight": "string", "detail": "string"}}
-    // 5 strategic insights
+    // exactly {n_takeaways} strategic insights
 ]}}
 """
 
     raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
-    return CompetitorAnalysisResponse(**data)
+    result = CompetitorAnalysisResponse(**data)
+
+    if not is_paid:
+        result.competitor_overview = _pad_rows(result.competitor_overview, 7, _locked_competitor_overview)
+        result.seo_visibility = _pad_rows(result.seo_visibility, 7, _locked_seo_visibility)
+        result.keyword_rankings = _pad_rows(result.keyword_rankings, 8, _locked_keyword_ranking)
+        result.competitor_scores = _pad_rows(result.competitor_scores, 7, _locked_competitor_score)
+        result.key_takeaways = _pad_rows(result.key_takeaways, 5, _locked_seo_insight)
+
+    return result
 
 
 # ── Generator: Keyword Volume ──────────────────────────────────────────────────
-def generate_keyword_volume(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> KeywordVolumeResponse:
-    logger.info(f"[bedrock] keyword_volume — {req.company_name} / {req.market}")
+def generate_keyword_volume(
+    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
+) -> KeywordVolumeResponse:
+    logger.info(f"[bedrock] keyword_volume — {req.company_name} / {req.market} (is_paid={is_paid})")
+
+    n_head = 8 if is_paid else FREE_PREVIEW_ROWS
+    n_mid = 10 if is_paid else FREE_PREVIEW_ROWS
+    n_tail = 10 if is_paid else FREE_PREVIEW_ROWS
+    n_priorities = 5 if is_paid else 1
 
     prompt = f"""
 Generate a comprehensive keyword volume analysis for:
@@ -425,19 +518,19 @@ Return a JSON object with EXACTLY these keys:
       "intent": "Transactional / Informational / Navigational",
       "apac_estimated_position": "string e.g. '#8-14'"
     }}
-    // Exactly 8 high-volume head terms for {req.industry} in {req.market}
+    // Exactly {n_head} high-volume head terms for {req.industry} in {req.market}
   ],
   "mid_volume_service_terms": [
-    // Same schema — exactly 10 mid-volume service-specific terms
+    // Same schema — exactly {n_mid} mid-volume service-specific terms
     // e.g. 'international movers Singapore', 'corporate relocation Singapore'
   ],
   "long_tail_high_intent": [
-    // Same schema — exactly 10 long-tail high-intent terms
+    // Same schema — exactly {n_tail} long-tail high-intent terms
     // e.g. 'moving from Singapore to Australia cost', 'best movers Singapore HDB'
   ],
   "strategic_priority_summary": [
     {{"insight": "string — 3-5 word title", "detail": "string — 1-2 sentences"}}
-    // Exactly 5 keyword strategy insights for {req.company_name} in {req.market}
+    // Exactly {n_priorities} keyword strategy insights for {req.company_name} in {req.market}
 ]}}
 
 For volume estimates, use realistic ranges based on typical search patterns in {req.market}
@@ -446,12 +539,47 @@ For position estimates, assume {req.company_name} is a mid-tier player unless yo
 
     raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
-    return KeywordVolumeResponse(**data)
+    result = KeywordVolumeResponse(**data)
+
+    if not is_paid:
+        result.high_volume_head_terms = _pad_rows(result.high_volume_head_terms, 8, _locked_keyword_volume_entry)
+        result.mid_volume_service_terms = _pad_rows(result.mid_volume_service_terms, 10, _locked_keyword_volume_entry)
+        result.long_tail_high_intent = _pad_rows(result.long_tail_high_intent, 10, _locked_keyword_volume_entry)
+        result.strategic_priority_summary = _pad_rows(result.strategic_priority_summary, 5, _locked_seo_insight)
+
+    return result
 
 
 # ── Generator: Company Profile ─────────────────────────────────────────────────
-def generate_company_profile(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> CompanyProfile:
-    logger.info(f"[bedrock] company_profile — {req.company_name}")
+_LOCKED_LINKEDIN_OVERVIEW = (
+    f"{MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} "
+    f"{MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK}"
+)
+_LOCKED_GOOGLE_BUSINESS_DESCRIPTION = f"{MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK} {MASK}"
+
+
+def generate_company_profile(
+    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
+) -> CompanyProfile:
+    logger.info(f"[bedrock] company_profile — {req.company_name} (is_paid={is_paid})")
+
+    if is_paid:
+        long_fields_block = f"""
+  "linkedin_overview": "Full LinkedIn company overview under 2000 characters. Structure with:
+    - Opening hook (1-2 sentences on who they are)
+    - Bullet points listing core services
+    - Key differentiators (global network, certifications, years of experience)
+    - Geographic coverage and markets served
+    - A clear call-to-action at the end.
+    Write in professional third person. Mention relevant industry certifications if known.",
+  "google_business_description": "Google Business Profile description under 750 characters.
+    Keyword-rich for {req.market} SEO. Cover main services, key destinations/markets,
+    what makes them different. End with call-to-action and mention {req.market} location.","""
+    else:
+        # Skip asking Bedrock for either long-text field entirely — real
+        # token savings, since these are the two expensive fields (up to
+        # ~2750 characters combined). Filled with locked placeholders below.
+        long_fields_block = ""
 
     prompt = f"""
 Generate professional company profiles for:
@@ -464,17 +592,7 @@ Return a JSON object with EXACTLY these keys:
 {{
   "company_name": "{req.company_name}",
   "url": "{req.url}",
-  "tagline": "One punchy sentence under 20 words that captures what {req.company_name} does best",
-  "linkedin_overview": "Full LinkedIn company overview under 2000 characters. Structure with:
-    - Opening hook (1-2 sentences on who they are)
-    - Bullet points listing core services
-    - Key differentiators (global network, certifications, years of experience)
-    - Geographic coverage and markets served
-    - A clear call-to-action at the end.
-    Write in professional third person. Mention relevant industry certifications if known.",
-  "google_business_description": "Google Business Profile description under 750 characters.
-    Keyword-rich for {req.market} SEO. Cover main services, key destinations/markets,
-    what makes them different. End with call-to-action and mention {req.market} location.",
+  "tagline": "One punchy sentence under 20 words that captures what {req.company_name} does best",{long_fields_block}
   "linkedin_specialties": [
     "keyword1", "keyword2", "keyword3"
     // 8-12 SEO-relevant specialty keywords for {req.industry} in {req.market}
@@ -489,12 +607,25 @@ Return a JSON object with EXACTLY these keys:
 
     raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
+
+    if not is_paid:
+        data["linkedin_overview"] = _LOCKED_LINKEDIN_OVERVIEW
+        data["google_business_description"] = _LOCKED_GOOGLE_BUSINESS_DESCRIPTION
+        data["locked_fields"] = ["linkedin_overview", "google_business_description"]
+
     return CompanyProfile(**data)
 
 
 # ── Generator: Domain Authority Strategy ──────────────────────────────────────
-def generate_da_strategy(req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None) -> DomainAuthorityResponse:
-    logger.info(f"[bedrock] da_strategy — {req.company_name}")
+def generate_da_strategy(
+    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
+) -> DomainAuthorityResponse:
+    logger.info(f"[bedrock] da_strategy — {req.company_name} (is_paid={is_paid})")
+
+    n_gaps = 5 if is_paid else 1
+    n_backlinks = 11 if is_paid else FREE_PREVIEW_ROWS
+    n_priorities = 5 if is_paid else 1
+    gap_metrics_desc = "DA, Referring Domains, Content Volume, Page Speed, Google Reviews" if is_paid else "DA"
 
     prompt = f"""
 Generate a Domain Authority growth strategy for:
@@ -518,7 +649,7 @@ Return a JSON object with EXACTLY these keys:
       "twelve_month_target": "string — realistic 12-month goal",
       "benchmark": "string — what top competitors in {req.market} achieve"
     }}
-    // Exactly 5 metrics: DA, Referring Domains, Content Volume, Page Speed, Google Reviews
+    // Exactly {n_gaps} metric(s): {gap_metrics_desc}
   ],
   "backlink_opportunities": [{{
       "pillar": "string — e.g. 'Foundational', 'Digital PR', 'Guest Posting', 'Directories'",
@@ -528,11 +659,11 @@ Return a JSON object with EXACTLY these keys:
       "difficulty": "Easy / Medium / Hard",
       "estimated_monthly_links": "string or null — e.g. '3-5' or null"
     }}
-    // 10-12 specific backlink opportunities relevant to {req.industry} in {req.market}
+    // Exactly {n_backlinks} specific backlink opportunities relevant to {req.industry} in {req.market}
   ],
   "top_5_priority_actions": [
     {{"insight": "string (action title)", "detail": "string (why + expected impact)"}}
-    // Exactly 5 priority actions ordered by impact
+    // Exactly {n_priorities} priority action(s) ordered by impact
 ]}}
 
 For current_da: if you know {req.company_name} is a smaller/newer company, estimate lower (20-35).
@@ -549,19 +680,28 @@ Base all estimates on realistic industry patterns for {req.industry} companies i
             defaults = {"current_da": 30, "target_da_6m": 38, "target_da_12m": 48}
             data[key] = defaults[key]
 
-    return DomainAuthorityResponse(**data)
+    result = DomainAuthorityResponse(**data)
+
+    if not is_paid:
+        result.gap_analysis = _pad_rows(result.gap_analysis, 5, _locked_da_gap)
+        result.backlink_opportunities = _pad_rows(result.backlink_opportunities, 11, _locked_backlink_opportunity)
+        result.top_5_priority_actions = _pad_rows(result.top_5_priority_actions, 5, _locked_seo_insight)
+
+    return result
 
 
 # ── Full report ────────────────────────────────────────────────────────────────
 def generate_full_report(
-    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None
+    req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
 ) -> FullSEOReport:
-    """Run all four analyses. Each makes one Bedrock call (4 total)."""
+    """Run all four analyses. Each makes one Bedrock call (4 total). Unpaid
+    users get the same partial-reveal treatment on each sub-analysis as
+    calling them individually would."""
     return FullSEOReport(
-        competitor_analysis=generate_competitor_analysis(req, usage_tracker=usage_tracker),
-        keyword_volume=generate_keyword_volume(req, usage_tracker=usage_tracker),
-        company_profile=generate_company_profile(req, usage_tracker=usage_tracker),
-        domain_authority_strategy=generate_da_strategy(req, usage_tracker=usage_tracker),
+        competitor_analysis=generate_competitor_analysis(req, usage_tracker=usage_tracker, is_paid=is_paid),
+        keyword_volume=generate_keyword_volume(req, usage_tracker=usage_tracker, is_paid=is_paid),
+        company_profile=generate_company_profile(req, usage_tracker=usage_tracker, is_paid=is_paid),
+        domain_authority_strategy=generate_da_strategy(req, usage_tracker=usage_tracker, is_paid=is_paid),
     )
 
 
@@ -1016,21 +1156,52 @@ def _compute_backlink_aggregates(
 
 
 # ── Generator: full Content Strategy (keywords → competitors → content) ───────
-def generate_content_strategy(
-    req: ContentStrategyRequest, usage_tracker: TokenUsageTracker | None = None
-) -> ContentStrategyResponse:
-    """
-    For every keyword (primary + additional, deduped, capped by MAX_TOTAL_KEYWORDS),
-    run analysis + content generation CONCURRENTLY (bounded by
-    MAX_CONCURRENT_KEYWORDS), then synthesise a cross-keyword executive summary
-    over whichever keywords succeeded. Partial failures don't abort the request.
-    """
-    keywords = list(req.primary_keywords) + list(req.additional_keywords)
-    logger.info(
-        f"[bedrock] content_strategy — {req.company_name} — {len(keywords)} keyword(s): {keywords}"
+def _locked_keyword_slot(keyword: str) -> KeywordReportSlot:
+    """Zero Bedrock cost — no analysis/backlink/content calls are made for a
+    locked keyword at all. Just a static placeholder slot."""
+    return KeywordReportSlot(
+        keyword=keyword,
+        locked=True,
+        report=None,
+        preview_text=(
+            "Full competitor analysis, backlink acquisition plan, and a "
+            "ready-to-publish content piece for this keyword are ready to "
+            "generate — unlock to view."
+        ),
     )
 
-    keyword_reports, failures = _run_keyword_reports_concurrently(req, keywords, usage_tracker=usage_tracker)
+
+def generate_content_strategy(
+    req: ContentStrategyRequest,
+    usage_tracker: TokenUsageTracker | None = None,
+    is_paid: bool = True,
+) -> ContentStrategyResponse:
+    """
+    For every keyword (primary + additional, deduped, capped by MAX_TOTAL_KEYWORDS):
+
+    - Paid users: every keyword is fully generated (analysis + backlink
+      deep-dive + content, run CONCURRENTLY, bounded by MAX_CONCURRENT_KEYWORDS).
+    - Unpaid users: ONLY THE FIRST keyword is generated for real — a genuine,
+      complete, Bedrock-backed result, so the product's value is provable
+      without a paywall. Every other requested keyword comes back as a
+      `locked` placeholder slot with NO Bedrock calls made for it at all
+      (this is the actual token-usage optimization — cost scales with real
+      usage, not with how many keywords someone types in before paying).
+
+    Either way, partial failures among the real (unlocked) keywords don't
+    abort the request, and the executive summary / backlink aggregates are
+    computed only from whichever keywords were actually unlocked.
+    """
+    keywords = list(req.primary_keywords) + list(req.additional_keywords)
+    real_keywords = keywords if is_paid else keywords[:1]
+    locked_keywords = [] if is_paid else keywords[1:]
+
+    logger.info(
+        f"[bedrock] content_strategy — {req.company_name} — {len(keywords)} keyword(s) "
+        f"requested, {len(real_keywords)} to generate for real (is_paid={is_paid}): {keywords}"
+    )
+
+    keyword_reports, failures = _run_keyword_reports_concurrently(req, real_keywords, usage_tracker=usage_tracker)
 
     if failures:
         logger.warning(f"[bedrock] content_strategy — {len(failures)} keyword(s) failed: {failures}")
@@ -1041,13 +1212,16 @@ def generate_content_strategy(
     executive_summary = _generate_executive_summary(req, keyword_reports, usage_tracker=usage_tracker)
     directory, repeated = _compute_backlink_aggregates(keyword_reports)
 
+    slots = [KeywordReportSlot(keyword=r.keyword, locked=False, report=r) for r in keyword_reports]
+    slots += [_locked_keyword_slot(kw) for kw in locked_keywords]
+
     return ContentStrategyResponse(
         company=req.company_name,
         url=req.url,
         market=req.market,
         industry=req.industry,
         keywords_analyzed=[r.keyword for r in keyword_reports],
-        keyword_reports=keyword_reports,
+        keyword_reports=slots,
         executive_summary=executive_summary,
         backlink_target_directory=directory,
         repeated_high_value_platforms=repeated,
@@ -1171,6 +1345,7 @@ async def astream_keyword_report(
 async def stream_content_strategy_events(
     req: ContentStrategyRequest, is_disconnected,
     usage_tracker: TokenUsageTracker | None = None,
+    is_paid: bool = True,
 ):
     """
     Top-level async generator producing (event, data) tuples for the SSE
@@ -1179,11 +1354,21 @@ async def stream_content_strategy_events(
     failures without aborting the rest, and stops early if the client
     disconnects (`is_disconnected` — pass `request.is_disconnected` from
     the FastAPI route).
+
+    Same free-preview rule as the blocking generate_content_strategy: paid
+    users get every keyword processed for real; unpaid users get only the
+    FIRST keyword processed for real — every other requested keyword is
+    emitted immediately as a `keyword_locked` event with zero Bedrock calls
+    made for it (no analysis/backlink/content workers are even started).
     """
     keywords = list(req.primary_keywords) + list(req.additional_keywords)
+    real_keywords = keywords if is_paid else keywords[:1]
+    locked_keywords = [] if is_paid else keywords[1:]
+
     sem = asyncio.Semaphore(MAX_CONCURRENT_KEYWORDS)
     out_queue: asyncio.Queue = asyncio.Queue()
     reports: dict[str, KeywordContentReport] = {}
+    locked_slots: dict[str, KeywordReportSlot] = {}
     failures: dict[str, str] = {}
 
     async def _worker(kw: str):
@@ -1198,12 +1383,19 @@ async def stream_content_strategy_events(
                 failures[kw] = str(e)
                 await out_queue.put(("keyword_error", {"keyword": kw, "error": str(e)}))
 
-    tasks = [asyncio.create_task(_worker(kw)) for kw in keywords]
+    tasks = [asyncio.create_task(_worker(kw)) for kw in real_keywords]
 
-    yield ("start", {"keywords": keywords, "total": len(keywords)})
+    yield ("start", {"keywords": keywords, "total": len(keywords), "unlocked_count": len(real_keywords)})
+
+    # Locked keywords need no worker at all — emit immediately, no Bedrock
+    # calls, no waiting.
+    for kw in locked_keywords:
+        slot = _locked_keyword_slot(kw)
+        locked_slots[kw] = slot
+        yield ("keyword_locked", {"keyword": kw, "slot": slot.model_dump()})
 
     finished = 0
-    while finished < len(keywords):
+    while finished < len(real_keywords):
         if await is_disconnected():
             logger.info("[bedrock] client disconnected — cancelling remaining keyword tasks")
             for t in tasks:
@@ -1228,13 +1420,16 @@ async def stream_content_strategy_events(
     report_list = list(reports.values())
     directory, repeated_platforms = _compute_backlink_aggregates(report_list)
 
+    all_slots = [KeywordReportSlot(keyword=r.keyword, locked=False, report=r) for r in report_list]
+    all_slots += list(locked_slots.values())
+
     result = ContentStrategyResponse(
         company=req.company_name,
         url=req.url,
         market=req.market,
         industry=req.industry,
         keywords_analyzed=list(reports.keys()),
-        keyword_reports=report_list,
+        keyword_reports=all_slots,
         executive_summary=executive_summary,
         backlink_target_directory=directory,
         repeated_high_value_platforms=repeated_platforms,

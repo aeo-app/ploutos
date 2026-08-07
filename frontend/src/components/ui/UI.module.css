@@ -79,6 +79,9 @@
   vertical-align: middle;
 }
 .tr { transition: background var(--t-fast); }
+.trLocked { position: relative; }
+.trLocked td { filter: blur(3px); opacity: 0.5; user-select: none; pointer-events: none; }
+.tdLockedMask { color: var(--c-slate-300); letter-spacing: 1px; }
 .tr:hover .td { background: var(--c-slate-50); }
 .tr:last-child .td { border-bottom: none; }
 .thRight { text-align: right; }

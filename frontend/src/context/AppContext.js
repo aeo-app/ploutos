@@ -11,6 +11,12 @@ const init = {
   loading:  { competitors: false, keywords: false, profile: false, domainAuthority: false, fullReport: false, contentStrategy: false, relocationCalendar: false },
   errors:   { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null },
   toasts: [],
+  // Set (to a feature key, e.g. "competitors") whenever an API call returns
+  // 402 Payment Required — payment is triggered by attempting to access
+  // restricted content, never by simply logging in. AppShell renders a
+  // single shared UnlockModal reacting to this instead of each page having
+  // to handle it individually.
+  paymentRequiredFor: null,
 };
 
 let tid = 0;
@@ -24,6 +30,8 @@ function reducer(s, a) {
     case 'SET_ERROR':   return { ...s, errors: { ...s.errors, [a.key]: a.err }, loading: { ...s.loading, [a.key]: false } };
     case 'ADD_TOAST':   return { ...s, toasts: [...s.toasts, a.toast] };
     case 'REM_TOAST':   return { ...s, toasts: s.toasts.filter(t => t.id !== a.id) };
+    case 'SET_PAYMENT_REQUIRED': return { ...s, paymentRequiredFor: a.key, loading: { ...s.loading, [a.key]: false } };
+    case 'CLEAR_PAYMENT_REQUIRED': return { ...s, paymentRequiredFor: null };
     case 'CLEAR':       return { ...s, results: init.results, errors: init.errors, loading: init.loading };
     default: return s;
   }
@@ -51,6 +59,8 @@ export function AppProvider({ children }) {
   const setResultKey  = useCallback((key, data) => dispatch({ type: 'SET_RESULT', key, data }), []);
   const setErrorKey   = useCallback((key, err) => dispatch({ type: 'SET_ERROR', key, err }), []);
 
+  const clearPaymentRequired = useCallback(() => dispatch({ type: 'CLEAR_PAYMENT_REQUIRED' }), []);
+
   const runApi = useCallback(async (key, fn, req) => {
     dispatch({ type: 'SET_LOADING', key, val: true });
     try {
@@ -59,8 +69,13 @@ export function AppProvider({ children }) {
       dispatch({ type: 'SET_RESULT', key, data });
       return data;
     } catch (e) {
-      // Only show error if not TokenExpired (withTokenExpiry already handles redirect)
-      if (e.code !== 'TokenExpired') {
+      if (e.code === 'PaymentRequired') {
+        // Restricted content — trigger payment here, contextually, rather
+        // than blocking the whole app. No generic error toast for this one;
+        // AppShell's shared UnlockModal takes over instead.
+        dispatch({ type: 'SET_PAYMENT_REQUIRED', key });
+      } else if (e.code !== 'TokenExpired') {
+        // Only show error if not TokenExpired (withTokenExpiry already handles redirect)
         dispatch({ type: 'SET_ERROR', key, err: e.message });
         toast({ type: 'error', message: e.message });
       }
@@ -71,7 +86,10 @@ export function AppProvider({ children }) {
   }, [toast, goScreen, logout]);
 
   return (
-    <Ctx.Provider value={{ state, setPage, setRequest, clearAll, toast, dismissToast, runApi, setLoadingKey, setResultKey, setErrorKey }}>
+    <Ctx.Provider value={{
+      state, setPage, setRequest, clearAll, toast, dismissToast, runApi,
+      setLoadingKey, setResultKey, setErrorKey, clearPaymentRequired,
+    }}>
       {children}
     </Ctx.Provider>
   );
