@@ -63,7 +63,7 @@ export function Sidebar({ open, onClose }) {
         <div className={s.logo}>
           <div className={s.logoMark}><SearchIcon /></div>
           <div>
-            <div className={s.logoText}>APAC<span style={{ color: 'var(--c-indigo-600)' }}>Intel</span></div>
+            <div className={s.logoText}>AEO<span style={{ color: 'var(--c-indigo-600)' }}>Intel</span></div>
             <div className={s.logoSub}>SEO Intelligence Platform</div>
           </div>
         </div>

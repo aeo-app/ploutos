@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button';
 import { UnlockModal } from '../components/payment/UnlockModal';
 import { LockedTeaser } from '../components/payment/LockedTeaser';
 import { historyApi } from '../api/historyApi';
+import { CanvaPosterPanel } from '../components/canva/CanvaPosterPanel';
 import s from './RelocationCalendarPage.module.css';
 
 const PLATFORMS = [
@@ -22,7 +23,7 @@ const TONE_VARIANT = { emotional: 'danger', professional: 'info', educational: '
 const CTA_VARIANT = { soft: 'default', urgent: 'danger', informative: 'info' };
 
 /* ── One post's platform-tabbed captions ─────────────────────────────── */
-function PostCard({ post }) {
+function PostCard({ post, dayDate }) {
   const [platform, setPlatform] = useState('instagram');
   const caption = post.captions?.[platform] || '';
 
@@ -90,6 +91,8 @@ function PostCard({ post }) {
           ))}
         </div>
       )}
+
+      <CanvaPosterPanel dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta} />
     </div>
   );
 }
@@ -130,7 +133,7 @@ export function DayCard({ day, index, defaultOpen, onUnlock }) {
               <span className={s.dayTimeChip}>GBP: {rt.google_business}</span>
             </div>
             <div className={s.dayBody}>
-              {schedule.posts.map((post, i) => <PostCard key={i} post={post} />)}
+              {schedule.posts.map((post, i) => <PostCard key={i} post={post} dayDate={day.date} />)}
             </div>
           </>
         )}

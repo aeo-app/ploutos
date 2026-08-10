@@ -730,6 +730,184 @@ def check_and_lock_domain(user_id: str, url: str, company_name: str) -> None:
         raise DomainMismatchError(existing["domain"], domain)
 
 
+# ── Canva integration (connection + saved posters) ──────────────────────────
+# Same single-table design again:
+#   - Canva OAuth connection (one per user): SK = "CANVA_CONNECTION"
+#   - PKCE state (short-lived, one per in-flight OAuth attempt):
+#     SK = f"CANVA_PKCE#{state}" — a TTL'd item so an abandoned OAuth
+#     attempt doesn't leave orphaned data around forever.
+#   - Poster records (many per user): SK = f"POSTER#{ts}#{poster_id}"
+
+def _canva_connection_sk() -> str:
+    return "CANVA_CONNECTION"
+
+
+def _canva_pkce_sk(state: str) -> str:
+    return f"CANVA_PKCE#{state}"
+
+
+def _poster_sk(poster_id: str) -> str:
+    return f"POSTER#{poster_id}"
+
+
+def save_canva_pkce(user_id: str, state: str, code_verifier: str) -> None:
+    """Short-lived — the code_verifier must survive the round-trip to Canva's
+    authorize page and back to /callback, but isn't needed after that."""
+    table = _get_table()
+    item = {
+        "PK": _pk(user_id),
+        "SK": _canva_pkce_sk(state),
+        "user_id": user_id,
+        "state": state,
+        "code_verifier": code_verifier,
+        "created_at": _now_iso(),
+        "expires_at": int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+    except ClientError as e:
+        logger.error(f"[dynamo] save_canva_pkce failed: {e.response['Error']}")
+        raise
+
+
+def get_canva_pkce(user_id: str, state: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _canva_pkce_sk(state)})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_canva_pkce failed: {e.response['Error']}")
+        raise
+
+
+def save_canva_connection(
+    *, user_id: str, access_token: str, refresh_token: str, expires_at: str, canva_user_id: str = "",
+) -> None:
+    table = _get_table()
+    item = {
+        "PK": _pk(user_id),
+        "SK": _canva_connection_sk(),
+        "user_id": user_id,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at,
+        "canva_user_id": canva_user_id,
+        "connected_at": _now_iso(),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] Canva connected for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_canva_connection failed: {e.response['Error']}")
+        raise
+
+
+def get_canva_connection(user_id: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _canva_connection_sk()})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_canva_connection failed: {e.response['Error']}")
+        raise
+
+
+def delete_canva_connection(user_id: str) -> None:
+    table = _get_table()
+    try:
+        table.delete_item(Key={"PK": _pk(user_id), "SK": _canva_connection_sk()})
+        logger.info(f"[dynamo] Canva disconnected for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] delete_canva_connection failed: {e.response['Error']}")
+        raise
+
+
+def save_poster(
+    *,
+    user_id: str,
+    poster_id: str,
+    day_date: str,
+    post_number: int,
+    brand_template_id: str,
+    design_id: str,
+    edit_url: str,
+    thumbnail_url: str,
+    image_field_values: dict,
+    text_field_values: dict,
+) -> None:
+    """Create (first generation) or overwrite (regeneration — same poster_id,
+    new design_id after re-running autofill with different images) a saved
+    poster record."""
+    table = _get_table()
+    now_iso = _now_iso()
+    existing = get_poster(user_id, poster_id)
+    item = {
+        "PK": _pk(user_id),
+        "SK": _poster_sk(poster_id),
+        "analysis_id": poster_id,  # GSI hash key — reusing the shared GSI, see module note above save_payment_intent
+        "user_id": user_id,
+        "poster_id": poster_id,
+        "day_date": day_date,
+        "post_number": post_number,
+        "brand_template_id": brand_template_id,
+        "design_id": design_id,
+        "edit_url": edit_url,
+        "thumbnail_url": thumbnail_url,
+        "image_field_values": image_field_values,
+        "text_field_values": text_field_values,
+        "created_at": existing["created_at"] if existing else now_iso,
+        "updated_at": now_iso,
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] saved poster={poster_id} user={user_id} design={design_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_poster failed: {e.response['Error']}")
+        raise
+
+
+def get_poster(user_id: str, poster_id: str) -> Optional[dict]:
+    """Looks up a poster by its poster_id via the shared GSI (same pattern as
+    get_payment_intent) — the router only knows the poster_id, not its SK."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            IndexName=GSI_NAME,
+            KeyConditionExpression=Key("analysis_id").eq(poster_id),
+        )
+        items = resp.get("Items", [])
+        if not items:
+            return None
+        item = _from_dynamo(items[0])
+        if item.get("user_id") != user_id or "poster_id" not in item:
+            return None
+        return item
+    except ClientError as e:
+        logger.error(f"[dynamo] get_poster failed: {e.response['Error']}")
+        raise
+
+
+def list_posters(user_id: str, limit: int = 50) -> list[dict]:
+    """All saved posters for a user, newest-updated first. SK is stable per
+    poster_id (not timestamp-prefixed — see save_poster's upsert-on-regenerate
+    behaviour), so unlike list_analyses this sorts in Python rather than
+    relying on native SK ordering. Fine at this scale (posters per user is a
+    much smaller set than analyses)."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with("POSTER#"),
+        )
+        items = [_from_dynamo(i) for i in resp.get("Items", [])]
+        items.sort(key=lambda i: i.get("updated_at", ""), reverse=True)
+        return items[:limit]
+    except ClientError as e:
+        logger.error(f"[dynamo] list_posters failed: {e.response['Error']}")
+        raise
+
+
 # ── Table bootstrap (for local dev / CI) ──────────────────────────────────────
 
 def create_table_if_not_exists() -> None:
