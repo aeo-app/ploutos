@@ -280,15 +280,15 @@ export function RelocationCalendarPage() {
     setLoadingKey('relocationCalendar', true);
 
     const req = {
-      country: country.trim(),
+      country: country?.trim(),
       company: {
-        name: company.name.trim(),
-        phone: company.phone.trim() || null,
-        email: company.email.trim() || null,
-        website: company.website.trim() || null,
-        instagram: company.instagram.trim() || null,
-        facebook: company.facebook.trim() || null,
-        linkedin: company.linkedin.trim() || null,
+        name: company.name?.trim(),
+        phone: company.phone?.trim() || null,
+        email: company.email?.trim() || null,
+        website: company.website?.trim() || null,
+        instagram: company.instagram?.trim() || null,
+        facebook: company.facebook?.trim() || null,
+        linkedin: company.linkedin?.trim() || null,
       },
       start_date: startDate,
       end_date: endDate,

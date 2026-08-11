@@ -9,7 +9,7 @@ import s from './CheckoutPage.module.css';
 
 // 'demo' (sandbox) | 'prod' — flip when deploying, same convention as the
 // hardcoded API BASE URL in seoApi.js.
-const AIRWALLEX_ENV = 'demo';
+const AIRWALLEX_ENV = 'prod';
 
 // How long to keep polling /payment/status after the Drop-in reports
 // success, before giving up and telling the user to refresh (the webhook

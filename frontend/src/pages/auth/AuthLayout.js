@@ -30,7 +30,7 @@ export function AuthLayout({ children }) {
             <SearchIcon />
           </div>
           <div>
-            <div className={s.brandLogoText}>APAC<span style={{ color: '#C7D2FE' }}>Intel</span></div>
+            <div className={s.brandLogoText}>AEO<span style={{ color: '#C7D2FE' }}>Intel</span></div>
             <div className={s.brandLogoSub}>SEO Intelligence Platform</div>
           </div>
         </div>

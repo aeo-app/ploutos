@@ -1,5 +1,5 @@
 """
-main.py — APAC SEO Intelligence API v4
+main.py — AEO SEO Intelligence API v4
 AWS Bedrock + Cognito + DynamoDB
 """
 import os
@@ -46,13 +46,13 @@ async def lifespan(app: FastAPI):
     model = os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0")
     logger.info(f"[startup] Bedrock model: {model}")
     logger.info("[startup] Anti-hallucination: knowledge-declaration pipeline (no external search APIs)")
-    logger.info("[startup] APAC SEO Intelligence API v4 ready")
+    logger.info("[startup] AEO SEO Intelligence API v4 ready")
     yield
     logger.info("[shutdown] Goodbye")
 
 
 app = FastAPI(
-    title="APAC SEO Intelligence API",
+    title="AEO SEO Intelligence API",
     description="""
 AI-powered SEO competitive intelligence — **AWS Bedrock · Cognito · DynamoDB**.
 
@@ -150,7 +150,7 @@ app.include_router(payment_router)
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "service":  "APAC SEO Intelligence API",
+        "service":  "AEO SEO Intelligence API",
         "version":  "4.1.0",
         "ai":       os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0"),
         "auth":     "AWS Cognito",
