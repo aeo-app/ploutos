@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 import s from './AnalyseForm.module.css';
 
 const QUICK = [
-  { company_name: 'APAC Relocation', url: 'https://www.apacrelocation.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
+  { company_name: 'Santa Fe Relocation', url: 'https://www.santaferelo.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
   { company_name: 'Crown Relocations', url: 'https://www.crownrelo.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
   { company_name: 'PropertyGuru', url: 'https://www.propertyguru.com.sg', market: 'Singapore', industry: 'Real Estate Portal' },
 ];
@@ -41,8 +41,8 @@ export function AnalyseForm({ onSubmit, loading, buttonLabel = 'Analyse', compac
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <Field label="Company" name="company_name" value={request.company_name} onChange={set} placeholder="My Company" required />
-        <Field label="URL" name="url" value={request.url} onChange={set} placeholder="https://mycompany.com" required />
+        <Field label="Company" name="company_name" value={request.company_name} onChange={set} placeholder="Santa Fe Relocation" required />
+        <Field label="URL" name="url" value={request.url} onChange={set} placeholder="https://www.santaferelo.com" required />
         {/* <Field label="Market" name="market" value={request.market} onChange={set} placeholder="Singapore" /> */}
         <Button type="submit" size="md" loading={loading} disabled={!request.company_name}>
           {loading ? 'Analysing…' : buttonLabel}
@@ -69,8 +69,8 @@ export function AnalyseForm({ onSubmit, loading, buttonLabel = 'Analyse', compac
         <div className={s.formTitle}>Run SEO Analysis</div>
         <div className={s.formSub}>Enter any company to generate AI-powered competitive intelligence in seconds.</div>
         <div className={s.grid}>
-          <Field label="Company Name" name="company_name" value={request.company_name} onChange={set} placeholder="e.g. My Company" required />
-          <Field label="Website URL" name="url" value={request.url} onChange={set} placeholder="https://mycompany.com" />
+          <Field label="Company Name" name="company_name" value={request.company_name} onChange={set} placeholder="e.g. Santa Fe Relocation" required />
+          <Field label="Website URL" name="url" value={request.url} onChange={set} placeholder="https://www.santaferelo.com" />
           {/* <Field label="Market / City" name="market" value={request.market} onChange={set} placeholder="Singapore" />
           <Field label="Industry" name="industry" value={request.industry} onChange={set} placeholder="International Relocation / Moving Services" /> */}
         </div>

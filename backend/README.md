@@ -16,7 +16,7 @@ in — see [Payments](#payments-airwallex) below.
 | API framework | FastAPI |
 | AI generation | AWS Bedrock (Nova Pro) — no external search/SEO APIs; see [Data quality](#data-quality--no-external-search-apis) |
 | Auth | AWS Cognito (JWT, verified against Cognito's JWKS) |
-| Data storage | DynamoDB — single table, GSI for cross-partition lookups |
+| Data storage | DynamoDB — two tables: analyses (single-table design, GSI for cross-partition lookups) and payments/entitlements (separate table, its own GSI — see db/payments_dynamo.py) |
 | Payments | Airwallex (PaymentIntents + webhooks) |
 | Package management | [uv](https://docs.astral.sh/uv/) |
 
@@ -156,6 +156,9 @@ the **only** endpoints that don't require payment.
 Every endpoint below auth requires an active paid entitlement
 (`core.security.require_paid_access`) — unpaid requests get **402 Payment
 Required**. See `services/airwallex_service.py` and `routers/payment_router.py`.
+Payment transactions and entitlements live in their own DynamoDB table,
+separate from analyses — see `db/payments_dynamo.py` and `APAC_PAYMENTS_TABLE`
+below.
 
 **Three plans (Starter/Growth/Scale)** — priced differently, but every paid
 plan gets full platform access (no feature gating between tiers yet).

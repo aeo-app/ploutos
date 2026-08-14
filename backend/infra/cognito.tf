@@ -186,3 +186,27 @@ output "jwks_url" {
   value       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.main.id}/.well-known/jwks.json"
   description = "Used by core/security.py for JWT verification"
 }
+
+# ─── Admin RBAC — Cognito Group ───────────────────────────────────────────────
+# Chosen over a custom attribute (like custom:company_name/custom:domain
+# above) specifically because Groups can be added to an EXISTING user pool
+# at any time — no schema-immutability issue. Membership is embedded
+# directly in the JWT as the `cognito:groups` claim (see
+# core.security.require_admin, which checks this first, falling back to a
+# DynamoDB mirror — db.dynamo.is_admin/set_admin — for immediate effect
+# without waiting on a token refresh, and for local/dev mode).
+#
+# Manage membership via services/cognito_service.py's add_user_to_group/
+# remove_user_from_group (called from POST /api/v1/admin/users/{id}/set-admin),
+# or directly in the AWS Console under this user pool's Groups tab.
+resource "aws_cognito_user_group" "admins" {
+  name         = "Admins"
+  user_pool_id = aws_cognito_user_pool.main.id
+  description  = "Full admin access to the app's admin panel — review/edit every user's social media calendars and blog posts, bypass payment. See core/security.py's require_admin."
+  precedence   = 1
+}
+
+output "admin_group_name" {
+  value       = aws_cognito_user_group.admins.name
+  description = "Set as COGNITO_ADMIN_GROUP in .env if you rename this group"
+}

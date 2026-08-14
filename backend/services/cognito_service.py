@@ -313,6 +313,53 @@ def get_user(access_token: str) -> dict:
         raise _map_error(e)
 
 
+# ── Groups (role-based access control — see core.security.require_admin) ────
+# Cognito Groups (unlike custom attributes) can be added to an EXISTING user
+# pool at any time — no schema-immutability issue — and group membership is
+# embedded directly in the JWT as the `cognito:groups` claim once a token is
+# (re-)issued. This is the canonical, AWS-native RBAC mechanism; the
+# DynamoDB-backed db.dynamo.is_admin/set_admin remains as a fallback (see
+# core.security.require_admin) for local/dev mode and for immediate effect
+# without waiting on a token refresh.
+ADMIN_GROUP_NAME = os.getenv("COGNITO_ADMIN_GROUP", "Admins")
+
+
+def add_user_to_group(username: str, group_name: str = ADMIN_GROUP_NAME) -> None:
+    """`username` is the Cognito Username (usually the email for this pool's
+    signup flow) — NOT the `sub`. AdminAddUserToGroup requires Username,
+    not sub."""
+    _require_config()
+    client = _get_client()
+    try:
+        client.admin_add_user_to_group(UserPoolId=POOL_ID, Username=username, GroupName=group_name)
+        logger.info(f"[cognito] added {username} to group {group_name}")
+    except ClientError as e:
+        raise _map_error(e)
+
+
+def remove_user_from_group(username: str, group_name: str = ADMIN_GROUP_NAME) -> None:
+    _require_config()
+    client = _get_client()
+    try:
+        client.admin_remove_user_from_group(UserPoolId=POOL_ID, Username=username, GroupName=group_name)
+        logger.info(f"[cognito] removed {username} from group {group_name}")
+    except ClientError as e:
+        raise _map_error(e)
+
+
+def list_users_in_group(group_name: str = ADMIN_GROUP_NAME) -> list[dict]:
+    """Returns Cognito's raw user records for everyone in the group —
+    mainly useful for reconciling the DynamoDB registry against the
+    canonical Cognito group membership if they ever drift."""
+    _require_config()
+    client = _get_client()
+    try:
+        resp = client.list_users_in_group(UserPoolId=POOL_ID, GroupName=group_name)
+        return resp.get("Users", [])
+    except ClientError as e:
+        raise _map_error(e)
+
+
 def update_user_profile(access_token: str, company_name: str, domain: str) -> dict:
     """
     Sets custom:company_name / custom:domain for the CURRENTLY authenticated

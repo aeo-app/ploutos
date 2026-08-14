@@ -20,6 +20,8 @@ import { ContentStrategyPage } from './pages/ContentStrategyPage';
 import { RelocationCalendarPage } from './pages/RelocationCalendarPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { BillingPage } from './pages/BillingPage';
+import { BlogTopicsPage } from './pages/BlogTopicsPage';
+import { AdminApp } from './pages/AdminApp';
 
 // Auth pages
 import { SignupPage }       from './pages/auth/SignupPage';
@@ -43,6 +45,7 @@ const APP_PAGES = {
   relocationCalendar: RelocationCalendarPage,
   history: HistoryPage,
   billing: BillingPage,
+  blogTopics: BlogTopicsPage,
 };
 
 const AUTH_SCREENS = {
@@ -149,14 +152,33 @@ function Root() {
       {(profile) => (
         <PaymentProvider>
           <AppProvider>
-            <AppShell profile={profile}>
-              <AppRouter />
-            </AppShell>
+            <AdminAwareRoot profile={profile} />
             <Toasts />
           </AppProvider>
         </PaymentProvider>
       )}
     </ProfileGate>
+  );
+}
+
+/**
+ * Admins land in the completely separate AdminApp (own shell, own nav — see
+ * pages/AdminApp.js) by default; "Exit to my account" switches to the
+ * regular AppShell for their own company's tools, with a link back in
+ * TopBar. Non-admins only ever see the regular AppShell — there's no
+ * admin-mode toggle available to them at all.
+ */
+function AdminAwareRoot({ profile }) {
+  const [viewMode, setViewMode] = useState(profile?.is_admin ? 'admin' : 'user');
+
+  if (profile?.is_admin && viewMode === 'admin') {
+    return <AdminApp onExitToUserView={() => setViewMode('user')} />;
+  }
+
+  return (
+    <AppShell profile={profile} onEnterAdminView={profile?.is_admin ? () => setViewMode('admin') : undefined}>
+      <AppRouter />
+    </AppShell>
   );
 }
 

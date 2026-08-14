@@ -1,0 +1,1 @@
+export const AIRWALLEX_ENV = "prod";

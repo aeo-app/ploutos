@@ -58,19 +58,19 @@ export function KeywordsResultView({ data }) {
       {(tab === 'all' || tab === 'head') && (
         <Card padded={false}>
           <div className={s.cardHead}><SectionHeader title="High-Volume Head Terms" subtitle="Broadest reach — most competitive" /></div>
-          <DataTable rows={data.high_volume_head_terms} cols={KW_COLS} keyFn={r => r.keyword} />
+          <DataTable rows={data?.high_volume_head_terms || []} cols={KW_COLS} keyFn={r => r.keyword} />
         </Card>
       )}
       {(tab === 'all' || tab === 'mid') && (
         <Card padded={false}>
           <div className={s.cardHead}><SectionHeader title="Mid-Volume Service Terms" subtitle="Core revenue keywords" /></div>
-          <DataTable rows={data.mid_volume_service_terms} cols={KW_COLS} keyFn={r => r.keyword} />
+          <DataTable rows={data?.mid_volume_service_terms || []} cols={KW_COLS} keyFn={r => r.keyword} />
         </Card>
       )}
       {(tab === 'all' || tab === 'tail') && (
         <Card padded={false}>
           <div className={s.cardHead}><SectionHeader title="Long-Tail High-Intent" subtitle="Best conversion rate — lowest competition" /></div>
-          <DataTable rows={data.long_tail_high_intent} cols={KW_COLS} keyFn={r => r.keyword} />
+          <DataTable rows={data?.long_tail_high_intent || []} cols={KW_COLS} keyFn={r => r.keyword} />
         </Card>
       )}
       {tab === 'winners' && (
@@ -84,7 +84,7 @@ export function KeywordsResultView({ data }) {
       <Card>
         <SectionHeader title="Strategic Priority Summary" />
         <div className={s.insights}>
-          {data.strategic_priority_summary.map((t, i) => <InsightCard key={i} {...t} index={i} />)}
+          {(data?.strategic_priority_summary || []).map((t, i) => <InsightCard key={i} {...t} index={i} />)}
         </div>
       </Card>
     </motion.div>

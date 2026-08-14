@@ -23,9 +23,32 @@ const ANALYSIS_TYPE_TO_RESULT_KEY = {
   relocation_social_calendar: 'relocationCalendar',
 };
 
-export function AppShell({ children, profile }) {
+export function AppShell({ children, profile, onEnterAdminView }) {
   const [open, setOpen] = useState(false);
-  const { state, setRequest, setResultKey, clearPaymentRequired, toast } = useApp();
+  const { state, setRequest, setResultKey, clearPaymentRequired, toast, setAdmin } = useApp();
+
+  useEffect(() => {
+    setAdmin(!!profile?.is_admin);
+  }, [profile, setAdmin]);
+
+  // Canva's OAuth callback is a full-page redirect back into the app (see
+  // routers/canva_router.py's /canva/callback) — there's no in-app state to
+  // react to, just a query param confirming how it went. Surface it once,
+  // then clean the URL so a refresh doesn't re-show the toast.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const canvaResult = params.get('canva');
+    if (!canvaResult) return;
+    if (canvaResult === 'connected') {
+      toast({ type: 'success', message: '✓ Canva connected — you can now create posters.' });
+    } else if (canvaResult === 'error') {
+      toast({ type: 'error', message: 'Could not connect Canva. Please try again.' });
+    }
+    params.delete('canva');
+    const newSearch = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+    // eslint-disable-next-line
+  }, []);
 
   // Prepopulate the shared request form (company_name/url/market/industry —
   // used by every analysis page via AnalyseForm), so users aren't retyping
@@ -101,7 +124,7 @@ export function AppShell({ children, profile }) {
     <div className={s.shell}>
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className={s.main}>
-        <TopBar onMenu={() => setOpen(v => !v)} />
+        <TopBar onMenu={() => setOpen(v => !v)} onEnterAdminView={onEnterAdminView} />
         <main className={s.content}>{children}</main>
       </div>
 

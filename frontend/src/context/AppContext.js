@@ -6,6 +6,7 @@ const Ctx = createContext(null);
 
 const init = {
   page: 'home',
+  isAdmin: false,
   request: { company_name: '', url: '', market: 'Singapore', industry: '' },
   results:  { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null },
   loading:  { competitors: false, keywords: false, profile: false, domainAuthority: false, fullReport: false, contentStrategy: false, relocationCalendar: false },
@@ -24,6 +25,7 @@ let tid = 0;
 function reducer(s, a) {
   switch (a.type) {
     case 'SET_PAGE':    return { ...s, page: a.page };
+    case 'SET_ADMIN':   return { ...s, isAdmin: a.val };
     case 'SET_REQUEST': return { ...s, request: { ...s.request, ...a.payload } };
     case 'SET_LOADING': return { ...s, loading: { ...s.loading, [a.key]: a.val } };
     case 'SET_RESULT':  return { ...s, results: { ...s.results, [a.key]: a.data }, errors: { ...s.errors, [a.key]: null } };
@@ -58,6 +60,7 @@ export function AppProvider({ children }) {
   const setLoadingKey = useCallback((key, val) => dispatch({ type: 'SET_LOADING', key, val }), []);
   const setResultKey  = useCallback((key, data) => dispatch({ type: 'SET_RESULT', key, data }), []);
   const setErrorKey   = useCallback((key, err) => dispatch({ type: 'SET_ERROR', key, err }), []);
+  const setAdmin       = useCallback((val) => dispatch({ type: 'SET_ADMIN', val }), []);
 
   const clearPaymentRequired = useCallback(() => dispatch({ type: 'CLEAR_PAYMENT_REQUIRED' }), []);
 
@@ -88,7 +91,7 @@ export function AppProvider({ children }) {
   return (
     <Ctx.Provider value={{
       state, setPage, setRequest, clearAll, toast, dismissToast, runApi,
-      setLoadingKey, setResultKey, setErrorKey, clearPaymentRequired,
+      setLoadingKey, setResultKey, setErrorKey, clearPaymentRequired, setAdmin,
     }}>
       {children}
     </Ctx.Provider>

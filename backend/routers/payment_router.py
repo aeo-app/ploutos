@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from core.security import get_current_user_id
-from db.dynamo import (
+from db import (
     get_user_entitlement,
     list_user_payments,
     save_payment_intent,

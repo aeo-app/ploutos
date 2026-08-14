@@ -103,3 +103,74 @@ output "table_arn" {
 output "gsi_name" {
   value = "gsi_analysis_id"
 }
+
+# ─── DynamoDB Table — Payments & Entitlements (separate from analyses) ──────
+# Split out from the main table (see db/payments_dynamo.py) so
+# payment/billing data lives independently of application/analysis data —
+# its own table, its own GSI, its own connection at the code level. Same
+# production-grade config as the analyses table (PITR, encryption, no TTL
+# by default since payment records shouldn't silently expire).
+
+variable "payments_table_name" {
+  default = "apac_payments"
+}
+
+resource "aws_dynamodb_table" "apac_payments" {
+  name         = var.payments_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "PK"
+  range_key    = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "payment_intent_id"
+    type = "S"
+  }
+
+  # ── GSI: look up a payment transaction by its Airwallex PaymentIntent ID ──
+  # (used by the webhook handler, which only knows the Airwallex ID, and by
+  # status polling)
+  global_secondary_index {
+    name            = "gsi_payment_intent_id"
+    hash_key        = "payment_intent_id"
+    projection_type = "ALL"
+  }
+
+  # ── Point-in-time recovery ────────────────────────────────────────────────
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # ── Encryption at rest ────────────────────────────────────────────────────
+  server_side_encryption {
+    enabled = true
+  }
+
+  tags = {
+    Project     = "apac-seo-intelligence"
+    Environment = "production"
+    ManagedBy   = "terraform"
+    DataClass   = "payments"
+  }
+}
+
+output "payments_table_name" {
+  value = aws_dynamodb_table.apac_payments.name
+}
+
+output "payments_table_arn" {
+  value = aws_dynamodb_table.apac_payments.arn
+}
+
+output "payments_gsi_name" {
+  value = "gsi_payment_intent_id"
+}

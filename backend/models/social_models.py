@@ -150,7 +150,7 @@ class DayScheduleSlot(BaseModel):
     comes back `locked=True` with no `schedule` at all (zero Bedrock cost).
     Paid users get every day unlocked. See
     services.social_service.generate_relocation_calendar for where this is
-    decided — always checked server-side via db.dynamo.is_user_paid.
+    decided — always checked server-side via db.payments_dynamo.is_user_paid.
     """
     date: str
     day_of_week: str

@@ -1,5 +1,5 @@
 """
-main.py — AEO SEO Intelligence API v4
+main.py — APAC SEO Intelligence API v4
 AWS Bedrock + Cognito + DynamoDB
 """
 import os
@@ -36,23 +36,25 @@ async def lifespan(app: FastAPI):
             "(correct for EC2/ECS/Lambda; set creds for local dev)"
         )
 
-    # Auto-create DynamoDB table in local dev mode
+    # Auto-create DynamoDB tables in local dev mode — analyses table AND
+    # the separate payments table (db/payments_dynamo.py).
     if os.getenv("DYNAMODB_ENDPOINT_URL"):
         logger.info(f"[startup] Local DynamoDB at {os.getenv('DYNAMODB_ENDPOINT_URL')}")
-        from db import create_table_if_not_exists
+        from db import create_table_if_not_exists, create_payments_table_if_not_exists
         create_table_if_not_exists()
+        create_payments_table_if_not_exists()
 
     # Log active model and architecture
     model = os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0")
     logger.info(f"[startup] Bedrock model: {model}")
     logger.info("[startup] Anti-hallucination: knowledge-declaration pipeline (no external search APIs)")
-    logger.info("[startup] AEO SEO Intelligence API v4 ready")
+    logger.info("[startup] APAC SEO Intelligence API v4 ready")
     yield
     logger.info("[shutdown] Goodbye")
 
 
 app = FastAPI(
-    title="AEO SEO Intelligence API",
+    title="APAC SEO Intelligence API",
     description="""
 AI-powered SEO competitive intelligence — **AWS Bedrock · Cognito · DynamoDB**.
 
@@ -140,17 +142,23 @@ from routers.auth_router import router as auth_router
 from routers.seo_router  import router as seo_router
 from routers.social_router import router as social_router
 from routers.payment_router import router as payment_router
+from routers.canva_router import router as canva_router
+from routers.admin_router import router as admin_router
+from routers.blog_router import router as blog_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
 app.include_router(social_router)
 app.include_router(payment_router)
+app.include_router(canva_router)
+app.include_router(admin_router)
+app.include_router(blog_router)
 
 
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "service":  "AEO SEO Intelligence API",
+        "service":  "APAC SEO Intelligence API",
         "version":  "4.1.0",
         "ai":       os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0"),
         "auth":     "AWS Cognito",

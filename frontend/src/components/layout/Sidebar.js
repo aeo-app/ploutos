@@ -3,43 +3,56 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
 import s from './Sidebar.module.css';
 
-const NAV = [
-  {
-    section: 'Overview',
-    items: [
-      { id: 'home',    icon: '⊞', label: 'Dashboard' },
-    ],
-  },
-  {
-    section: 'Analytics',
-    items: [
-      { id: 'compete',  icon: '⚔',  label: 'Competitors' },
-      { id: 'keywords', icon: '🔑', label: 'Keywords' },
-      { id: 'da',       icon: '📈', label: 'Domain Authority' },
-    ],
-  },
-  {
-    section: 'Content',
-    items: [
-      { id: 'profile',  icon: '📋', label: 'Company Profile' },
-      { id: 'contentStrategy', icon: '✍️', label: 'Content Strategy' },
-      { id: 'relocationCalendar', icon: '📅', label: 'Social Media Calendar' },
-    ],
-  },
-  {
-    section: 'Reports',
-    items: [
-      { id: 'report',   icon: '⚡',  label: 'Full Report' },
-    ],
-  },
-  {
-    section: 'Account',
-    items: [
-      { id: 'history', icon: '🗂️', label: 'History' },
-      { id: 'billing', icon: '💳', label: 'Billing & Plans' },
-    ],
-  },
-];
+function getNav(isAdmin) {
+  const nav = [
+    {
+      section: 'Overview',
+      items: [
+        { id: 'home',    icon: '⊞', label: 'Dashboard' },
+      ],
+    },
+    {
+      section: 'Analytics',
+      items: [
+        { id: 'compete',  icon: '⚔',  label: 'Competitors' },
+        { id: 'keywords', icon: '🔑', label: 'Keywords' },
+        { id: 'da',       icon: '📈', label: 'Domain Authority' },
+      ],
+    },
+    {
+      section: 'Content',
+      items: [
+        { id: 'profile',  icon: '📋', label: 'Company Profile' },
+        { id: 'contentStrategy', icon: '✍️', label: 'Content Strategy' },
+        { id: 'blogTopics', icon: '📝', label: 'Blog Topics' },
+        { id: 'relocationCalendar', icon: '📅', label: 'Social Media Calendar' },
+      ],
+    },
+    {
+      section: 'Reports',
+      items: [
+        { id: 'report',   icon: '⚡',  label: 'Full Report' },
+      ],
+    },
+    {
+      section: 'Account',
+      items: [
+        { id: 'history', icon: '🗂️', label: 'History' },
+        // Admins bypass payment entirely (see is_user_paid's admin check on
+        // the backend) — a billing/plans screen is meaningless for an
+        // account that never needs to pay, so it's left out rather than
+        // shown with a permanently-empty "no active plan" state.
+        ...(isAdmin ? [] : [{ id: 'billing', icon: '💳', label: 'Billing & Plans' }]),
+      ],
+    },
+  ];
+  // No "Admin" item here anymore — the admin dashboard is a completely
+  // separate shell (see pages/AdminApp.js), not a page within this regular
+  // sidebar. Admins reach it via a small link in TopBar instead (see
+  // components/layout/TopBar.js), which keeps this nav identical for every
+  // account type rather than conditionally shared.
+  return nav;
+}
 
 function SearchIcon() {
   return (
@@ -52,6 +65,7 @@ function SearchIcon() {
 export function Sidebar({ open, onClose }) {
   const { state, setPage, clearAll } = useApp();
   const hasAny = Object.values(state.results).some(Boolean);
+  const NAV = getNav(state.isAdmin);
 
   const go = (id) => { setPage(id); onClose?.(); };
 
@@ -98,6 +112,8 @@ export function Sidebar({ open, onClose }) {
                   : item.id === 'relocationCalendar' ? !!state.results.relocationCalendar
                   : item.id === 'history' ? false
                   : item.id === 'billing' ? false
+                  : item.id === 'admin' ? false
+                  : item.id === 'blogTopics' ? false
                   : !!state.results[item.id] || !!state.results.fullReport;
                 return (
                   <button

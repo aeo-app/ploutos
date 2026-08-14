@@ -19,3 +19,6 @@ cryptography==43.0.1
 
 # Anti-hallucination: two-call knowledge-declaration architecture
 # No external search APIs required — all grounding via prompt engineering
+
+dnspython==2.7.0
+python-multipart==0.0.32

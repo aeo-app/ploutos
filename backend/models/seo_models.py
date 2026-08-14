@@ -302,7 +302,7 @@ class KeywordReportSlot(BaseModel):
     Paid users get every keyword unlocked. See
     services.bedrock_service.generate_content_strategy for where this is
     decided — never trust a client to say "I'm paid," always check
-    db.dynamo.is_user_paid server-side.
+    db.payments_dynamo.is_user_paid server-side.
     """
     keyword: str
     locked: bool

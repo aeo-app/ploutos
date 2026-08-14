@@ -532,7 +532,7 @@ function BrandPanel() {
           <svg width="18" height="18" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round"><circle cx="9" cy="9" r="7"/><path d="M3.5 9.5C5.5 6.5 9 5 9 5s3.5 1.5 5.5 4.5"/></svg>
         </div>
         <span style={{ fontFamily:"'Syne',sans-serif", fontSize:18, fontWeight:800, color:"var(--t1)" }}>
-          AEO<span style={{ color:"var(--p2)" }}>Intel</span>
+          APAC<span style={{ color:"var(--p2)" }}>Intel</span>
         </span>
       </div>
 
@@ -739,7 +739,7 @@ function AuthCard({ children }) {
               <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#7C6FFF,#9D93FF)", display:"flex", alignItems:"center", justifyContent:"center" }}>
                 <span style={{ fontSize:14 }}>⚡</span>
               </div>
-              <span style={{ fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:800, color:"var(--t1)" }}>AEO<span style={{ color:"var(--p2)" }}>Intel</span></span>
+              <span style={{ fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:800, color:"var(--t1)" }}>APAC<span style={{ color:"var(--p2)" }}>Intel</span></span>
             </div>
           </div>
           {children}
@@ -992,7 +992,7 @@ function Sidebar({ mobileOpen, onClose }) {
           <div style={{ display:"flex", alignItems:"center", gap:10 }}>
             <div style={{ width:34, height:34, borderRadius:9, background:"linear-gradient(135deg,#7C6FFF,#9D93FF)", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 4px 14px var(--p-glow)", fontSize:15 }}>⚡</div>
             <div>
-              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:800, color:"var(--t1)", lineHeight:1 }}>AEO<span style={{ color:"var(--p2)" }}>Intel</span></div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontSize:15, fontWeight:800, color:"var(--t1)", lineHeight:1 }}>APAC<span style={{ color:"var(--p2)" }}>Intel</span></div>
               <div style={{ fontSize:10, color:"var(--t3)", marginTop:2 }}>SEO Intelligence</div>
             </div>
           </div>
@@ -1133,8 +1133,8 @@ function AnalyseForm({ onSubmit, loading, btnLabel = "Analyse", compact }) {
       </div>
       <form onSubmit={submit}>
         <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginBottom:14 }}>
-          <Field label="Company Name" k="company_name" placeholder="e.g. My Company" />
-          <Field label="Website URL" k="url" placeholder="https://mycompany.com" />
+          <Field label="Company Name" k="company_name" placeholder="e.g. APAC Relocation" />
+          <Field label="Website URL" k="url" placeholder="https://apacrelocation.com" />
         </div>
         <div style={{ display:"flex", gap:14, flexWrap:"wrap", marginBottom:22 }}>
           <Field label="Market / City" k="market" placeholder="Singapore" />

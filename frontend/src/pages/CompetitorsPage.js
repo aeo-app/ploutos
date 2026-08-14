@@ -23,9 +23,9 @@ export function CompetitorsResultView({ data }) {
 
       {/* Overview */}
       <Card padded={false}>
-        <div className={s.cardHead}><SectionHeader title="Competitor Overview" subtitle={`${data.competitor_overview.length} companies mapped`} /></div>
+        <div className={s.cardHead}><SectionHeader title="Competitor Overview" subtitle={`${data?.competitor_overview?.length || 0} companies mapped`} /></div>
         <DataTable
-          rows={data.competitor_overview}
+          rows={data?.competitor_overview || []}
           keyFn={r => r.company}
           cols={[
             { key: 'rank', label: '#', render: v => <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--c-slate-400)' }}>{v}</span> },
@@ -42,7 +42,7 @@ export function CompetitorsResultView({ data }) {
       <Card padded={false}>
         <div className={s.cardHead}><SectionHeader title="SEO Visibility & Digital Presence" subtitle="Domain authority, traffic and content signals" /></div>
         <DataTable
-          rows={data.seo_visibility}
+          rows={data?.seo_visibility || []}
           keyFn={r => r.company}
           cols={[
             { key: 'company', label: 'Company', render: v => <strong style={{ color: 'var(--c-slate-900)' }}>{v}</strong> },
@@ -64,7 +64,7 @@ export function CompetitorsResultView({ data }) {
       <Card padded={false}>
         <div className={s.cardHead}><SectionHeader title="Keyword Ranking Comparison" subtitle="Estimated SERP positions across key terms" /></div>
         <DataTable
-          rows={data.keyword_rankings}
+          rows={data?.keyword_rankings || []}
           keyFn={r => r.keyword}
           cols={[
             { key: 'keyword', label: 'Keyword', render: v => <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>{v}</span> },
@@ -81,7 +81,7 @@ export function CompetitorsResultView({ data }) {
       <Card>
         <SectionHeader title="Overall Competitor Scores" subtitle="Composite ranking with strengths and weaknesses" />
         <div className={s.scoreList}>
-          {data.competitor_scores.map((c, i) => (
+          {(data?.competitor_scores || []).map((c, i) => (
             <motion.div key={c.company} className={s.scoreItem} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}>
               <div className={s.scoreRank}>{c.rank}</div>
               <div className={s.scoreInfo}>
@@ -104,7 +104,7 @@ export function CompetitorsResultView({ data }) {
       <Card>
         <SectionHeader title="Strategic Takeaways" />
         <div className={s.insights}>
-          {data.key_takeaways.map((t, i) => <InsightCard key={i} {...t} index={i} />)}
+          {(data?.key_takeaways || []).map((t, i) => <InsightCard key={i} {...t} index={i} />)}
         </div>
       </Card>
     </motion.div>

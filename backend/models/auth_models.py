@@ -212,6 +212,7 @@ class ProfileResponse(BaseModel):
     company_name: Optional[str] = None
     domain:       Optional[str] = None
     has_profile:  bool  # False = must complete profile before using the app
+    is_admin:     bool = False
 
 
 class SetProfileRequest(BaseModel):

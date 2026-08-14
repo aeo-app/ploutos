@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { init, createElement } from '@airwallex/components-sdk';
 
-const AIRWALLEX_ENV = 'prod'; // 'demo' (sandbox) | 'prod' — same convention as CheckoutPage.js
+const AIRWALLEX_ENV = 'demo'; // 'demo' (sandbox) | 'prod' — same convention as CheckoutPage.js
 
 /**
  * Mounts an Airwallex Drop-in element for a given PaymentIntent. Pure

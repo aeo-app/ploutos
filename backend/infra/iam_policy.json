@@ -14,8 +14,21 @@
       ],
       "Resource": [
         "arn:aws:dynamodb:ap-southeast-1:*:table/apac_seo_analyses",
-        "arn:aws:dynamodb:ap-southeast-1:*:table/apac_seo_analyses/index/gsi_analysis_id"
+        "arn:aws:dynamodb:ap-southeast-1:*:table/apac_seo_analyses/index/gsi_analysis_id",
+        "arn:aws:dynamodb:ap-southeast-1:*:table/apac_payments",
+        "arn:aws:dynamodb:ap-southeast-1:*:table/apac_payments/index/gsi_payment_intent_id"
       ]
+    },
+    {
+      "Sid": "CognitoAdminActionsForAppRole",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:AdminAddUserToGroup",
+        "cognito-idp:AdminRemoveUserFromGroup",
+        "cognito-idp:ListUsersInGroup",
+        "cognito-idp:GetUser"
+      ],
+      "Resource": "arn:aws:cognito-idp:ap-southeast-1:*:userpool/*"
     }
   ]
 }

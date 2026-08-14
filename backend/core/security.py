@@ -183,11 +183,55 @@ def require_paid_access(user_id: str = Depends(get_current_user_id)) -> str:
     # doesn't import from core.security, but keeping this lazy is cheap
     # insurance either way and matches how other lazy imports are used
     # elsewhere in this codebase.
-    from db.dynamo import is_user_paid
+    from db import is_user_paid
 
     if not is_user_paid(user_id):
         raise HTTPException(
             status_code=402,  # Payment Required
             detail="Payment required to access this feature.",
         )
+    return user_id
+
+
+# ── Admin gate ───────────────────────────────────────────────────────────────
+# Two mechanisms, checked in order:
+#   1. Cognito Groups — the "Admins" group (see services/cognito_service.py's
+#      add_user_to_group/remove_user_from_group). This is the canonical,
+#      AWS-native RBAC mechanism: membership is embedded directly in the JWT
+#      as the `cognito:groups` claim, so checking it costs nothing extra
+#      (no DB read). Unlike custom attributes (see infra/cognito.tf), Groups
+#      can be added to an EXISTING user pool at any time — no schema-
+#      immutability issue — so this was a real, viable choice, not blocked
+#      the way custom attributes were.
+#      CAVEAT: a user only picks up new group membership once their token is
+#      re-issued (next login, or next refresh) — it does NOT take effect on
+#      their currently-live token. That's exactly why (2) still exists.
+#   2. DynamoDB fallback — db.dynamo.is_admin/set_admin, bootstrapped via
+#      ADMIN_EMAILS at signup/login (see routers/auth_router.py). Kept
+#      because it takes effect IMMEDIATELY (no token refresh needed) and
+#      because SKIP_JWT_VERIFICATION dev/test mode has no real Cognito
+#      groups claim to check at all.
+def _groups_from_authorization(authorization: Optional[str]) -> list[str]:
+    if not authorization or not authorization.startswith("Bearer "):
+        return []
+    token = authorization.removeprefix("Bearer ").strip()
+    if not token:
+        return []
+    try:
+        payload = _stub_decode(token) if SKIP_AUTH else _decode_token(token)
+    except HTTPException:
+        return []
+    return payload.get("cognito:groups") or []
+
+
+def require_admin(
+    user_id: str = Depends(get_current_user_id),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+) -> str:
+    if "Admins" in _groups_from_authorization(authorization):
+        return user_id
+
+    from db.dynamo import is_admin as _is_admin
+    if not _is_admin(user_id):
+        raise HTTPException(status_code=403, detail="Admin access required.")
     return user_id

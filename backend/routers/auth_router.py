@@ -14,6 +14,7 @@ GET  /api/v1/auth/profile             Get company_name/domain + whether profile 
 POST /api/v1/auth/profile             Set company_name/domain (existing users who signed up before this existed)
 """
 import logging
+import os
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -47,10 +48,17 @@ from services.cognito_service import (
     sign_up,
     update_user_profile,
 )
-from db.dynamo import check_and_lock_domain, DomainMismatchError
+from db.dynamo import check_and_lock_domain, DomainMismatchError, register_user, set_admin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
+
+# Comma-separated allowlist — any signup (or the very first login, as a
+# fallback for accounts that existed before this) whose email matches gets
+# auto-promoted to admin. Simple, explicit, ops-controlled — no separate
+# "make someone an admin" UI needed for the very first admin account; after
+# that, admins can promote others via POST /admin/users/{user_id}/set-admin.
+ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
 
 # ── Cognito error → HTTP status ────────────────────────────────────────────────
 _STATUS = {
@@ -116,6 +124,28 @@ async def signup(req: SignUpRequest):
         logger.error(f"[auth] failed to pre-lock domain at signup for {result['user_sub']}: {e}", exc_info=True)
         # Non-fatal — check_and_lock_domain will simply run again (and lock
         # correctly) on this user's first real analysis call instead.
+
+    # Registry entry powers the admin panel's user list — best-effort, a
+    # user isn't blocked from signing up if this write fails.
+    try:
+        register_user(
+            user_id=result["user_sub"], email=req.email, full_name=req.full_name,
+            company_name=req.company_name, domain=req.domain,
+        )
+    except Exception as e:
+        logger.error(f"[auth] failed to register user in admin registry: {e}", exc_info=True)
+
+    if req.email.strip().lower() in ADMIN_EMAILS:
+        try:
+            set_admin(result["user_sub"], True)
+            logger.info(f"[auth] {req.email} auto-promoted to admin via ADMIN_EMAILS")
+        except Exception as e:
+            logger.error(f"[auth] failed to auto-promote admin: {e}", exc_info=True)
+        try:
+            from services.cognito_service import add_user_to_group
+            add_user_to_group(req.email)
+        except Exception as e:
+            logger.warning(f"[auth] Cognito group sync at signup failed (non-fatal, DynamoDB still set): {e}")
 
     return SignUpResponse(**result)
 
@@ -183,11 +213,38 @@ async def login_endpoint(req: LoginRequest):
     Unconfirmed users receive `HTTP 403 UserNotConfirmedException`.
     """
     try:
-        return TokenResponse(**login(req.email, req.password))
+        tokens = login(req.email, req.password)
     except CognitoError as e:
         raise _err(e)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
+
+    # Backfill for accounts that existed before the admin/registry feature —
+    # signup already does this for new accounts, this just catches anyone
+    # who signed up earlier. Best-effort, never blocks login.
+    try:
+        import base64, json as _json
+        parts = tokens["id_token"].split(".")
+        padded = parts[1] + "=" * (4 - len(parts[1]) % 4)
+        claims = _json.loads(base64.urlsafe_b64decode(padded))
+        sub = claims.get("sub")
+        if sub:
+            register_user(
+                user_id=sub, email=claims.get("email", req.email),
+                full_name=claims.get("name", ""), company_name=claims.get("custom:company_name", ""),
+                domain=claims.get("custom:domain", ""),
+            )
+            if req.email.strip().lower() in ADMIN_EMAILS:
+                set_admin(sub, True)
+                try:
+                    from services.cognito_service import add_user_to_group
+                    add_user_to_group(req.email)
+                except Exception as ge:
+                    logger.warning(f"[auth] Cognito group sync at login failed (non-fatal, DynamoDB still set): {ge}")
+    except Exception as e:
+        logger.warning(f"[auth] registry/admin backfill at login failed (non-fatal): {e}")
+
+    return TokenResponse(**tokens)
 
 
 # ── POST /refresh ──────────────────────────────────────────────────────────────
@@ -328,7 +385,31 @@ async def get_profile(request: Request):
 
     company_name = user.get("custom:company_name") or None
     domain = user.get("custom:domain") or None
-    return ProfileResponse(company_name=company_name, domain=domain, has_profile=bool(domain))
+    sub = user.get("sub")
+
+    # Admin status: check BOTH mechanisms, matching core.security.require_admin
+    # exactly — Cognito Groups is canonical (this endpoint already holds the
+    # access token, which carries the cognito:groups claim, so no extra
+    # network call needed), DynamoDB is the fallback. Previously this only
+    # checked DynamoDB, which meant a user added to the "Admins" Cognito
+    # group directly (e.g. via the AWS Console, bypassing this app's own
+    # promote/demote endpoint) would pass require_admin on every actual
+    # admin API call, yet still get routed to the regular user screen at
+    # login — inconsistent with what they actually have access to.
+    from db.dynamo import is_admin as _is_admin
+    admin_flag = bool(_is_admin(sub)) if sub else False
+    if not admin_flag:
+        try:
+            import base64, json as _json
+            token = _bearer_token(request)
+            parts = token.split(".")
+            padded = parts[1] + "=" * (4 - len(parts[1]) % 4)
+            claims = _json.loads(base64.urlsafe_b64decode(padded))
+            admin_flag = "Admins" in (claims.get("cognito:groups") or [])
+        except Exception as e:
+            logger.warning(f"[auth] could not read cognito:groups from access token (non-fatal): {e}")
+
+    return ProfileResponse(company_name=company_name, domain=domain, has_profile=bool(domain), is_admin=admin_flag)
 
 
 # ── POST /profile ────────────────────────────────────────────────────────────

@@ -33,13 +33,13 @@ import requests
 logger = logging.getLogger(__name__)
 
 # ── Config ───────────────────────────────────────────────────────────────────
-AIRWALLEX_ENV = os.getenv("AIRWALLEX_ENV", "")  # "demo" (sandbox) | "prod"
-AIRWALLEX_BASE_URL = "https://api.airwallex.com"
+AIRWALLEX_ENV = os.getenv("AIRWALLEX_ENV", "demo")  # "demo" (sandbox) | "prod"
+AIRWALLEX_BASE_URL = (
+    "https://api.airwallex.com" if AIRWALLEX_ENV == "prod" else "https://api-demo.airwallex.com"
+)
 AIRWALLEX_CLIENT_ID = os.getenv("AIRWALLEX_CLIENT_ID", "")
 AIRWALLEX_API_KEY = os.getenv("AIRWALLEX_API_KEY", "")
 AIRWALLEX_WEBHOOK_SECRET = os.getenv("AIRWALLEX_WEBHOOK_SECRET", "")
-
-# print(f"[airwallex] using {AIRWALLEX_ENV} environment, base URL {AIRWALLEX_BASE_URL}", {AIRWALLEX_CLIENT_ID, AIRWALLEX_API_KEY, AIRWALLEX_WEBHOOK_SECRET})
 
 # The price is fixed here (server-side), never trusted from the client.
 # The price is fixed here (server-side) per plan, never trusted from the

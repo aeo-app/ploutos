@@ -9,6 +9,7 @@ import { Button } from '../components/ui/Button';
 import { UnlockModal } from '../components/payment/UnlockModal';
 import { LockedTeaser } from '../components/payment/LockedTeaser';
 import { historyApi } from '../api/historyApi';
+import { CanvaPosterPanel } from '../components/canva/CanvaPosterPanel';
 import s from './RelocationCalendarPage.module.css';
 
 const PLATFORMS = [
@@ -22,7 +23,7 @@ const TONE_VARIANT = { emotional: 'danger', professional: 'info', educational: '
 const CTA_VARIANT = { soft: 'default', urgent: 'danger', informative: 'info' };
 
 /* ── One post's platform-tabbed captions ─────────────────────────────── */
-function PostCard({ post }) {
+function PostCard({ post, dayDate }) {
   const [platform, setPlatform] = useState('instagram');
   const caption = post.captions?.[platform] || '';
 
@@ -90,6 +91,8 @@ function PostCard({ post }) {
           ))}
         </div>
       )}
+
+      <CanvaPosterPanel dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta} />
     </div>
   );
 }
@@ -130,7 +133,7 @@ export function DayCard({ day, index, defaultOpen, onUnlock }) {
               <span className={s.dayTimeChip}>GBP: {rt.google_business}</span>
             </div>
             <div className={s.dayBody}>
-              {schedule.posts.map((post, i) => <PostCard key={i} post={post} />)}
+              {schedule.posts.map((post, i) => <PostCard key={i} post={post} dayDate={day.date} />)}
             </div>
           </>
         )}
@@ -215,6 +218,7 @@ export function RelocationCalendarPage() {
   const [totalDays, setTotalDays] = useState(0);
   const [days, setDays] = useState([]);
   const [failedDates, setFailedDates] = useState({});
+  const [showFailureDetails, setShowFailureDetails] = useState(false);
   const [disclaimer, setDisclaimer] = useState(null);
   const [streaming, setStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
@@ -273,6 +277,7 @@ export function RelocationCalendarPage() {
     setStreamError(null);
     setDays([]);
     setFailedDates({});
+    setShowFailureDetails(false);
     setDisclaimer(null);
     setPeriodLabel('');
     setTotalDays(0);
@@ -282,13 +287,13 @@ export function RelocationCalendarPage() {
     const req = {
       country: country?.trim(),
       company: {
-        name: company.name?.trim(),
-        phone: company.phone?.trim() || null,
-        email: company.email?.trim() || null,
-        website: company.website?.trim() || null,
-        instagram: company.instagram?.trim() || null,
-        facebook: company.facebook?.trim() || null,
-        linkedin: company.linkedin?.trim() || null,
+        name: company?.name?.trim(),
+        phone: company?.phone?.trim() || null,
+        email: company?.email?.trim() || null,
+        website: company?.website?.trim() || null,
+        instagram: company?.instagram?.trim() || null,
+        facebook: company?.facebook?.trim() || null,
+        linkedin: company?.linkedin?.trim() || null,
       },
       start_date: startDate,
       end_date: endDate,
@@ -296,7 +301,7 @@ export function RelocationCalendarPage() {
 
     try {
       await withTokenExpiry(
-        socialApi.relocationCalendarStream(req, handleEvent, controller.signal),
+        socialApi?.relocationCalendarStream(req, handleEvent, controller.signal),
         { goScreen, logout }
       );
       toast({ type: 'success', message: '✓ Content calendar generated.' });
@@ -382,8 +387,26 @@ export function RelocationCalendarPage() {
               <div className={s.progressBarWrap}><div className={s.progressBarFill} style={{ width: `${progressPct}%` }} /></div>
               <span className={s.progressCount}>{days.length}/{totalDays} days</span>
               {lockedCount > 0 && <Badge variant="warning">🔒 {lockedCount} locked — upgrade to unlock</Badge>}
-              {errorCount > 0 && <span className={s.progressCount}>{errorCount} failed</span>}
+              {errorCount > 0 && (
+                <button
+                  type="button"
+                  className={s.progressCount}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', color: 'inherit' }}
+                  onClick={() => setShowFailureDetails(v => !v)}
+                >
+                  {errorCount} failed {showFailureDetails ? '▲' : '▼ (why?)'}
+                </button>
+              )}
             </div>
+            {errorCount > 0 && showFailureDetails && (
+              <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {Object.entries(failedDates).map(([failedDate, reason]) => (
+                  <div key={failedDate} style={{ fontSize: 12.5, color: 'var(--c-slate-600)' }}>
+                    <strong>{failedDate}:</strong> {reason}
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <AnimatePresence>

@@ -274,10 +274,12 @@ def get_analysis(user_id: str, analysis_id: str) -> Optional[dict]:
         # Verify ownership
         if item.get("user_id") != user_id:
             return None
-        # This GSI is shared with payment transaction records (see the
-        # module note above save_payment_intent) — a payment_intent_id could
-        # theoretically be passed in here and match. Payment records have no
-        # `analysis_type`, so reject anything that isn't a real analysis.
+        # This GSI is shared with poster records (see the module note above
+        # save_poster) — a poster_id could theoretically be passed in here
+        # and match. Payment records used to share this GSI too, before
+        # they moved to their own table (db/payments_dynamo.py). Poster
+        # records have no `analysis_type`, so reject anything that isn't a
+        # real analysis.
         if "analysis_type" not in item:
             return None
         # Deserialise JSON payload fields
@@ -465,178 +467,6 @@ def get_user_stats(user_id: str) -> dict:
         raise
 
 
-# ── Payments / entitlements ─────────────────────────────────────────────────
-# Same single-table design as analyses above (PK=user_id), with two new
-# "kinds" of item distinguished by their SK prefix:
-#   - Entitlement (one per user):  SK = "ENTITLEMENT"
-#   - Payment transaction (many):  SK = f"PAYMENT#{ts}#{payment_intent_id}"
-# The GSI (gsi_analysis_id) is reused for payment lookups too — a payment
-# transaction item's `analysis_id` attribute is set to the Airwallex
-# payment_intent_id, letting the webhook handler look up "which user does
-# this payment_intent_id belong to" the same way get_analysis() does, with
-# no new index/infra needed. This is a standard single-table-design pattern
-# (polymorphic items sharing one GSI keyed by a generically-named attribute),
-# not a semantic overload — just don't confuse a payment_intent_id with a
-# real analysis_id when reading `analysis_id` back off a payment item.
-
-def _entitlement_sk() -> str:
-    return "ENTITLEMENT"
-
-
-def _payment_sk(ts: str, payment_intent_id: str) -> str:
-    return f"PAYMENT#{ts}#{payment_intent_id}"
-
-
-def save_payment_intent(
-    *,
-    user_id: str,
-    payment_intent_id: str,
-    amount: str,
-    currency: str,
-    status: str,
-    description: str = "",
-    plan_id: Optional[str] = None,
-) -> None:
-    """Create (or overwrite, on retry) the transaction record for one
-    Airwallex PaymentIntent."""
-    table = _get_table()
-    now_iso = _now_iso()
-    ts_compact = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    item = {
-        "PK": _pk(user_id),
-        "SK": _payment_sk(ts_compact, payment_intent_id),
-        "analysis_id": payment_intent_id,   # GSI hash key — see module note above
-        "user_id": user_id,
-        "payment_intent_id": payment_intent_id,
-        "plan_id": plan_id,
-        "amount": amount,
-        "currency": currency,
-        "status": status,
-        "description": description,
-        "created_at": now_iso,
-        "updated_at": now_iso,
-    }
-    try:
-        table.put_item(Item=_to_dynamo(item))
-        logger.info(f"[dynamo] saved payment_intent={payment_intent_id} user={user_id} plan={plan_id} status={status}")
-    except ClientError as e:
-        logger.error(f"[dynamo] save_payment_intent failed: {e.response['Error']}")
-        raise
-
-
-def get_payment_intent(payment_intent_id: str) -> Optional[dict]:
-    """Look up a payment transaction record by Airwallex payment_intent_id
-    via the shared GSI — used by the webhook handler (which only knows the
-    Airwallex ID, not which user_id/SK it belongs to) and by status polling."""
-    table = _get_table()
-    try:
-        resp = table.query(
-            IndexName=GSI_NAME,
-            KeyConditionExpression=Key("analysis_id").eq(payment_intent_id),
-        )
-        items = resp.get("Items", [])
-        return _from_dynamo(items[0]) if items else None
-    except ClientError as e:
-        logger.error(f"[dynamo] get_payment_intent failed: {e.response['Error']}")
-        raise
-
-
-def update_payment_intent_status(payment_intent_id: str, status: str) -> Optional[dict]:
-    """Update a payment transaction's status in place. Returns the updated
-    item (so the caller can read user_id off it), or None if not found."""
-    item = get_payment_intent(payment_intent_id)
-    if not item:
-        return None
-    table = _get_table()
-    try:
-        table.update_item(
-            Key={"PK": item["PK"], "SK": item["SK"]},
-            UpdateExpression="SET #s = :s, updated_at = :u",
-            ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":s": status, ":u": _now_iso()},
-        )
-        item["status"] = status
-        return item
-    except ClientError as e:
-        logger.error(f"[dynamo] update_payment_intent_status failed: {e.response['Error']}")
-        raise
-
-
-def list_user_payments(user_id: str, limit: int = 20) -> list[dict]:
-    """Payment transaction history for a user, newest first."""
-    table = _get_table()
-    try:
-        resp = table.query(
-            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with("PAYMENT#"),
-            ScanIndexForward=False,
-            Limit=limit,
-        )
-        return [_from_dynamo(i) for i in resp.get("Items", [])]
-    except ClientError as e:
-        logger.error(f"[dynamo] list_user_payments failed: {e.response['Error']}")
-        raise
-
-
-def set_user_paid(
-    *,
-    user_id: str,
-    is_paid: bool,
-    paid_until: Optional[str] = None,
-    plan: str = "one_time",
-) -> None:
-    """Upsert the user's entitlement record. `paid_until=None` means access
-    never expires (a true one-time-forever unlock); set it to an ISO
-    timestamp for subscription-style, renewable access."""
-    table = _get_table()
-    item = {
-        "PK": _pk(user_id),
-        "SK": _entitlement_sk(),
-        "user_id": user_id,
-        "is_paid": is_paid,
-        "paid_until": paid_until,
-        "plan": plan,
-        "updated_at": _now_iso(),
-    }
-    try:
-        table.put_item(Item=_to_dynamo(item))
-        logger.info(f"[dynamo] entitlement updated user={user_id} is_paid={is_paid} paid_until={paid_until}")
-    except ClientError as e:
-        logger.error(f"[dynamo] set_user_paid failed: {e.response['Error']}")
-        raise
-
-
-def get_user_entitlement(user_id: str) -> dict:
-    """Fetch the user's entitlement record. Returns a default 'not paid'
-    shape (never raises) if the user has never paid."""
-    table = _get_table()
-    default = {"user_id": user_id, "is_paid": False, "paid_until": None, "plan": None, "updated_at": None}
-    try:
-        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _entitlement_sk()})
-        item = resp.get("Item")
-        return _from_dynamo(item) if item else default
-    except ClientError as e:
-        logger.error(f"[dynamo] get_user_entitlement failed: {e.response['Error']}")
-        raise
-
-
-def is_user_paid(user_id: str) -> bool:
-    """True if the user has active paid access right now (handles
-    subscription expiry — paid_until in the past means access lapsed)."""
-    ent = get_user_entitlement(user_id)
-    if not ent.get("is_paid"):
-        return False
-    paid_until = ent.get("paid_until")
-    if paid_until is None:
-        return True  # one-time-forever unlock, no expiry
-    try:
-        return datetime.fromisoformat(paid_until.replace("Z", "+00:00")) > datetime.now(timezone.utc)
-    except (ValueError, AttributeError):
-        # Malformed timestamp — fail closed (treat as not paid) rather than
-        # silently granting access on bad data.
-        logger.warning(f"[dynamo] unparseable paid_until={paid_until!r} for user={user_id}; denying access")
-        return False
-
-
 # ── One-to-one user <-> domain lock ─────────────────────────────────────────
 # Same single-table design again: SK = "DOMAIN_LOCK" (one per user). The
 # FIRST domain a user successfully analyzes becomes permanently theirs —
@@ -728,6 +558,316 @@ def check_and_lock_domain(user_id: str, url: str, company_name: str) -> None:
         return
     if existing["domain"] != domain:
         raise DomainMismatchError(existing["domain"], domain)
+
+
+# ── Canva integration (connection + saved posters) ──────────────────────────
+# Same single-table design again:
+#   - Canva OAuth connection (one per user): SK = "CANVA_CONNECTION"
+#   - PKCE state (short-lived, one per in-flight OAuth attempt):
+#     SK = f"CANVA_PKCE#{state}" — a TTL'd item so an abandoned OAuth
+#     attempt doesn't leave orphaned data around forever.
+#   - Poster records (many per user): SK = f"POSTER#{ts}#{poster_id}"
+
+def _canva_connection_sk() -> str:
+    return "CANVA_CONNECTION"
+
+
+def _canva_pkce_sk(state: str) -> str:
+    return f"CANVA_PKCE#{state}"
+
+
+def _poster_sk(poster_id: str) -> str:
+    return f"POSTER#{poster_id}"
+
+
+def save_canva_pkce(user_id: str, state: str, code_verifier: str) -> None:
+    """Short-lived — the code_verifier must survive the round-trip to Canva's
+    authorize page and back to /callback, but isn't needed after that."""
+    table = _get_table()
+    item = {
+        "PK": _pk(user_id),
+        "SK": _canva_pkce_sk(state),
+        "user_id": user_id,
+        "state": state,
+        "code_verifier": code_verifier,
+        "created_at": _now_iso(),
+        "expires_at": int((datetime.now(timezone.utc) + timedelta(minutes=10)).timestamp()),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+    except ClientError as e:
+        logger.error(f"[dynamo] save_canva_pkce failed: {e.response['Error']}")
+        raise
+
+
+def get_canva_pkce(user_id: str, state: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _canva_pkce_sk(state)})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_canva_pkce failed: {e.response['Error']}")
+        raise
+
+
+def save_canva_connection(
+    *, user_id: str, access_token: str, refresh_token: str, expires_at: str, canva_user_id: str = "",
+) -> None:
+    table = _get_table()
+    item = {
+        "PK": _pk(user_id),
+        "SK": _canva_connection_sk(),
+        "user_id": user_id,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at,
+        "canva_user_id": canva_user_id,
+        "connected_at": _now_iso(),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] Canva connected for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_canva_connection failed: {e.response['Error']}")
+        raise
+
+
+def get_canva_connection(user_id: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _canva_connection_sk()})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_canva_connection failed: {e.response['Error']}")
+        raise
+
+
+def delete_canva_connection(user_id: str) -> None:
+    table = _get_table()
+    try:
+        table.delete_item(Key={"PK": _pk(user_id), "SK": _canva_connection_sk()})
+        logger.info(f"[dynamo] Canva disconnected for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] delete_canva_connection failed: {e.response['Error']}")
+        raise
+
+
+def save_poster(
+    *,
+    user_id: str,
+    poster_id: str,
+    day_date: str,
+    post_number: int,
+    brand_template_id: str,
+    design_id: str,
+    edit_url: str,
+    thumbnail_url: str,
+    image_field_values: dict,
+    text_field_values: dict,
+) -> None:
+    """Create (first generation) or overwrite (regeneration — same poster_id,
+    new design_id after re-running autofill with different images) a saved
+    poster record."""
+    table = _get_table()
+    now_iso = _now_iso()
+    existing = get_poster(user_id, poster_id)
+    item = {
+        "PK": _pk(user_id),
+        "SK": _poster_sk(poster_id),
+        "analysis_id": poster_id,  # GSI hash key — see get_poster below
+        "user_id": user_id,
+        "poster_id": poster_id,
+        "day_date": day_date,
+        "post_number": post_number,
+        "brand_template_id": brand_template_id,
+        "design_id": design_id,
+        "edit_url": edit_url,
+        "thumbnail_url": thumbnail_url,
+        "image_field_values": image_field_values,
+        "text_field_values": text_field_values,
+        "created_at": existing["created_at"] if existing else now_iso,
+        "updated_at": now_iso,
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] saved poster={poster_id} user={user_id} design={design_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_poster failed: {e.response['Error']}")
+        raise
+
+
+def get_poster(user_id: str, poster_id: str) -> Optional[dict]:
+    """Looks up a poster by its poster_id via the shared GSI (same pattern as
+    get_analysis) — the router only knows the poster_id, not its SK."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            IndexName=GSI_NAME,
+            KeyConditionExpression=Key("analysis_id").eq(poster_id),
+        )
+        items = resp.get("Items", [])
+        if not items:
+            return None
+        item = _from_dynamo(items[0])
+        if item.get("user_id") != user_id or "poster_id" not in item:
+            return None
+        return item
+    except ClientError as e:
+        logger.error(f"[dynamo] get_poster failed: {e.response['Error']}")
+        raise
+
+
+def list_posters(user_id: str, limit: int = 50) -> list[dict]:
+    """All saved posters for a user, newest-updated first. SK is stable per
+    poster_id (not timestamp-prefixed — see save_poster's upsert-on-regenerate
+    behaviour), so unlike list_analyses this sorts in Python rather than
+    relying on native SK ordering. Fine at this scale (posters per user is a
+    much smaller set than analyses)."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with("POSTER#"),
+        )
+        items = [_from_dynamo(i) for i in resp.get("Items", [])]
+        items.sort(key=lambda i: i.get("updated_at", ""), reverse=True)
+        return items[:limit]
+    except ClientError as e:
+        logger.error(f"[dynamo] list_posters failed: {e.response['Error']}")
+        raise
+
+
+# ── User registry + admin role ──────────────────────────────────────────────
+# DynamoDB has no native "list all partition keys" operation — a registry
+# item written once at signup is how /admin/users can enumerate every user
+# without an expensive full-table Scan. Same single-table design, but under
+# a FIXED partition key ("REGISTRY") shared by all users, since the whole
+# point is to look them up together rather than per-user.
+#   Registry entries: PK = "REGISTRY", SK = f"USER#{user_id}"
+#   Admin role:       PK = user_id,    SK = "ADMIN_ROLE"  (per-user, like everything else)
+
+_REGISTRY_PK = "REGISTRY"
+
+
+def _registry_sk(user_id: str) -> str:
+    return f"USER#{user_id}"
+
+
+def _admin_role_sk() -> str:
+    return "ADMIN_ROLE"
+
+
+def register_user(*, user_id: str, email: str, full_name: str, company_name: str, domain: str) -> None:
+    """Called at signup (always) and at login (as a backfill for accounts
+    that existed before this registry did) — safe to call repeatedly,
+    preserves the original created_at rather than bumping it on every login.
+    Non-fatal if it fails — the user can still use the app, they just won't
+    show up in /admin/users until this is retried (there's no other
+    consequence, this registry is read-only bookkeeping)."""
+    table = _get_table()
+    existing = None
+    try:
+        resp = table.get_item(Key={"PK": _REGISTRY_PK, "SK": _registry_sk(user_id)})
+        raw = resp.get("Item")
+        existing = _from_dynamo(raw) if raw else None
+    except ClientError:
+        pass  # fine to proceed as if it's new — put_item below still succeeds
+    item = {
+        "PK": _REGISTRY_PK,
+        "SK": _registry_sk(user_id),
+        "user_id": user_id,
+        "email": email,
+        "full_name": full_name,
+        "company_name": company_name,
+        "domain": domain,
+        "created_at": existing["created_at"] if existing else _now_iso(),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] registered user={user_id} email={email}")
+    except ClientError as e:
+        logger.error(f"[dynamo] register_user failed: {e.response['Error']}")
+        raise
+
+
+def list_all_users(limit: int = 200) -> list[dict]:
+    """Every registered user, for the admin panel. Simple PK-only query
+    against the shared REGISTRY partition — no Scan needed. Newest
+    signups first."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            KeyConditionExpression=Key("PK").eq(_REGISTRY_PK),
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        return [_from_dynamo(i) for i in resp.get("Items", [])]
+    except ClientError as e:
+        logger.error(f"[dynamo] list_all_users failed: {e.response['Error']}")
+        raise
+
+
+def is_admin(user_id: str) -> bool:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _admin_role_sk()})
+        item = resp.get("Item")
+        return bool(item and item.get("is_admin"))
+    except ClientError as e:
+        logger.error(f"[dynamo] is_admin failed: {e.response['Error']}")
+        raise
+
+
+def set_admin(user_id: str, is_admin_flag: bool) -> None:
+    table = _get_table()
+    try:
+        table.put_item(Item=_to_dynamo({
+            "PK": _pk(user_id),
+            "SK": _admin_role_sk(),
+            "user_id": user_id,
+            "is_admin": is_admin_flag,
+            "updated_at": _now_iso(),
+        }))
+        logger.info(f"[dynamo] set_admin user={user_id} -> {is_admin_flag}")
+    except ClientError as e:
+        logger.error(f"[dynamo] set_admin failed: {e.response['Error']}")
+        raise
+
+
+def update_analysis_result(user_id: str, analysis_id: str, new_result: dict) -> Optional[dict]:
+    """Overwrites the saved `result` payload of an EXISTING analysis record
+    in place (used by the admin panel to edit a user's saved relocation
+    calendar — swap a caption, fix a day, etc.) — everything else about the
+    record (type, company, timestamps, token usage) is left untouched.
+    Returns the updated record, or None if no such analysis exists."""
+    item = get_analysis(user_id, analysis_id)
+    if not item:
+        return None
+    table = _get_table()
+    pk = _pk(user_id)
+    # get_analysis doesn't return the raw SK, so recompute it the same way
+    # save_analysis does — same construction, so this always matches.
+    try:
+        resp = table.query(
+            IndexName=GSI_NAME,
+            KeyConditionExpression=Key("analysis_id").eq(analysis_id),
+        )
+        raw_items = resp.get("Items", [])
+        if not raw_items:
+            return None
+        sk = raw_items[0]["SK"]
+        table.update_item(
+            Key={"PK": pk, "SK": sk},
+            UpdateExpression="SET #r = :r, updated_at = :u",
+            ExpressionAttributeNames={"#r": "result"},
+            ExpressionAttributeValues={":r": json.dumps(new_result, default=str), ":u": _now_iso()},
+        )
+    except ClientError as e:
+        logger.error(f"[dynamo] update_analysis_result failed: {e.response['Error']}")
+        raise
+    item["result"] = new_result
+    return item
 
 
 # ── Table bootstrap (for local dev / CI) ──────────────────────────────────────

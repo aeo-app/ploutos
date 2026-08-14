@@ -13,7 +13,7 @@ const META = {
   report:   { title: 'Full SEO Report',     sub: 'All four analyses in one consolidated view' },
 };
 
-export function TopBar({ onMenu }) {
+export function TopBar({ onMenu, onEnterAdminView }) {
   const { state, clearAll, setPage } = useApp();
   const { auth, logout }             = useAuth();
   const [menuOpen, setMenuOpen]      = useState(false);
@@ -37,6 +37,12 @@ export function TopBar({ onMenu }) {
       </div>
 
       <div className={s.actions}>
+        {state.isAdmin && onEnterAdminView && (
+          <Button variant="ghost" size="sm" onClick={onEnterAdminView}>
+            🛠️ Admin Dashboard
+          </Button>
+        )}
+
         {hasAny && (
           <Button variant="ghost" size="sm" onClick={() => { clearAll(); setPage('home'); }}>
             ↺ New Analysis

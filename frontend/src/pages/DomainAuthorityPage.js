@@ -65,7 +65,7 @@ export function DomainAuthorityResultView({ data }) {
   return (
     <motion.div className={s.sections} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
 
-      <DAGauge current={data.current_da} t6={data.target_da_6m} t12={data.target_da_12m} />
+      <DAGauge current={data?.current_da} t6={data?.target_da_6m} t12={data?.target_da_12m} />
 
       {/* Gap Analysis */}
       <Card padded={false}>
@@ -73,7 +73,7 @@ export function DomainAuthorityResultView({ data }) {
           <SectionHeader title="Gap Analysis" subtitle="Current state vs 6-month, 12-month targets and competitor benchmark" />
         </div>
         <DataTable
-          rows={data.gap_analysis}
+          rows={data?.gap_analysis || []}
           keyFn={r => r.metric}
           cols={[
             { key: 'metric',             label: 'Metric',         render: v => <strong style={{ color: 'var(--c-slate-800)' }}>{v}</strong> },
@@ -113,7 +113,7 @@ export function DomainAuthorityResultView({ data }) {
       <Card>
         <SectionHeader title="Top 5 Priority Actions" subtitle="Highest-impact moves to grow domain authority" />
         <div className={s.insights}>
-          {data.top_5_priority_actions.map((a, i) => <InsightCard key={i} {...a} index={i} />)}
+          {(data?.top_5_priority_actions || []).map((a, i) => <InsightCard key={i} {...a} index={i} />)}
         </div>
       </Card>
     </motion.div>

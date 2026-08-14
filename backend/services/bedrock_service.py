@@ -690,6 +690,144 @@ Base all estimates on realistic industry patterns for {req.industry} companies i
     return result
 
 
+# ── Blog topics (SEO-informed topic planning + generation) ──────────────────
+from models.blog_models import BlogTopicSuggestion
+
+
+def _locked_blog_topic() -> BlogTopicSuggestion:
+    return BlogTopicSuggestion(title=MASK, angle=MASK, target_keyword=MASK, locked=True)
+
+
+def suggest_blog_topics(
+    req, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
+) -> list[BlogTopicSuggestion]:
+    """
+    One Bedrock call — asks for `count` blog topic ideas grounded in the
+    company's actual market/industry (not generic filler), each with a
+    target keyword so a topic can go straight into generate_blog_post.
+    Same free-preview pattern as the other single-call analyses: unpaid
+    users get fewer REAL topics asked of Bedrock, padded with zero-cost
+    locked placeholders back up to the requested count.
+    """
+    n_real = req.count if is_paid else min(FREE_PREVIEW_ROWS, req.count)
+    logger.info(f"[bedrock] suggest_blog_topics — {req.company_name} — {n_real}/{req.count} real (is_paid={is_paid})")
+
+    prompt = f"""
+Suggest blog topic ideas for:
+  Company: {req.company_name}
+  URL: {req.url}
+  Market: {req.market}
+  Industry: {req.industry}
+
+Return a JSON object with EXACTLY this key:
+{{
+  "topics": [
+    {{
+      "title": "string — a specific, compelling blog post title (not generic)",
+      "angle": "string — one sentence on what this post covers and why it's useful to the reader",
+      "target_keyword": "string — the primary SEO keyword this post should target"
+    }}
+    // exactly {n_real} topic ideas
+  ]
+}}
+
+Ground every topic in {req.company_name}'s actual industry ({req.industry}) and market ({req.market}) —
+avoid generic "10 tips" filler. Mix informational (top-of-funnel) and more specific,
+decision-stage topics. Each target_keyword should be realistic and distinct from the others —
+no two topics should target the same keyword."""
+
+    raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
+    data = _parse_json(raw)
+    topics = [BlogTopicSuggestion(**t) for t in data.get("topics", [])]
+
+    if not is_paid:
+        topics = _pad_rows(topics, req.count, _locked_blog_topic)
+
+    return topics
+
+
+def generate_blog_post(req, usage_tracker: TokenUsageTracker | None = None) -> GeneratedContentPiece:
+    """
+    One bounded Bedrock call — writes a full, ready-to-publish blog post for
+    a single topic (chosen from suggest_blog_topics, or a custom one).
+    Reuses the exact same output shape content-strategy produces per
+    keyword (GeneratedContentPiece), so the frontend can render it with the
+    same component either way.
+    """
+    logger.info(f"[bedrock] generate_blog_post — {req.company_name} — topic={req.topic!r}")
+
+    prompt = f"""
+Write a complete, publish-ready blog post for:
+  Company: {req.company_name}
+  URL: {req.url}
+  Market: {req.market}
+  Industry: {req.industry}
+  Topic: {req.topic}
+  Target keyword: {req.target_keyword or "(infer a suitable primary keyword from the topic)"}
+
+Return a JSON object with EXACTLY these keys:
+{{
+  "content_type": "string — e.g. 'guide', 'listicle', 'how-to', 'comparison'",
+  "title": "string — the blog post's H1 title",
+  "meta_title": "string — under 60 characters",
+  "meta_description": "string — under 155 characters, includes the target keyword naturally",
+  "url_slug": "string — lowercase, hyphenated",
+  "headings": [
+    {{"level": "H2", "text": "string"}}
+    // 4-7 headings structuring the post
+  ],
+  "body": "string — the full article body in markdown, 900-1400 words, naturally
+    incorporating the target keyword, written in {req.company_name}'s voice for
+    readers in {req.market} considering {req.industry}. Include a clear intro,
+    scannable sections matching the headings above, and a natural conclusion.",
+  "word_count": <integer, actual word count of body>,
+  "tone": "string — e.g. 'informative and reassuring', 'practical and direct'",
+  "primary_cta": "string — one call-to-action for {req.company_name}",
+  "engagement_elements": ["string", "string"
+    // 2-4 elements used to keep readers engaged, e.g. "bulleted checklist", "comparison table"
+  ],
+  "seo_optimization_notes": ["string", "string"
+    // 2-4 notes on how this post was optimised for the target keyword
+  ]
+}}"""
+
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=CONTENT_MAX_TOKENS, usage_tracker=usage_tracker)
+    data = _parse_json(raw)
+    return GeneratedContentPiece(**data)
+
+
+def revise_blog_post(
+    current_post: dict, instruction: str, usage_tracker: TokenUsageTracker | None = None,
+) -> GeneratedContentPiece:
+    """
+    Admin panel: given an EXISTING saved blog post and free-text guidance
+    (e.g. "add a section about visa requirements", "shorten the intro",
+    "this claim about processing time needs to be softened"), returns a
+    revised post in the same shape. Fields the instruction doesn't
+    mention should stay as close to the original as makes sense — this is
+    an edit, not a full rewrite from scratch.
+    """
+    prompt = f"""
+Here is an existing blog post (already published/scheduled) as JSON:
+{json.dumps(current_post, indent=2, default=str)}
+
+An admin has given this instruction for how to revise it:
+"{instruction}"
+
+Apply the instruction and return the COMPLETE revised post as a JSON object in
+EXACTLY the same shape as the input above (same keys: content_type, title,
+meta_title, meta_description, url_slug, headings, body, word_count, tone,
+primary_cta, engagement_elements, seo_optimization_notes).
+
+Keep everything the instruction doesn't mention as close to the original as
+possible — only change what was actually asked for. Recompute word_count to
+match the actual revised body length."""
+
+    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=CONTENT_MAX_TOKENS, usage_tracker=usage_tracker)
+    data = _parse_json(raw)
+    return GeneratedContentPiece(**data)
+
+
 # ── Full report ────────────────────────────────────────────────────────────────
 def generate_full_report(
     req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,

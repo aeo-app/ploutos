@@ -22,6 +22,7 @@ Architecture (same lessons as the content-strategy feature):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -43,7 +44,16 @@ from models.social_models import (
 
 logger = logging.getLogger(__name__)
 
-DAY_MAX_TOKENS = 2000          # 2 posts/day — comfortably bounded
+DAY_MAX_TOKENS = 2000          # 2 poster-only posts/day — comfortably bounded
+# A carousel post adds 5-7 slide objects on top of the normal 4-platform
+# captions + hashtags + visual suggestion + CTA every post already needs —
+# a day with one or two carousel posts genuinely needs more room, and 2000
+# leaves thin margin once the model writes anything more verbose than a
+# terse example. This was truncating some carousel-heavy days (stopReason=
+# max_tokens — see _converse's explicit truncation detection), surfacing as
+# occasional day-level failures. A day's *effective* budget is picked in
+# _generate_day_posts based on whether it actually contains a carousel post.
+DAY_MAX_TOKENS_CAROUSEL = 3200
 MAX_CONCURRENT_DAYS = 5        # bounded concurrency, same reasoning as content-strategy
 
 
@@ -221,11 +231,48 @@ Return a JSON object with EXACTLY this shape:
 """
 
 
+def revise_social_post(
+    current_post: dict, instruction: str, usage_tracker: TokenUsageTracker | None = None,
+) -> SocialPost:
+    """
+    Admin panel: given an EXISTING saved post and free-text guidance (e.g.
+    "make the Instagram caption punchier", "add a mention of our new Dubai
+    office", "this Google Business caption still reads like a testimonial,
+    fix it"), returns a revised post. Same content_type/category/tone/
+    cta_style are preserved unless the instruction explicitly asks to
+    change them — the admin is editing, not re-rolling the whole post from
+    scratch.
+    """
+    prompt = f"""
+Here is an existing social media post (already published/scheduled) as JSON:
+{json.dumps(current_post, indent=2)}
+
+An admin has given this instruction for how to revise it:
+"{instruction}"
+
+Apply the instruction and return the COMPLETE revised post as a JSON object in
+EXACTLY the same shape as the input above (same keys: post_number, content_type,
+category, tone, cta_style, is_simulated_story, captions {{instagram, facebook,
+linkedin, google_business}}, visual_suggestion, cta, hashtags, carousel_slides).
+
+Keep every field the instruction doesn't mention unchanged from the original —
+only change what the instruction actually asks for. Still follow the platform
+rules from your system prompt (Google Business never contains a testimonial,
+Customer Experience stories stay clearly illustrative, LinkedIn stays
+professional with no emojis, etc.) even while applying the requested edit."""
+
+    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=DAY_MAX_TOKENS_CAROUSEL, usage_tracker=usage_tracker)
+    data = _parse_json(raw)
+    return SocialPost(**data)
+
+
 def _generate_day_posts(
     req: RelocationSocialRequest, day: dict, usage_tracker: TokenUsageTracker | None = None
 ) -> DailySchedule:
     prompt = _build_day_prompt(req, day)
-    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=DAY_MAX_TOKENS, usage_tracker=usage_tracker)
+    has_carousel = any(p["content_type"] == "Carousel" for p in day["posts"])
+    max_tokens = DAY_MAX_TOKENS_CAROUSEL if has_carousel else DAY_MAX_TOKENS
+    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=max_tokens, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     posts = [SocialPost(**p) for p in data["posts"]]
     return DailySchedule(

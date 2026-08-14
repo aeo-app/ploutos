@@ -302,7 +302,7 @@ function BacklinkDeepDiveBlock({ bdd }) {
         <div>
           <div className={s.pickerLabel} style={{ marginBottom: 8 }}>Prioritise first</div>
           <div className={ds.insights}>
-            {bdd.high_authority_highlights.map((h, i) => <div key={i} className={s.rankingBox}>{h}</div>)}
+            {(bdd.high_authority_highlights || []).map((h, i) => <div key={i} className={s.rankingBox}>{h}</div>)}
           </div>
         </div>
       )}

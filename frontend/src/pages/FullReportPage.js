@@ -157,7 +157,7 @@ export function FullReportPage() {
                   {comp && (
                     <Card>
                       <SectionHeader title="Competitor Score Leaderboard" />
-                      {comp.competitor_scores.slice(0, 6).map((c, i) => (
+                      {(comp?.competitor_scores || []).slice(0, 6).map((c, i) => (
                         <div key={c.company} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: i < 5 ? '1px solid var(--c-slate-100)' : 'none' }}>
                           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--c-slate-400)', width: '20px' }}>{c.rank}</span>
                           <span style={{ flex: 1, fontSize: '14px', fontWeight: 500, color: 'var(--c-slate-800)' }}>{c.company}</span>
@@ -172,7 +172,7 @@ export function FullReportPage() {
                     <Card>
                       <SectionHeader title="Top 5 DA Priority Actions" />
                       <div className={s.insights}>
-                        {da.top_5_priority_actions.map((a, i) => <InsightCard key={i} {...a} index={i} />)}
+                        {(da?.top_5_priority_actions || []).map((a, i) => <InsightCard key={i} {...a} index={i} />)}
                       </div>
                     </Card>
                   )}
@@ -181,7 +181,7 @@ export function FullReportPage() {
                     <Card>
                       <SectionHeader title="Strategic Takeaways" />
                       <div className={s.insights}>
-                        {comp.key_takeaways.map((t, i) => <InsightCard key={i} {...t} index={i} />)}
+                        {(comp?.key_takeaways || []).map((t, i) => <InsightCard key={i} {...t} index={i} />)}
                       </div>
                     </Card>
                   )}
@@ -193,7 +193,7 @@ export function FullReportPage() {
                 <>
                   <Card padded={false}>
                     <div className={s.cardHead}><SectionHeader title="Competitor Overview" /></div>
-                    <DataTable rows={comp.competitor_overview} keyFn={r => r.company} cols={[
+                    <DataTable rows={comp?.competitor_overview || []} keyFn={r => r.company} cols={[
                       { key: 'rank', label: '#', render: v => <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--c-slate-400)' }}>{v}</span> },
                       { key: 'company', label: 'Company', render: v => <strong>{v}</strong> },
                       { key: 'hq', label: 'HQ' },
@@ -203,7 +203,7 @@ export function FullReportPage() {
                   </Card>
                   <Card padded={false}>
                     <div className={s.cardHead}><SectionHeader title="SEO Visibility" /></div>
-                    <DataTable rows={comp.seo_visibility} keyFn={r => r.company} cols={[
+                    <DataTable rows={comp?.seo_visibility || []} keyFn={r => r.company} cols={[
                       { key: 'company', label: 'Company', render: v => <strong>{v}</strong> },
                       { key: 'seo_visibility_score', label: 'SEO Score', render: v => <div style={{ minWidth: '120px' }}><ProgressBar value={v} max={100} /></div> },
                       { key: 'domain_authority_estimate', label: 'DA', render: v => <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--c-indigo-600)' }}>{v}</span> },
@@ -217,9 +217,9 @@ export function FullReportPage() {
               {section === 'keywords' && kw && (
                 <>
                   {[
-                    { title: 'High-Volume Head Terms',  rows: kw.high_volume_head_terms },
-                    { title: 'Mid-Volume Service Terms', rows: kw.mid_volume_service_terms },
-                    { title: 'Long-Tail High-Intent',   rows: kw.long_tail_high_intent },
+                    { title: 'High-Volume Head Terms',  rows: kw?.high_volume_head_terms || [] },
+                    { title: 'Mid-Volume Service Terms', rows: kw?.mid_volume_service_terms || [] },
+                    { title: 'Long-Tail High-Intent',   rows: kw?.long_tail_high_intent || [] },
                   ].map(({ title, rows }) => (
                     <Card key={title} padded={false}>
                       <div className={s.cardHead}><SectionHeader title={title} /></div>
@@ -270,13 +270,13 @@ export function FullReportPage() {
               {section === 'da' && da && (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '12px' }}>
-                    <StatTile label="Current DA"    value={da.current_da}    color="var(--c-danger)" />
-                    <StatTile label="6-Month Target" value={da.target_da_6m}  color="var(--c-warning)" />
-                    <StatTile label="12-Month Target"value={da.target_da_12m} color="var(--c-success)" />
+                    <StatTile label="Current DA"    value={da?.current_da}    color="var(--c-danger)" />
+                    <StatTile label="6-Month Target" value={da?.target_da_6m}  color="var(--c-warning)" />
+                    <StatTile label="12-Month Target"value={da?.target_da_12m} color="var(--c-success)" />
                   </div>
                   <Card padded={false}>
                     <div className={s.cardHead}><SectionHeader title="Gap Analysis" /></div>
-                    <DataTable rows={da.gap_analysis} keyFn={r => r.metric} cols={[
+                    <DataTable rows={da?.gap_analysis || []} keyFn={r => r.metric} cols={[
                       { key: 'metric', label: 'Metric', render: v => <strong>{v}</strong> },
                       { key: 'current', label: 'Current', render: v => <span style={{ color: 'var(--c-danger)', fontFamily: 'var(--font-mono)' }}>{v}</span> },
                       { key: 'six_month_target', label: '6-Month', render: v => <span style={{ color: 'var(--c-warning)', fontFamily: 'var(--font-mono)' }}>{v}</span> },
@@ -286,7 +286,7 @@ export function FullReportPage() {
                   </Card>
                   <Card padded={false}>
                     <div className={s.cardHead}><SectionHeader title="Backlink Opportunities" /></div>
-                    <DataTable rows={da.backlink_opportunities} keyFn={(_,i) => i} cols={[
+                    <DataTable rows={da?.backlink_opportunities || []} keyFn={(_,i) => i} cols={[
                       { key: 'pillar', label: 'Pillar', render: v => <Badge variant="brand">{v}</Badge> },
                       { key: 'action', label: 'Action' },
                       { key: 'platform_or_target', label: 'Target' },
@@ -297,7 +297,7 @@ export function FullReportPage() {
                   <Card>
                     <SectionHeader title="Top 5 Priority Actions" />
                     <div className={s.insights}>
-                      {da.top_5_priority_actions.map((a, i) => <InsightCard key={i} {...a} index={i} />)}
+                      {(da?.top_5_priority_actions || []).map((a, i) => <InsightCard key={i} {...a} index={i} />)}
                     </div>
                   </Card>
                 </>
