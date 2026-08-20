@@ -47,6 +47,13 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
   const [newBlogKeyword, setNewBlogKeyword] = useState('');
   const [newBlogInstruction, setNewBlogInstruction] = useState('');
 
+  const [showCreateCalendar, setShowCreateCalendar] = useState(false);
+  const [creatingCalendar, setCreatingCalendar] = useState(false);
+  const [newCalCountry, setNewCalCountry] = useState('');
+  const [newCalStartDate, setNewCalStartDate] = useState('');
+  const [newCalEndDate, setNewCalEndDate] = useState('');
+  const [newCalContentSuggestions, setNewCalContentSuggestions] = useState('');
+
   useEffect(() => {
     withTokenExpiry(adminApi.listUsers(), authCtx)
       .then(d => setUsers(d?.users || []))
@@ -169,6 +176,36 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
     }
   };
 
+  const createCalendar = async () => {
+    if (!newCalCountry.trim()) { toast({ type: 'error', message: 'Enter a destination country first.' }); return; }
+    if (!newCalStartDate || !newCalEndDate) { toast({ type: 'error', message: 'Pick a start and end date first.' }); return; }
+    if (!selectedUser?.user_id) return;
+    setCreatingCalendar(true);
+    try {
+      const created = await withTokenExpiry(
+        adminApi.createCalendarForUser(selectedUser.user_id, {
+          country: newCalCountry.trim(), start_date: newCalStartDate, end_date: newCalEndDate,
+          content_suggestions: newCalContentSuggestions.trim(),
+        }),
+        authCtx
+      );
+      setItems(prev => [
+        { analysis_id: created?.analysis_id, user_id: selectedUser.user_id, country: created?.country, created_at: created?.created_at, status: created?.status },
+        ...(prev || []),
+      ]);
+      setSelected(created);
+      setJsonText(JSON.stringify(created?.result ?? {}, null, 2));
+      setView('formatted');
+      setShowCreateCalendar(false);
+      setNewCalCountry(''); setNewCalStartDate(''); setNewCalEndDate(''); setNewCalContentSuggestions('');
+      toast({ type: 'success', message: '✓ Calendar created for this customer.' });
+    } catch (e) {
+      if (e?.code !== 'TokenExpired') toast({ type: 'error', message: e?.message || 'Could not create this calendar.' });
+    } finally {
+      setCreatingCalendar(false);
+    }
+  };
+
   const filteredUsers = useMemo(() => {
     if (!users) return [];
     const q = query.trim().toLowerCase();
@@ -248,6 +285,9 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                 {contentType === 'blogs' && (
                   <button type="button" className={s.saveBtn} onClick={() => setShowCreateBlog(v => !v)}>+ New blog</button>
                 )}
+                {contentType === 'calendars' && (
+                  <button type="button" className={s.saveBtn} onClick={() => setShowCreateCalendar(v => !v)}>+ New calendar</button>
+                )}
               </div>
 
               {contentType === 'blogs' && showCreateBlog && (
@@ -269,6 +309,34 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                   />
                   <button type="button" className={s.saveBtn} onClick={createBlog} disabled={creatingBlog}>
                     {creatingBlog ? 'Writing…' : 'Create for this customer'}
+                  </button>
+                </div>
+              )}
+
+              {contentType === 'calendars' && showCreateCalendar && (
+                <div className={s.createBlogPanel}>
+                  <input
+                    className={s.reviseSelect} style={{ width: '100%', marginBottom: 8 }}
+                    placeholder="Destination country (required) — e.g. 'Canada'"
+                    value={newCalCountry} onChange={e => setNewCalCountry(e.target.value)}
+                  />
+                  <div className={s.reviseTargetRow}>
+                    <input
+                      type="date" className={s.reviseSelect}
+                      value={newCalStartDate} onChange={e => setNewCalStartDate(e.target.value)}
+                    />
+                    <input
+                      type="date" className={s.reviseSelect}
+                      value={newCalEndDate} onChange={e => setNewCalEndDate(e.target.value)}
+                    />
+                  </div>
+                  <textarea
+                    className={s.reviseTextarea}
+                    placeholder="Content suggestions (optional) — themes, angles, offers to weave into this calendar"
+                    value={newCalContentSuggestions} onChange={e => setNewCalContentSuggestions(e.target.value)}
+                  />
+                  <button type="button" className={s.saveBtn} onClick={createCalendar} disabled={creatingCalendar} style={{ marginTop: 8 }}>
+                    {creatingCalendar ? 'Generating…' : 'Create for this customer'}
                   </button>
                 </div>
               )}

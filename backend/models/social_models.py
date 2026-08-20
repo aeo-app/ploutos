@@ -63,6 +63,11 @@ class RelocationSocialRequest(BaseModel):
     company: CompanyDetails
     start_date: date_type = Field(..., description="First day of the content calendar (inclusive).")
     end_date: date_type = Field(..., description="Last day of the content calendar (inclusive).")
+    content_suggestions: str = Field(
+        "", max_length=2000, example="Focus more on families with school-age kids, and mention our partnership with a local relocation lawyer.",
+        description="Optional free-text guidance from the user — themes, angles, offers, or "
+                    "anything else to weave into this calendar's posts. Applied to every day.",
+    )
 
     @field_validator("country")
     @classmethod

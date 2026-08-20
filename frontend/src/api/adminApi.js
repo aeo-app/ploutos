@@ -44,6 +44,9 @@ export const adminApi = {
     req("POST", `/admin/users/${encodeURIComponent(userId)}/calendars/${encodeURIComponent(analysisId)}/revise-post`, {
       date, post_number: postNumber, instruction,
     }),
+  /** @param {object} payload - {country, start_date, end_date, phone?, email?, website?, instagram?, facebook?, linkedin?, content_suggestions?} - admin creates a NEW calendar, saved under the CUSTOMER's account */
+  createCalendarForUser: (userId, payload) =>
+    req("POST", `/admin/users/${encodeURIComponent(userId)}/calendars/create`, payload),
 
   listUserBlogs: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/blogs`),
   getUserBlog: (userId, analysisId) =>

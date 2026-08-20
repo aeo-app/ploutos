@@ -654,6 +654,82 @@ def delete_canva_connection(user_id: str) -> None:
         raise
 
 
+# ── Social publishing connections (Facebook, Instagram, LinkedIn, Google
+# Business) — one generic set of functions instead of per-platform copies,
+# since the shape is identical: an access/refresh token plus whatever
+# "target" identifiers that platform needs to actually post (a Facebook
+# Page ID, an Instagram Business Account ID, a LinkedIn organization URN,
+# a Google Business account/location name). `extra` carries those
+# platform-specific fields — see services/social_publish/*.py for what
+# each platform stores there. ───────────────────────────────────────────────
+VALID_SOCIAL_PLATFORMS = {"facebook", "instagram", "linkedin", "google_business"}
+
+
+def _social_connection_sk(platform: str) -> str:
+    if platform not in VALID_SOCIAL_PLATFORMS:
+        raise ValueError(f"Unknown social platform: {platform!r}")
+    return f"SOCIAL_CONNECTION#{platform}"
+
+
+def save_social_connection(
+    *, user_id: str, platform: str, access_token: str, refresh_token: str = "",
+    expires_at: str = "", extra: Optional[dict] = None,
+) -> None:
+    table = _get_table()
+    item = {
+        "PK": _pk(user_id),
+        "SK": _social_connection_sk(platform),
+        "user_id": user_id,
+        "platform": platform,
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at,
+        "extra": extra or {},
+        "connected_at": _now_iso(),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] {platform} connected for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_social_connection failed: {e.response['Error']}")
+        raise
+
+
+def get_social_connection(user_id: str, platform: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _pk(user_id), "SK": _social_connection_sk(platform)})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_social_connection failed: {e.response['Error']}")
+        raise
+
+
+def list_social_connections(user_id: str) -> list[dict]:
+    """All connected platforms for this user (used for the status endpoint —
+    one call instead of four)."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with("SOCIAL_CONNECTION#"),
+        )
+        return [_from_dynamo(i) for i in resp.get("Items", [])]
+    except ClientError as e:
+        logger.error(f"[dynamo] list_social_connections failed: {e.response['Error']}")
+        raise
+
+
+def delete_social_connection(user_id: str, platform: str) -> None:
+    table = _get_table()
+    try:
+        table.delete_item(Key={"PK": _pk(user_id), "SK": _social_connection_sk(platform)})
+        logger.info(f"[dynamo] {platform} disconnected for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] delete_social_connection failed: {e.response['Error']}")
+        raise
+
+
 def save_poster(
     *,
     user_id: str,

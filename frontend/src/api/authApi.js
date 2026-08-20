@@ -1,4 +1,4 @@
-// const BASE_URL = "https://api.aeo-app.ai/api/v1";
+// export const BASE_URL = "https://api.aeo-app.ai/api/v1";
 const BASE_URL = "http://127.0.0.1:8000/api/v1"; // Local development
 
 // 🔹 Error message mapping

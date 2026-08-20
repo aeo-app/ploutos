@@ -28,28 +28,28 @@ function PostCard({ post, dayDate }) {
   const caption = post.captions?.[platform] || '';
 
   return (
-    <div className={s.postCard}>
-      <div className={s.postHead}>
-        <div className={s.postBadges}>
-          <Badge variant="brand">{post.content_type}</Badge>
-          <Badge>{post.category}</Badge>
-          <Badge variant={TONE_VARIANT[post.tone] || 'default'}>{post.tone}</Badge>
-          <Badge variant={CTA_VARIANT[post.cta_style] || 'default'}>{post.cta_style} CTA</Badge>
+    <div className={s?.postCard}>
+      <div className={s?.postHead}>
+        <div className={s?.postBadges}>
+          <Badge variant="brand">{post?.content_type}</Badge>
+          <Badge>{post?.category}</Badge>
+          <Badge variant={TONE_VARIANT[post?.tone] || 'default'}>{post?.tone}</Badge>
+          <Badge variant={CTA_VARIANT[post?.cta_style] || 'default'}>{post?.cta_style} CTA</Badge>
         </div>
       </div>
 
-      {post.is_simulated_story && (
-        <div className={s.simulatedNote}>
+      {post?.is_simulated_story && (
+        <div className={s?.simulatedNote}>
           ⚠ Illustrative / simulated story for engagement — not a real customer testimonial.
         </div>
       )}
 
-      <div className={s.platformTabs}>
+      <div className={s?.platformTabs}>
         {PLATFORMS.map(p => (
           <button
             key={p.id}
             type="button"
-            className={`${s.platformTab} ${platform === p.id ? s.platformTabActive : ''}`}
+            className={`${s?.platformTab} ${platform === p.id ? s?.platformTabActive : ''}`}
             onClick={() => setPlatform(p.id)}
           >
             {p.label}
@@ -57,36 +57,36 @@ function PostCard({ post, dayDate }) {
         ))}
       </div>
 
-      <div className={s.captionBox}>
-        <div className={s.captionCopyBtn}><CopyButton text={caption} /></div>
+      <div className={s?.captionBox}>
+        <div className={s?.captionCopyBtn}><CopyButton text={caption} /></div>
         {caption}
       </div>
 
-      <div className={s.visualBox}>
+      <div className={s?.visualBox}>
         <span>🖼️</span>
-        <span><strong>Visual suggestion:</strong> {post.visual_suggestion}</span>
+        <span><strong>Visual suggestion:</strong> {post?.visual_suggestion}</span>
       </div>
 
-      <div className={s.ctaRow}>
-        <span className={s.ctaPill}>{post.cta}</span>
+      <div className={s?.ctaRow}>
+        <span className={s?.ctaPill}>{post?.cta}</span>
       </div>
 
-      {post.hashtags?.length > 0 && (
-        <div className={s.hashtagRow}>
-          {post.hashtags.map((h, i) => (
-            <span key={i} className={s.hashtag}>{h.startsWith('#') ? h : `#${h}`}</span>
+      {post?.hashtags?.length > 0 && (
+        <div className={s?.hashtagRow}>
+          {post?.hashtags.map((h, i) => (
+            <span key={i} className={s?.hashtag}>{h.startsWith('#') ? h : `#${h}`}</span>
           ))}
         </div>
       )}
 
       {post.content_type === 'Carousel' && post.carousel_slides?.length > 0 && (
-        <div className={s.carouselList}>
+        <div className={s?.carouselList}>
           {post.carousel_slides.map((slide, i) => (
-            <div key={i} className={s.carouselSlide}>
-              <span className={`${s.slideNum} ${slide.role === 'hook' ? s.slideNumHook : slide.role === 'cta' ? s.slideNumCta : ''}`}>
-                {slide.slide_number}
+            <div key={i} className={s?.carouselSlide}>
+              <span className={`${s?.slideNum} ${slide?.role === 'hook' ? s?.slideNumHook : slide?.role === 'cta' ? s?.slideNumCta : ''}`}>
+                {slide?.slide_number}
               </span>
-              <span>{slide.text}</span>
+              <span>{slide?.text}</span>
             </div>
           ))}
         </div>
@@ -105,35 +105,35 @@ export function DayCard({ day, index, defaultOpen, onUnlock }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * 0.02, 0.4) }}>
-      <div className={s.dayCard}>
-        <div className={s.dayHead} onClick={() => !day.locked && setOpen(o => !o)}>
-          <div className={s.dayTitle}>
-            <span className={s.dayDate}>{day.date}</span>
-            <span className={s.dayWeekday}>{day.day_of_week}</span>
+      <div className={s?.dayCard}>
+        <div className={s?.dayHead} onClick={() => !day?.locked && setOpen(o => !o)}>
+          <div className={s?.dayTitle}>
+            <span className={s?.dayDate}>{day?.date}</span>
+            <span className={s?.dayWeekday}>{day?.day_of_week}</span>
           </div>
-          {day.locked ? (
-            <span className={s.dayToggle}>🔒 Locked</span>
+          {day?.locked ? (
+            <span className={s?.dayToggle}>🔒 Locked</span>
           ) : (
-            <span className={s.dayToggle}>{open ? '▲ Hide' : '▼ Show 2 posts'}</span>
+            <span className={s?.dayToggle}>{open ? '▲ Hide' : '▼ Show 2 posts'}</span>
           )}
         </div>
 
-        {day.locked && (
-          <div className={s.dayBody}>
-            <LockedTeaser previewText={day.preview_text} onUnlock={() => onUnlock?.(day.date)} />
+        {day?.locked && (
+          <div className={s?.dayBody}>
+            <LockedTeaser previewText={day?.preview_text} onUnlock={() => onUnlock?.(day?.date)} />
           </div>
         )}
 
-        {!day.locked && open && (
+        {!day?.locked && open && (
           <>
-            <div className={s.dayTimesRow}>
-              <span className={s.dayTimeChip}>IG: {rt.instagram.join(' / ')}</span>
-              <span className={s.dayTimeChip}>FB: {rt.facebook.join(' / ')}</span>
-              <span className={s.dayTimeChip}>LinkedIn: {rt.linkedin || 'not recommended (weekend)'}</span>
-              <span className={s.dayTimeChip}>GBP: {rt.google_business}</span>
+            <div className={s?.dayTimesRow}>
+              <span className={s?.dayTimeChip}>IG: {rt?.instagram.join(' / ')}</span>
+              <span className={s?.dayTimeChip}>FB: {rt?.facebook.join(' / ')}</span>
+              <span className={s?.dayTimeChip}>LinkedIn: {rt?.linkedin || 'not recommended (weekend)'}</span>
+              <span className={s?.dayTimeChip}>GBP: {rt?.google_business}</span>
             </div>
-            <div className={s.dayBody}>
-              {schedule.posts.map((post, i) => <PostCard key={i} post={post} dayDate={day.date} />)}
+            <div className={s?.dayBody}>
+              {schedule?.posts.map((post, i) => <PostCard key={i} post={post} dayDate={day?.date} />)}
             </div>
           </>
         )}
@@ -153,18 +153,18 @@ export function RelocationCalendarResultView({ result }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card padded={false}>
-        <div className={s.progressSummary}>
-          <Badge variant="brand">{result.period_label}</Badge>
-          <span className={s.progressCount}>{days.length} days</span>
-          {Object.keys(result.failed_dates || {}).length > 0 && (
-            <span className={s.progressCount}>{Object.keys(result.failed_dates).length} failed</span>
+        <div className={s?.progressSummary}>
+          <Badge variant="brand">{result?.period_label}</Badge>
+          <span className={s?.progressCount}>{days.length} days</span>
+          {Object.keys(result?.failed_dates || {}).length > 0 && (
+            <span className={s?.progressCount}>{Object.keys(result?.failed_dates).length} failed</span>
           )}
         </div>
       </Card>
 
-      {result.content_disclaimer && (
-        <div className={s.visualBox} style={{ borderStyle: 'solid', borderColor: 'var(--c-warning)' }}>
-          <span>⚠️</span><span>{result.content_disclaimer}</span>
+      {result?.content_disclaimer && (
+        <div className={s?.visualBox} style={{ borderStyle: 'solid', borderColor: 'var(--c-warning)' }}>
+          <span>⚠️</span><span>{result?.content_disclaimer}</span>
         </div>
       )}
 
@@ -181,6 +181,7 @@ export function RelocationCalendarPage() {
   const { goScreen, logout } = useAuth();
 
   const [country, setCountry] = useState('');
+  const [contentSuggestions, setContentSuggestions] = useState('');
   const [company, setCompany] = useState({
     name: state.request.company_name || '',
     phone: '', email: '', website: '', instagram: '', facebook: '', linkedin: '',
@@ -192,19 +193,29 @@ export function RelocationCalendarPage() {
   useEffect(() => {
     if (prepopulatedRef.current) return;
     prepopulatedRef.current = true;
-    historyApi.list({ analysisType: 'relocation_social_calendar', limit: 1 })
+    historyApi?.list({ analysisType: 'relocation_social_calendar', limit: 1 })
       .then(data => {
         const latest = data?.items?.[0];
-        if (!latest) return;
-        return historyApi.getOne(latest.analysis_id);
+        if (!latest) return null;
+        return historyApi?.getOne(latest.analysis_id);
       })
       .then(full => {
         const savedReq = full?.request;
-        if (!savedReq) return;
-        if (savedReq.country) setCountry(savedReq.country);
-        if (savedReq.company) {
-          setCompany(c => ({ ...c, ...savedReq.company }));
+        if (savedReq) {
+          if (savedReq.country) setCountry(savedReq.country);
+          if (savedReq.company) {
+            setCompany(c => ({ ...c, ...savedReq.company }));
+          }
         }
+        // Also refresh the actual displayed result on every visit to this
+        // page — not just once per full app load. AppShell's own
+        // rehydration effect only runs a single time when the app first
+        // mounts, and stays mounted across in-app (sidebar) navigation, so
+        // it never re-fires just from revisiting this page. Without this,
+        // an admin-created or admin-revised calendar (or any change made
+        // in another tab/session) wouldn't show up here until the user did
+        // a full browser refresh, not just clicking back into this page.
+        if (full?.result) setResultKey('relocationCalendar', full.result);
       })
       .catch(err => console.warn('[RelocationCalendarPage] history prepopulation failed:', err?.message || err));
   }, []);
@@ -225,15 +236,15 @@ export function RelocationCalendarPage() {
   const [showUnlock, setShowUnlock] = useState(false);
   const abortRef = useRef(null);
 
-  const loading = state.loading.relocationCalendar || streaming;
+  const loading = state?.loading?.relocationCalendar || streaming;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const handleEvent = useCallback((event, data) => {
     switch (event) {
       case 'start':
-        setPeriodLabel(data.period_label);
-        setTotalDays(data.total_days);
+        setPeriodLabel(data?.period_label);
+        setTotalDays(data?.total_days);
         break;
       case 'day_ready':
         // The backend emits the raw DailySchedule here (not wrapped in a
@@ -241,24 +252,24 @@ export function RelocationCalendarPage() {
         // every day uniformly as { date, day_of_week, locked, schedule }.
         setDays(prev => [
           ...prev,
-          { date: data.date, day_of_week: data.day_of_week, locked: false, schedule: data },
-        ].sort((a, b) => a.date.localeCompare(b.date)));
+          { date: data?.date, day_of_week: data?.day_of_week, locked: false, schedule: data },
+        ].sort((a, b) => a?.date?.localeCompare(b?.date)));
         break;
       case 'day_locked':
         // Zero-cost teaser slot — no Bedrock call was made for this day.
-        setDays(prev => [...prev, data.slot].sort((a, b) => a.date.localeCompare(b.date)));
+        setDays(prev => [...prev, data?.slot].sort((a, b) => a?.date?.localeCompare(b?.date)));
         break;
       case 'day_error':
-        setFailedDates(prev => ({ ...prev, [data.date]: data.error }));
+        setFailedDates(prev => ({ ...prev, [data?.date]: data?.error }));
         break;
       case 'done':
         if (data.result) {
           setResultKey('relocationCalendar', data.result);
-          setDisclaimer(data.result.content_disclaimer || null);
+          setDisclaimer(data?.result?.content_disclaimer || null);
         }
         break;
       case 'error':
-        setStreamError(data.error || 'Something went wrong while generating the calendar.');
+        setStreamError(data?.error || 'Something went wrong while generating the calendar.');
         break;
       default:
         break;
@@ -297,6 +308,7 @@ export function RelocationCalendarPage() {
       },
       start_date: startDate,
       end_date: endDate,
+      content_suggestions: contentSuggestions?.trim(),
     };
 
     try {
@@ -332,38 +344,49 @@ export function RelocationCalendarPage() {
           subtitle="Any country, any date range — platform-ready captions for Instagram, Facebook, LinkedIn & Google Business, with a randomised, non-repetitive posting schedule."
         />
 
-        <div className={s.formRow}>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>Country*</span>
-            <input className={s.input} value={country} onChange={e => setCountry(e.target.value)} placeholder="e.g. Canada" />
+        <div className={s?.formRow}>
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Country*</span>
+            <input className={s?.input} value={country} onChange={e => setCountry(e.target.value)} placeholder="e.g. Canada" />
           </div>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>Company name*</span>
-            <input className={s.input} value={company.name} onChange={e => updateCompany('name', e.target.value)} placeholder="Your company name" />
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Company name*</span>
+            <input className={s?.input} value={company?.name} onChange={e => updateCompany('name', e.target.value)} placeholder="Your company name" />
           </div>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>Start date*</span>
-            <input className={s.input} style={{ minWidth: 160 }} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Start date*</span>
+            <input className={s?.input} style={{ minWidth: 160 }} type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>End date*</span>
-            <input className={s.input} style={{ minWidth: 160 }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>End date*</span>
+            <input className={s?.input} style={{ minWidth: 160 }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
         </div>
 
-        <div className={s.formRow}>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>Phone</span>
-            <input className={s.input} value={company.phone} onChange={e => updateCompany('phone', e.target.value)} placeholder="Optional" />
+        <div className={s?.formRow}>
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Phone</span>
+            <input className={s?.input} value={company?.phone} onChange={e => updateCompany('phone', e.target.value)} placeholder="Optional" />
           </div>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>Email</span>
-            <input className={s.input} value={company.email} onChange={e => updateCompany('email', e.target.value)} placeholder="Optional" />
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Email</span>
+            <input className={s?.input} value={company?.email} onChange={e => updateCompany('email', e.target.value)} placeholder="Optional" />
           </div>
-          <div className={s.field}>
-            <span className={s.fieldLabel}>Website</span>
-            <input className={s.input} value={company.website} onChange={e => updateCompany('website', e.target.value)} placeholder="Optional" />
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Website</span>
+            <input className={s?.input} value={company?.website} onChange={e => updateCompany('website', e.target.value)} placeholder="Optional" />
           </div>
+        </div>
+
+        <div className={s?.field} style={{ marginBottom: 12 }}>
+          <span className={s?.fieldLabel}>Content suggestions</span>
+          <textarea
+            className={s?.input}
+            style={{ minHeight: 64, resize: 'vertical', fontFamily: 'inherit' }}
+            value={contentSuggestions}
+            onChange={e => setContentSuggestions(e.target.value)}
+            placeholder="Optional — themes, angles, offers, or anything else to weave into this calendar. e.g. 'Focus more on families with school-age kids, and mention our partnership with a local relocation lawyer.'"
+          />
         </div>
 
         {dateRangeInvalid && <div style={{ fontSize: 13, color: 'var(--c-danger)' }}>End date must be on or after the start date.</div>}
@@ -382,15 +405,15 @@ export function RelocationCalendarPage() {
       {hasStarted && (
         <motion.div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 16 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <Card padded={false}>
-            <div className={s.progressSummary}>
+            <div className={s?.progressSummary}>
               <Badge variant={errorCount ? 'warning' : 'brand'}>{periodLabel}</Badge>
-              <div className={s.progressBarWrap}><div className={s.progressBarFill} style={{ width: `${progressPct}%` }} /></div>
-              <span className={s.progressCount}>{days.length}/{totalDays} days</span>
+              <div className={s?.progressBarWrap}><div className={s?.progressBarFill} style={{ width: `${progressPct}%` }} /></div>
+              <span className={s?.progressCount}>{days.length}/{totalDays} days</span>
               {lockedCount > 0 && <Badge variant="warning">🔒 {lockedCount} locked — upgrade to unlock</Badge>}
               {errorCount > 0 && (
                 <button
                   type="button"
-                  className={s.progressCount}
+                  className={s?.progressCount}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', color: 'inherit' }}
                   onClick={() => setShowFailureDetails(v => !v)}
                 >
@@ -412,15 +435,15 @@ export function RelocationCalendarPage() {
           <AnimatePresence>
             {disclaimer && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <div className={s.visualBox} style={{ borderStyle: 'solid', borderColor: 'var(--c-warning)' }}>
+                <div className={s?.visualBox} style={{ borderStyle: 'solid', borderColor: 'var(--c-warning)' }}>
                   <span>⚠️</span><span>{disclaimer}</span>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {days.map((day, i) => (
-            <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} />
+          {days?.map((day, i) => (
+            <DayCard key={day?.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} />
           ))}
         </motion.div>
       )}

@@ -171,14 +171,33 @@ function Root() {
 function AdminAwareRoot({ profile }) {
   const [viewMode, setViewMode] = useState(profile?.is_admin ? 'admin' : 'user');
 
-  if (profile?.is_admin && viewMode === 'admin') {
-    return <AdminApp onExitToUserView={() => setViewMode('user')} />;
+  // Both shells stay mounted the whole time (for admins) — only visibility
+  // toggles. Previously this conditionally RETURNED one or the other,
+  // which meant switching to Admin and back fully unmounted AppShell/
+  // AppRouter/whichever page was open, wiping all of that page's local
+  // state (e.g. RelocationCalendarPage's in-progress/just-generated
+  // calendar) even though the shared AppContext data survived. Toggling
+  // display instead of mounting means a page you were looking at is
+  // exactly as you left it when you come back, no re-fetch race involved.
+  if (!profile?.is_admin) {
+    return (
+      <AppShell profile={profile}>
+        <AppRouter />
+      </AppShell>
+    );
   }
 
   return (
-    <AppShell profile={profile} onEnterAdminView={profile?.is_admin ? () => setViewMode('admin') : undefined}>
-      <AppRouter />
-    </AppShell>
+    <>
+      <div style={{ display: viewMode === 'admin' ? 'block' : 'none' }}>
+        <AdminApp onExitToUserView={() => setViewMode('user')} />
+      </div>
+      <div style={{ display: viewMode === 'user' ? 'block' : 'none' }}>
+        <AppShell profile={profile} onEnterAdminView={() => setViewMode('admin')}>
+          <AppRouter />
+        </AppShell>
+      </div>
+    </>
   );
 }
 

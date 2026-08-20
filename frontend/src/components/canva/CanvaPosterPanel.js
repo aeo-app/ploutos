@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { canvaApi } from '../../api/canvaApi';
+import { SocialPublishPanel } from './SocialPublishPanel';
 import s from './CanvaPosterPanel.module.css';
 
 /**
@@ -31,6 +32,30 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
       .then(d => setConnected(d.connected))
       .catch(() => setConnected(false));
   }, []);
+
+  // If a poster was already created for THIS exact day/post (in an earlier
+  // session, or by an admin — see AdminContentPage.js), show it instead of
+  // starting from the empty "Create poster" state. Previously this panel
+  // never checked for existing posters at all, so reconnecting Canva (or
+  // just revisiting a day you'd already made a poster for) always looked
+  // like nothing had ever been created, even though it was saved.
+  useEffect(() => {
+    if (connected !== true) return;
+    canvaApi.listPosters()
+      .then(data => {
+        const existing = (data?.items || []).find(p => p?.day_date === dayDate && p?.post_number === postNumber);
+        if (!existing) return null;
+        setPoster(existing);
+        // Needed so the "replace image" inputs render correctly for a
+        // rehydrated poster — imageFields/textFieldsList below are derived
+        // from `fields`, which normally only gets populated when the user
+        // picks a template themselves.
+        return canvaApi.brandTemplateDataset(existing.brand_template_id)
+          .then(({ fields: f }) => setFields(f));
+      })
+      .catch(err => console.warn('[CanvaPosterPanel] existing-poster rehydration failed:', err?.message || err));
+    // eslint-disable-next-line
+  }, [connected, dayDate, postNumber]);
 
   const handleConnect = async () => {
     setConnectError(null);
@@ -225,6 +250,8 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
           </div>
         </div>
       )}
+
+      {poster && <SocialPublishPanel posterId={poster.poster_id} defaultCaption={defaultText} />}
 
       {error && <div className={s.errorText}>{error}</div>}
     </div>

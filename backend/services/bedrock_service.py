@@ -381,6 +381,43 @@ def _parse_json(raw: str) -> dict:
             raise e
 
 
+def _converse_and_validate(
+    system_prompt: str, user_prompt: str, model_cls, *,
+    max_tokens: int | None = None, usage_tracker: "TokenUsageTracker | None" = None, max_attempts: int = 2,
+):
+    """
+    _converse + _parse_json + Pydantic validation, with ONE retry if the
+    model's JSON is syntactically valid but doesn't match the expected
+    schema (wrong/renamed/missing keys — e.g. a nested object using
+    "content" where "text" was required). This happens occasionally even
+    with a well-specified prompt; rather than surface a raw Pydantic
+    traceback to the end user, the retry tells the model exactly what was
+    wrong and asks it to fix just that.
+    """
+    from pydantic import ValidationError
+
+    prompt = user_prompt
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        raw = _converse(system_prompt, prompt, max_tokens=max_tokens, usage_tracker=usage_tracker)
+        data = _parse_json(raw)
+        try:
+            return model_cls(**data)
+        except ValidationError as e:
+            last_error = e
+            if attempt >= max_attempts:
+                break
+            logger.warning(f"[bedrock] {model_cls.__name__} schema validation failed on attempt {attempt}, retrying with correction: {e}")
+            prompt = f"""{user_prompt}
+
+Your previous response did not match the required schema. Return the SAME
+content again, fixed to match EXACTLY the field names and structure
+specified above — no renamed, added, or missing keys. The validation errors
+were:
+{e}"""
+    raise last_error
+
+
 # ── System prompt (matches v1 intent, adapted for Bedrock) ────────────────────
 SYSTEM_PROMPT = """You are an expert SEO strategist and digital marketing analyst
 specialising in Singapore and Asia-Pacific markets. You have deep knowledge of

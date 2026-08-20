@@ -145,6 +145,7 @@ from routers.payment_router import router as payment_router
 from routers.canva_router import router as canva_router
 from routers.admin_router import router as admin_router
 from routers.blog_router import router as blog_router
+from routers.social_publish_router import router as social_publish_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
@@ -153,6 +154,7 @@ app.include_router(payment_router)
 app.include_router(canva_router)
 app.include_router(admin_router)
 app.include_router(blog_router)
+app.include_router(social_publish_router)
 
 
 @app.get("/", tags=["Health"])

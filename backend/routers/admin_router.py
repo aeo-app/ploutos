@@ -232,6 +232,7 @@ async def create_calendar_for_user(user_id: str, req: CreateCalendarForUserReque
                 instagram=req.instagram or None, facebook=req.facebook or None, linkedin=req.linkedin or None,
             ),
             start_date=req.start_date, end_date=req.end_date,
+            content_suggestions=req.content_suggestions,
         )
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid calendar request: {e}")

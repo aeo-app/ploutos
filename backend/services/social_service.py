@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+
+from pydantic import BaseModel
 import logging
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
-from services.bedrock_service import _converse, _parse_json, TokenUsageTracker
+from services.bedrock_service import _converse, _converse_and_validate, _parse_json, TokenUsageTracker
 
 from models.social_models import (
     CATEGORIES,
@@ -43,6 +45,13 @@ from models.social_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _DayPostsPayload(BaseModel):
+    """Wraps the {"posts": [...]} shape Bedrock returns for one day, so
+    _generate_day_posts can use _converse_and_validate's retry-on-schema-
+    mismatch safety net the same way revise_social_post does."""
+    posts: list[SocialPost]
 
 DAY_MAX_TOKENS = 2000          # 2 poster-only posts/day — comfortably bounded
 # A carousel post adds 5-7 slide objects on top of the normal 4-platform
@@ -194,12 +203,17 @@ def _build_day_prompt(req: RelocationSocialRequest, day: dict) -> str:
         f"""category="{p['category']}", tone="{p['tone']}", cta_style="{p['cta_style']}\""""
         for p in day["posts"]
     )
+    suggestions_block = (
+        f"\nUser-provided content guidance (apply naturally across today's posts where relevant —\n"
+        f"don't force it into every single post if it doesn't fit a given category/tone):\n\"{req.content_suggestions.strip()}\"\n"
+        if req.content_suggestions and req.content_suggestions.strip() else ""
+    )
     return f"""
 Country: {req.country}
 Company: {req.company.name}
 Contact details available (use naturally where relevant, don't invent others): {_company_contact_line(req)}
 Date: {day['date']} ({day['day_of_week']})
-
+{suggestions_block}
 Write the creative content for exactly 2 posts today, matching these pre-assigned specs
 EXACTLY (content_type/category/tone/cta_style are fixed — do not change them):
 {posts_spec}
@@ -250,10 +264,26 @@ Here is an existing social media post (already published/scheduled) as JSON:
 An admin has given this instruction for how to revise it:
 "{instruction}"
 
-Apply the instruction and return the COMPLETE revised post as a JSON object in
-EXACTLY the same shape as the input above (same keys: post_number, content_type,
-category, tone, cta_style, is_simulated_story, captions {{instagram, facebook,
-linkedin, google_business}}, visual_suggestion, cta, hashtags, carousel_slides).
+Apply the instruction and return the COMPLETE revised post as a JSON object with
+EXACTLY these keys — do not rename, add, or drop any of them:
+{{
+  "post_number": <integer, unchanged>,
+  "content_type": "Poster" | "Carousel" — unchanged unless the instruction asks for it,
+  "category": "string — unchanged unless the instruction asks for it",
+  "tone": "string — unchanged unless the instruction asks for it",
+  "cta_style": "string — unchanged unless the instruction asks for it",
+  "is_simulated_story": <boolean, unchanged>,
+  "captions": {{"instagram": "string", "facebook": "string", "linkedin": "string", "google_business": "string — NEVER a testimonial"}},
+  "visual_suggestion": "string",
+  "cta": "string",
+  "hashtags": ["string", "..."],
+  "carousel_slides": null
+  // if content_type is "Carousel": an array of EXACTLY these keys per slide —
+  // [{{"slide_number": 1, "role": "hook", "text": "..."}}, ... 5-7 total, last role="cta"]
+  // — "role" and "text" are required on every slide; do not use any other key
+  // names (e.g. never "content" in place of "text"). If content_type is
+  // "Poster", this must be null.
+}}
 
 Keep every field the instruction doesn't mention unchanged from the original —
 only change what the instruction actually asks for. Still follow the platform
@@ -261,9 +291,7 @@ rules from your system prompt (Google Business never contains a testimonial,
 Customer Experience stories stay clearly illustrative, LinkedIn stays
 professional with no emojis, etc.) even while applying the requested edit."""
 
-    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=DAY_MAX_TOKENS_CAROUSEL, usage_tracker=usage_tracker)
-    data = _parse_json(raw)
-    return SocialPost(**data)
+    return _converse_and_validate(SOCIAL_SYSTEM_PROMPT, prompt, SocialPost, max_tokens=DAY_MAX_TOKENS_CAROUSEL, usage_tracker=usage_tracker)
 
 
 def _generate_day_posts(
@@ -272,14 +300,12 @@ def _generate_day_posts(
     prompt = _build_day_prompt(req, day)
     has_carousel = any(p["content_type"] == "Carousel" for p in day["posts"])
     max_tokens = DAY_MAX_TOKENS_CAROUSEL if has_carousel else DAY_MAX_TOKENS
-    raw = _converse(SOCIAL_SYSTEM_PROMPT, prompt, max_tokens=max_tokens, usage_tracker=usage_tracker)
-    data = _parse_json(raw)
-    posts = [SocialPost(**p) for p in data["posts"]]
+    payload = _converse_and_validate(SOCIAL_SYSTEM_PROMPT, prompt, _DayPostsPayload, max_tokens=max_tokens, usage_tracker=usage_tracker)
     return DailySchedule(
         date=day["date"],
         day_of_week=day["day_of_week"],
         recommended_times=_recommended_times(day["weekday_index"]),
-        posts=posts,
+        posts=payload.posts,
     )
 
 

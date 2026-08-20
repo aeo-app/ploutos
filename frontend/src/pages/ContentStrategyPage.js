@@ -528,18 +528,22 @@ export function ContentStrategyPage() {
     historyApi.list({ analysisType: 'content_strategy', limit: 1 })
       .then(data => {
         const latest = data?.items?.[0];
-        if (!latest) return;
+        if (!latest) return null;
         return historyApi.getOne(latest.analysis_id);
       })
       .then(full => {
         const savedReq = full?.request;
-        if (!savedReq) return;
-        if (Array.isArray(savedReq.primary_keywords) && savedReq.primary_keywords.length) {
-          setPrimary(savedReq.primary_keywords);
+        if (savedReq) {
+          if (Array.isArray(savedReq.primary_keywords) && savedReq.primary_keywords.length) {
+            setPrimary(savedReq.primary_keywords);
+          }
+          if (Array.isArray(savedReq.additional_keywords) && savedReq.additional_keywords.length) {
+            setAdditional(savedReq.additional_keywords);
+          }
         }
-        if (Array.isArray(savedReq.additional_keywords) && savedReq.additional_keywords.length) {
-          setAdditional(savedReq.additional_keywords);
-        }
+        // Also refresh the displayed result on every visit to this page —
+        // see the identical fix + explanation in RelocationCalendarPage.js.
+        if (full?.result) setResultKey('contentStrategy', full.result);
       })
       .catch(err => console.warn('[ContentStrategyPage] history prepopulation failed:', err?.message || err));
     // eslint-disable-next-line

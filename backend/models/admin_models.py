@@ -133,3 +133,7 @@ class CreateCalendarForUserRequest(BaseModel):
     instagram: str = ""
     facebook: str = ""
     linkedin: str = ""
+    content_suggestions: str = Field(
+        "", max_length=2000, example="Focus more on families with school-age kids.",
+        description="Optional free-text guidance — same field as the regular user-facing calendar form.",
+    )

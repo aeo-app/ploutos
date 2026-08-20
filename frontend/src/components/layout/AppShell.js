@@ -50,6 +50,24 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     // eslint-disable-next-line
   }, []);
 
+  // Same pattern as Canva above, for the social publishing platforms
+  // (Facebook/Instagram share one "meta" connect flow, LinkedIn and Google
+  // Business each have their own — see routers/social_publish_router.py).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('social_publish');
+    if (!result) return;
+    if (result === 'connected') {
+      toast({ type: 'success', message: '✓ Social account connected.' });
+    } else if (result === 'error') {
+      toast({ type: 'error', message: 'Could not connect that social account. Please try again.' });
+    }
+    params.delete('social_publish');
+    const newSearch = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
+    // eslint-disable-next-line
+  }, []);
+
   // Prepopulate the shared request form (company_name/url/market/industry —
   // used by every analysis page via AnalyseForm), so users aren't retyping
   // the same details every visit. Profile (set at signup or one-time
