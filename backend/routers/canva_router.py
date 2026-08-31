@@ -10,6 +10,7 @@ set of image field values.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -59,9 +60,15 @@ from services.canva_service import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/canva", tags=["Canva"])
 
-# Where to send the browser after the OAuth callback completes (success or
-# failure) — the frontend route that shows connection status.
-FRONTEND_RETURN_PATH = "/?canva="
+# Absolute URL, not a relative path — a relative "/" redirect only lands on
+# the frontend if it happens to share the exact same origin as this backend
+# (true in some production setups, but NOT in local dev, where the backend
+# typically runs on a different port than the React dev server — a relative
+# redirect there just hits this backend's own root endpoint instead of the
+# frontend at all). Same fix as routers/social_publish_router.py's
+# FRONTEND_URL.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+FRONTEND_RETURN_PATH = f"{FRONTEND_URL}/?canva="
 
 
 def _record_to_poster_response(item: dict) -> PosterResponse:
@@ -132,7 +139,29 @@ async def connect(user_id: str = Depends(get_current_user_id)):
 
 
 @router.get("/callback", summary="Canva OAuth redirect target — exchanges the code and stores the connection")
-async def callback(code: str = Query(...), state: str = Query(...)):
+async def callback(
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+    error_description: str | None = Query(None),
+):
+    # code/state are deliberately NOT required at the FastAPI level (unlike
+    # a normal endpoint) — if either is missing, or Canva sent an explicit
+    # error instead (e.g. the user denied access, or a redirect_uri
+    # mismatch — see error_description), FastAPI's automatic validation
+    # would otherwise reject the request with a raw 422 JSON body BEFORE
+    # this function even runs, which is exactly the kind of "stuck on a
+    # confusing backend response" experience the broad except below exists
+    # to avoid — that fix only covers failures INSIDE this function, not
+    # ones that never reach it. Handling all of this here means every
+    # outcome — success, Canva-reported error, or a malformed callback —
+    # ends the same way: a clean redirect back to the frontend.
+    if error or not code or not state:
+        logger.warning(
+            f"[canva] OAuth callback incomplete or errored: error={error!r}, "
+            f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
+        )
+        return RedirectResponse(url=f"{FRONTEND_RETURN_PATH}error")
     try:
         user_id, sep, _ = state.partition(":")
         if not sep or not user_id:
@@ -153,8 +182,14 @@ async def callback(code: str = Query(...), state: str = Query(...)):
             expires_at=expires_iso,
         )
         return RedirectResponse(url=f"{FRONTEND_RETURN_PATH}connected")
-    except (CanvaError, HTTPException, ValueError) as e:
-        logger.error(f"[canva] OAuth callback failed: {e}")
+    except Exception as e:
+        # Broad on purpose: whatever goes wrong here (a malformed token
+        # response missing an expected key, a network hiccup calling
+        # Canva, anything), the browser still needs to land back on the
+        # frontend with an error status — not a raw, unhandled 500 stuck
+        # at this backend URL, which is much harder to make sense of and
+        # leaves no way back into the app without manually re-navigating.
+        logger.error(f"[canva] OAuth callback failed: {e}", exc_info=True)
         return RedirectResponse(url=f"{FRONTEND_RETURN_PATH}error")
 
 

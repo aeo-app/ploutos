@@ -24,39 +24,46 @@ one.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
+import uuid
+from datetime import datetime, timezone
 
-import requests
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from core.security import get_current_user_id
 from db import (
+    cancel_scheduled_post,
     delete_social_connection,
     get_social_connection,
+    list_scheduled_posts_for_user,
     list_social_connections,
+    save_scheduled_post,
     save_social_connection,
 )
+from db.dynamo import get_poster
 from models.social_publish_models import (
+    CancelScheduledPostResponse,
     ConnectResponse,
-    PlatformPublishResult,
     PublishRequest,
     PublishResponse,
+    ScheduledPostListResponse,
+    ScheduledPostSummary,
+    ScheduleRequest,
+    ScheduleResponse,
     SocialConnectionsStatusResponse,
     SocialPlatformStatus,
+    UploadMediaResponse,
 )
 from services.canva_service import create_export_job, poll_export_job
+from services.media_upload_service import MediaUploadError, upload_image
 from services.social_publish import google_business_service as gbp
 from services.social_publish import linkedin_service as li
 from services.social_publish import meta_service as meta
-from db.dynamo import get_poster
+from services.social_publish.publish_service import PLATFORM_LABELS, publish_to_platforms
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/social-publish", tags=["Social Publishing"])
-
-PLATFORM_LABELS = {
-    "facebook": "Facebook", "instagram": "Instagram",
-    "linkedin": "LinkedIn", "google_business": "Google Business Profile",
-}
 
 
 # ── Status ───────────────────────────────────────────────────────────────────
@@ -90,7 +97,22 @@ async def meta_connect(user_id: str = Depends(get_current_user_id)):
 
 
 @router.get("/meta/callback", summary="Meta OAuth redirect target")
-async def meta_callback(code: str = Query(...), state: str = Query(...)):
+async def meta_callback(
+    code: str | None = Query(None), state: str | None = Query(None),
+    error: str | None = Query(None), error_description: str | None = Query(None),
+):
+    # code/state deliberately optional here — if either is missing, or Meta
+    # sent an explicit error instead (denied access, misconfiguration,
+    # etc.), FastAPI's automatic validation would otherwise reject the
+    # request with a raw 422 before this function runs at all, bypassing
+    # the try/except below entirely and leaving the browser stuck on a
+    # confusing backend JSON response instead of redirecting anywhere.
+    if error or not code or not state:
+        logger.warning(
+            f"[social-publish] Meta callback incomplete or errored: error={error!r}, "
+            f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
+        )
+        return _redirect_result("error")
     user_id, sep, _ = state.partition(":")
     if not sep or not user_id:
         return _redirect_result("error")
@@ -130,7 +152,16 @@ async def linkedin_connect(user_id: str = Depends(get_current_user_id)):
 
 
 @router.get("/linkedin/callback", summary="LinkedIn OAuth redirect target")
-async def linkedin_callback(code: str = Query(...), state: str = Query(...)):
+async def linkedin_callback(
+    code: str | None = Query(None), state: str | None = Query(None),
+    error: str | None = Query(None), error_description: str | None = Query(None),
+):
+    if error or not code or not state:
+        logger.warning(
+            f"[social-publish] LinkedIn callback incomplete or errored: error={error!r}, "
+            f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
+        )
+        return _redirect_result("error")
     user_id, sep, _ = state.partition(":")
     if not sep or not user_id:
         return _redirect_result("error")
@@ -163,7 +194,16 @@ async def google_business_connect(user_id: str = Depends(get_current_user_id)):
 
 
 @router.get("/google_business/callback", summary="Google OAuth redirect target")
-async def google_business_callback(code: str = Query(...), state: str = Query(...)):
+async def google_business_callback(
+    code: str | None = Query(None), state: str | None = Query(None),
+    error: str | None = Query(None), error_description: str | None = Query(None),
+):
+    if error or not code or not state:
+        logger.warning(
+            f"[social-publish] Google Business callback incomplete or errored: error={error!r}, "
+            f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
+        )
+        return _redirect_result("error")
     user_id, sep, _ = state.partition(":")
     if not sep or not user_id:
         return _redirect_result("error")
@@ -195,40 +235,32 @@ async def google_business_callback(code: str = Query(...), state: str = Query(..
         logger.error(f"[social-publish] Google Business OAuth callback failed: {e}", exc_info=True)
         return _redirect_result("error")
 
+# Absolute URL, not a relative path — a relative "/" redirect only lands on
+# the frontend if it happens to share the exact same origin as this backend
+# (true in some production setups, but NOT in local dev, where the backend
+# typically runs on a different port than the React dev server — a relative
+# redirect there just hits this backend's own root endpoint instead of the
+# frontend at all).
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
 
 def _redirect_result(result: str):
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"/?social_publish={result}")
+    return RedirectResponse(url=f"{FRONTEND_URL}/?social_publish={result}")
 
 
-# ── Publish ──────────────────────────────────────────────────────────────────
-def _get_valid_google_token(user_id: str, conn: dict) -> str:
-    """Google access tokens are short-lived (~1hr) — refresh if we have a
-    refresh_token, since a poster might get published well after connecting."""
-    if not conn.get("refresh_token"):
-        return conn["access_token"]
-    try:
-        refreshed = gbp.refresh_access_token(conn["refresh_token"])
-        new_token = refreshed["access_token"]
-        save_social_connection(
-            user_id=user_id, platform="google_business", access_token=new_token,
-            refresh_token=conn["refresh_token"], extra=conn.get("extra", {}),
-        )
-        return new_token
-    except Exception as e:
-        logger.warning(f"[social-publish] Google token refresh failed, trying existing token anyway: {e}")
-        return conn["access_token"]
+# ── Resolving an image source (Canva poster OR a direct upload) ────────────
+def _resolve_image_url(user_id: str, poster_id: str | None, image_url: str | None) -> str:
+    """Every publish/schedule request carries exactly one image source
+    (enforced by models.social_publish_models._ImageSourceMixin). A direct
+    image_url is used as-is; a poster_id triggers a fresh Canva export so
+    edits made since the poster was first created are included."""
+    if image_url:
+        return image_url
 
-
-@router.post("/publish", response_model=PublishResponse, summary="Post a Canva-created poster directly to one or more platforms")
-async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_id)):
-    poster = get_poster(user_id, req.poster_id)
+    poster = get_poster(user_id, poster_id)
     if not poster:
-        raise HTTPException(status_code=404, detail=f"Poster {req.poster_id} not found")
-
-    # Export a fresh, final image from the poster's current Canva design —
-    # not the (possibly lower-res/watermarked) thumbnail_url already stored,
-    # and picks up any edits made since the poster was first created.
+        raise HTTPException(status_code=404, detail=f"Poster {poster_id} not found")
     try:
         from routers.canva_router import _get_valid_access_token as _get_canva_token
         canva_token = _get_canva_token(user_id)
@@ -236,44 +268,72 @@ async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_i
         export_urls = poll_export_job(canva_token, job_id)
         if not export_urls:
             raise HTTPException(status_code=502, detail="Canva export produced no file")
-        image_url = export_urls[0]
+        return export_urls[0]
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not export the poster from Canva: {e}")
 
-    results: list[PlatformPublishResult] = []
-    for platform in req.platforms:
-        if platform not in PLATFORM_LABELS:
-            results.append(PlatformPublishResult(platform=platform, success=False, error="Unknown platform"))
-            continue
 
-        conn = get_social_connection(user_id, platform)
-        if not conn:
-            results.append(PlatformPublishResult(platform=platform, success=False, error=f"{PLATFORM_LABELS[platform]} is not connected"))
-            continue
+# ── Direct image upload (a user's own poster, not created via Canva) ───────
+@router.post("/uploads", response_model=UploadMediaResponse, summary="Upload your own image to post/schedule (instead of a Canva poster)")
+async def upload_media(user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty")
+    try:
+        url = upload_image(contents, file.filename or "upload.jpg", user_id)
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return UploadMediaResponse(image_url=url)
 
-        try:
-            if platform == "facebook":
-                post_id = meta.post_to_facebook_page(conn["extra"]["page_id"], conn["access_token"], image_url, req.caption)
-            elif platform == "instagram":
-                post_id = meta.post_to_instagram(conn["extra"]["ig_user_id"], conn["access_token"], image_url, req.caption)
-            elif platform == "linkedin":
-                image_bytes = requests.get(image_url, timeout=30).content
-                image_urn = li.upload_image(conn["access_token"], conn["extra"]["organization_urn"], image_bytes)
-                post_id = li.create_post(conn["access_token"], conn["extra"]["organization_urn"], req.caption, image_urn)
-            elif platform == "google_business":
-                token = _get_valid_google_token(user_id, conn)
-                post_id = gbp.create_local_post(
-                    token, conn["extra"]["account_id"], conn["extra"]["location_id"],
-                    req.caption, image_url, cta_url=req.cta_url,
-                )
-            else:
-                raise ValueError(f"Unhandled platform: {platform}")
 
-            results.append(PlatformPublishResult(platform=platform, success=True, post_id=post_id))
-        except Exception as e:
-            logger.error(f"[social-publish] {platform} publish failed for user={user_id}: {e}", exc_info=True)
-            results.append(PlatformPublishResult(platform=platform, success=False, error=str(e)))
-
+# ── Publish now ──────────────────────────────────────────────────────────────
+@router.post("/publish", response_model=PublishResponse, summary="Post a poster (Canva or your own upload) directly to one or more platforms, right now")
+async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_id)):
+    image_url = _resolve_image_url(user_id, req.poster_id, req.image_url)
+    results = publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url)
     return PublishResponse(results=results)
+
+
+# ── Scheduling (Facebook + Instagram) ───────────────────────────────────────
+@router.post("/schedule", response_model=ScheduleResponse, summary="Schedule a poster (Canva or your own upload) to post at a future time")
+async def schedule(req: ScheduleRequest, user_id: str = Depends(get_current_user_id)):
+    try:
+        scheduled_dt = datetime.fromisoformat(req.scheduled_time.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid scheduled_time: {req.scheduled_time!r} — use ISO 8601")
+    if scheduled_dt <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="scheduled_time must be in the future")
+
+    image_url = _resolve_image_url(user_id, req.poster_id, req.image_url)
+    schedule_id = str(uuid.uuid4())
+    scheduled_iso = scheduled_dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    save_scheduled_post(
+        schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, platforms=req.platforms,
+        caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
+    )
+    logger.info(f"[social-publish] scheduled post {schedule_id} for user={user_id} at {scheduled_iso}")
+    return ScheduleResponse(schedule_id=schedule_id, scheduled_time=scheduled_iso, status="pending")
+
+
+@router.get("/scheduled", response_model=ScheduledPostListResponse, summary="List your scheduled posts (any status)")
+async def scheduled_posts(user_id: str = Depends(get_current_user_id)):
+    items = list_scheduled_posts_for_user(user_id)
+    return ScheduledPostListResponse(items=[
+        ScheduledPostSummary(
+            schedule_id=i["schedule_id"], day_date=i.get("day_date", ""), platforms=i.get("platforms", []),
+            caption=i.get("caption", ""), image_url=i.get("image_url", ""), scheduled_time=i.get("scheduled_time", ""),
+            status=i.get("status", "pending"), results=i.get("results", []),
+        )
+        for i in items
+    ])
+
+
+@router.delete("/scheduled/{schedule_id}", response_model=CancelScheduledPostResponse, summary="Cancel a pending scheduled post")
+async def cancel_scheduled(schedule_id: str, user_id: str = Depends(get_current_user_id)):
+    ok = cancel_scheduled_post(schedule_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for your account")
+    return CancelScheduledPostResponse(cancelled=True)

@@ -47,9 +47,36 @@ async def lifespan(app: FastAPI):
     # Log active model and architecture
     model = os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0")
     logger.info(f"[startup] Bedrock model: {model}")
+    # Background job for scheduled social posts (Facebook + Instagram — see
+    # services/social_publish/scheduler.py for why this exists at all:
+    # Instagram's API has no native "post later" parameter, so something
+    # has to hold the post and trigger it at the right time. Runs
+    # in-process via APScheduler rather than requiring separate cron/
+    # EventBridge infrastructure — fine as long as this app runs as a
+    # persistent process (not a per-request serverless invocation, which
+    # would spin up a fresh scheduler on every request and never let a job
+    # actually fire between requests).
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from services.social_publish.scheduler import process_due_scheduled_posts
+
+    def _run_due_posts_job():
+        try:
+            count = process_due_scheduled_posts()
+            if count:
+                logger.info(f"[scheduler] processed {count} due scheduled post(s)")
+        except Exception as e:
+            logger.error(f"[scheduler] job run failed: {e}", exc_info=True)
+
+    scheduler = AsyncIOScheduler()
+    poll_seconds = int(os.getenv("SCHEDULED_POSTS_POLL_SECONDS", "60"))
+    scheduler.add_job(_run_due_posts_job, "interval", seconds=poll_seconds, id="process_due_scheduled_posts")
+    scheduler.start()
+    logger.info(f"[startup] Scheduled-posts background job running every {poll_seconds}s")
+
     logger.info("[startup] Anti-hallucination: knowledge-declaration pipeline (no external search APIs)")
     logger.info("[startup] APAC SEO Intelligence API v4 ready")
     yield
+    scheduler.shutdown(wait=False)
     logger.info("[shutdown] Goodbye")
 
 
@@ -146,6 +173,7 @@ from routers.canva_router import router as canva_router
 from routers.admin_router import router as admin_router
 from routers.blog_router import router as blog_router
 from routers.social_publish_router import router as social_publish_router
+from routers.article_router import router as article_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
@@ -155,6 +183,7 @@ app.include_router(canva_router)
 app.include_router(admin_router)
 app.include_router(blog_router)
 app.include_router(social_publish_router)
+app.include_router(article_router)
 
 
 @app.get("/", tags=["Health"])

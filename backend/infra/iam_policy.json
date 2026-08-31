@@ -29,6 +29,17 @@
         "cognito-idp:GetUser"
       ],
       "Resource": "arn:aws:cognito-idp:ap-southeast-1:*:userpool/*"
+    },
+    {
+      "Sid": "MediaUploadBucketAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::aeo-app-media-uploads/*"
     }
   ]
 }

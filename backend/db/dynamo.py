@@ -730,6 +730,134 @@ def delete_social_connection(user_id: str, platform: str) -> None:
         raise
 
 
+# ── Scheduled social posts ──────────────────────────────────────────────────
+# Facebook has native API scheduling (published=false + scheduled_publish_
+# time — Meta does the waiting), but Instagram's Content Publishing API has
+# NO scheduling parameter at all — "Instagram schedulers" all work by
+# holding the post themselves and calling publish at the right moment. To
+# keep one consistent code path for both platforms (and make it trivial to
+# add LinkedIn/Google Business scheduling later), this app runs its own
+# scheduler for both — see main.py's APScheduler job, which polls this
+# queue and calls services/social_publish/scheduler.py's execution logic.
+#
+# Deliberately a GLOBAL partition (PK is fixed, not per-user) rather than
+# per-user like everything else in this file — the background worker's core
+# operation is "find every post whose time has come, across every user",
+# which needs to be one cheap query, not one Scan or N per-user queries.
+SCHEDULED_QUEUE_PK = "SCHEDULED_QUEUE"
+
+
+def _scheduled_post_sk(scheduled_time_iso: str, schedule_id: str) -> str:
+    return f"{scheduled_time_iso}#{schedule_id}"
+
+
+def save_scheduled_post(
+    *, schedule_id: str, user_id: str, day_date: str, platforms: list[str],
+    caption: str, image_url: str, cta_url: str = "", scheduled_time_iso: str,
+    status: str = "pending",
+) -> None:
+    table = _get_table()
+    item = {
+        "PK": SCHEDULED_QUEUE_PK,
+        "SK": _scheduled_post_sk(scheduled_time_iso, schedule_id),
+        "analysis_id": schedule_id,  # GSI hash key — same shared-GSI pattern as get_poster/get_analysis
+        "schedule_id": schedule_id,
+        "user_id": user_id,
+        "day_date": day_date,
+        "platforms": platforms,
+        "caption": caption,
+        "image_url": image_url,
+        "cta_url": cta_url,
+        "scheduled_time": scheduled_time_iso,
+        "status": status,  # pending | posted | failed | cancelled
+        "results": [],
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] scheduled post {schedule_id} for user={user_id} at {scheduled_time_iso}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_scheduled_post failed: {e.response['Error']}")
+        raise
+
+
+def get_scheduled_post(schedule_id: str) -> Optional[dict]:
+    """Looked up via the shared GSI (same pattern as get_analysis/get_poster)
+    — callers only know the schedule_id, not its SK."""
+    table = _get_table()
+    try:
+        resp = table.query(IndexName=GSI_NAME, KeyConditionExpression=Key("analysis_id").eq(schedule_id))
+        items = resp.get("Items", [])
+        return _from_dynamo(items[0]) if items else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_scheduled_post failed: {e.response['Error']}")
+        raise
+
+
+def _all_scheduled_posts(limit: int = 500) -> list[dict]:
+    table = _get_table()
+    try:
+        resp = table.query(KeyConditionExpression=Key("PK").eq(SCHEDULED_QUEUE_PK), Limit=limit)
+        return [_from_dynamo(i) for i in resp.get("Items", [])]
+    except ClientError as e:
+        logger.error(f"[dynamo] _all_scheduled_posts failed: {e.response['Error']}")
+        raise
+
+
+def list_due_scheduled_posts(now_iso: str) -> list[dict]:
+    """Every still-pending post whose scheduled_time has passed — this is
+    what the background worker polls. SK is time-prefixed so this is a
+    genuine range query, not a full-partition scan-and-filter."""
+    table = _get_table()
+    try:
+        resp = table.query(
+            KeyConditionExpression=Key("PK").eq(SCHEDULED_QUEUE_PK) & Key("SK").lte(now_iso + "~"),
+        )
+        items = [_from_dynamo(i) for i in resp.get("Items", [])]
+        return [i for i in items if i.get("status") == "pending"]
+    except ClientError as e:
+        logger.error(f"[dynamo] list_due_scheduled_posts failed: {e.response['Error']}")
+        raise
+
+
+def list_scheduled_posts_for_user(user_id: str) -> list[dict]:
+    """All of one user's scheduled posts (any status), newest-scheduled
+    first — for the "my scheduled posts" view. Filters the global queue in
+    Python rather than a separate per-user index; fine at the volume a
+    single social-posting queue actually reaches."""
+    items = [i for i in _all_scheduled_posts() if i.get("user_id") == user_id]
+    items.sort(key=lambda i: i.get("scheduled_time", ""), reverse=True)
+    return items
+
+
+def update_scheduled_post_status(schedule_id: str, status: str, results: Optional[list] = None) -> None:
+    post = get_scheduled_post(schedule_id)
+    if not post:
+        return
+    table = _get_table()
+    try:
+        table.update_item(
+            Key={"PK": SCHEDULED_QUEUE_PK, "SK": post["SK"]},
+            UpdateExpression="SET #s = :s, updated_at = :u, results = :r",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":s": status, ":u": _now_iso(), ":r": results or []},
+        )
+    except ClientError as e:
+        logger.error(f"[dynamo] update_scheduled_post_status failed: {e.response['Error']}")
+        raise
+
+
+def cancel_scheduled_post(schedule_id: str, user_id: str) -> bool:
+    """Returns False if not found, not owned by this user, or already past
+    'pending' (already posted/failed/cancelled)."""
+    post = get_scheduled_post(schedule_id)
+    if not post or post.get("user_id") != user_id or post.get("status") != "pending":
+        return False
+    update_scheduled_post_status(schedule_id, "cancelled")
+    return True
+
+
 def save_poster(
     *,
     user_id: str,

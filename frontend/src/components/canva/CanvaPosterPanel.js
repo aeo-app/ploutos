@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { canvaApi } from '../../api/canvaApi';
-import { SocialPublishPanel } from './SocialPublishPanel';
+import { useApp } from '../../context/AppContext';
+import { rememberPageBeforeOAuthRedirect } from '../../utils/oauthReturn';
 import s from './CanvaPosterPanel.module.css';
 
 /**
@@ -11,9 +12,11 @@ import s from './CanvaPosterPanel.module.css';
  * implemented as "re-run the same job with new image field values", which
  * is exactly how Canva's own autofill model works.
  */
-export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
+export function CanvaPosterPanel({ dayDate, postNumber, defaultText, onPosterChange }) {
+  const { state } = useApp();
   const [connected, setConnected] = useState(null); // null = checking
   const [connectError, setConnectError] = useState(null);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
 
   const [templates, setTemplates] = useState(null);
   const [picking, setPicking] = useState(false);
@@ -46,6 +49,8 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
         const existing = (data?.items || []).find(p => p?.day_date === dayDate && p?.post_number === postNumber);
         if (!existing) return null;
         setPoster(existing);
+        setThumbnailFailed(false);
+        onPosterChange?.(existing);
         // Needed so the "replace image" inputs render correctly for a
         // rehydrated poster — imageFields/textFieldsList below are derived
         // from `fields`, which normally only gets populated when the user
@@ -61,6 +66,7 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
     setConnectError(null);
     try {
       const { authorize_url } = await canvaApi.connect();
+      rememberPageBeforeOAuthRedirect(state.page);
       window.location.href = authorize_url; // full-page redirect to Canva's OAuth consent screen
     } catch (e) {
       setConnectError(e.message || 'Could not start Canva connection.');
@@ -122,6 +128,8 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
         image_asset_ids: imageAssetIds,
       });
       setPoster(created);
+      setThumbnailFailed(false);
+      onPosterChange?.(created);
       setFieldFiles({});
       setStage('ready');
     } catch (e) {
@@ -150,6 +158,8 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
         image_asset_ids: imageAssetIds,
       });
       setPoster(updated);
+      setThumbnailFailed(false);
+      onPosterChange?.(updated);
       setFieldFiles({});
       setStage('ready');
     } catch (e) {
@@ -189,6 +199,15 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
       {picking && (
         <div className={s.templateGrid}>
           {!templates && <span className={s.loadingRow}><span className={s.spinner} />Loading templates…</span>}
+          {templates && templates.length === 0 && (
+            <div className={s.noTemplatesMessage}>
+              No Brand Templates found in your connected Canva account. Brand Templates can't be
+              created via this app — create a design in Canva, add autofill data fields to it
+              (Canva's Bulk Create / data field tool), then publish it as a Brand Template for
+              your team. Also double-check you connected the Canva account that's actually a
+              member of the Enterprise team the templates belong to.
+            </div>
+          )}
           {templates?.map(t => (
             <button key={t.id} type="button" className={s.templateCard} onClick={() => selectTemplate(t)}>
               {t.thumbnail_url && <img className={s.templateThumb} src={t.thumbnail_url} alt={t.title} />}
@@ -231,7 +250,17 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
 
       {poster && (
         <div className={s.posterResult}>
-          <img className={s.posterThumb} src={poster.thumbnail_url} alt="Poster preview" />
+          {thumbnailFailed ? (
+            <div className={s.posterThumbFallback}>
+              Preview unavailable<br />
+              <span className={s.posterThumbFallbackHint}>Canva thumbnail links expire after 15 minutes</span>
+            </div>
+          ) : (
+            <img
+              className={s.posterThumb} src={poster.thumbnail_url} alt="Poster preview"
+              onError={() => setThumbnailFailed(true)}
+            />
+          )}
           <div className={s.posterActions}>
             <a className={s.editLink} href={poster.edit_url} target="_blank" rel="noreferrer">Edit in Canva ↗</a>
 
@@ -250,8 +279,6 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText }) {
           </div>
         </div>
       )}
-
-      {poster && <SocialPublishPanel posterId={poster.poster_id} defaultCaption={defaultText} />}
 
       {error && <div className={s.errorText}>{error}</div>}
     </div>

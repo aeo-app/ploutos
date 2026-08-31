@@ -10,6 +10,9 @@ import { UnlockModal } from '../components/payment/UnlockModal';
 import { LockedTeaser } from '../components/payment/LockedTeaser';
 import { historyApi } from '../api/historyApi';
 import { CanvaPosterPanel } from '../components/canva/CanvaPosterPanel';
+import { SocialPublishPanel } from '../components/canva/SocialPublishPanel';
+import { ScheduledPostsList } from '../components/canva/ScheduledPostsList';
+import { socialPublishApi } from '../api/socialPublishApi';
 import s from './RelocationCalendarPage.module.css';
 
 const PLATFORMS = [
@@ -26,6 +29,7 @@ const CTA_VARIANT = { soft: 'default', urgent: 'danger', informative: 'info' };
 function PostCard({ post, dayDate }) {
   const [platform, setPlatform] = useState('instagram');
   const caption = post.captions?.[platform] || '';
+  const [posterId, setPosterId] = useState(null);
 
   return (
     <div className={s?.postCard}>
@@ -92,7 +96,17 @@ function PostCard({ post, dayDate }) {
         </div>
       )}
 
-      <CanvaPosterPanel dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta} />
+      <CanvaPosterPanel
+        dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta}
+        onPosterChange={p => setPosterId(p?.poster_id || null)}
+      />
+
+      <SocialPublishPanel
+        api={socialPublishApi}
+        dayDate={dayDate}
+        posterId={posterId}
+        defaultCaption={caption || post.cta}
+      />
     </div>
   );
 }
@@ -338,6 +352,8 @@ export function RelocationCalendarPage() {
 
   return (
     <div className={s.page}>
+      <ScheduledPostsList api={socialPublishApi} />
+
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <SectionHeader
           title="Relocation Social Media Calendar"

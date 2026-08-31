@@ -30,6 +30,28 @@ async function req(method, path, body) {
   }
 }
 
+async function uploadReq(path, file) {
+  try {
+    checkAuthTokens();
+    const headers = getAuthHeaders();
+    delete headers["Content-Type"]; // let the browser set the multipart boundary itself
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) {
+      localStorage.removeItem("id_token"); localStorage.removeItem("access_token"); localStorage.removeItem("user_id");
+      throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
+    }
+    if (res.status === 403) throw new ApiError("AdminRequired", data?.detail || "Admin access required.");
+    if (!res.ok) throw new ApiError(data?.code || "ServerError", data?.detail || `Upload failed (${res.status})`);
+    return data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("ServerError", error.message || "Upload failed");
+  }
+}
+
 export const adminApi = {
   listUsers: () => req("GET", "/admin/users"),
   setAdmin: (userId, isAdmin) => req("POST", `/admin/users/${encodeURIComponent(userId)}/set-admin`, { is_admin: isAdmin }),
@@ -60,4 +82,14 @@ export const adminApi = {
     req("POST", `/admin/users/${encodeURIComponent(userId)}/blogs/create`, {
       topic, target_keyword: targetKeyword || '', instruction: instruction || '',
     }),
+
+  socialStatus: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/status`),
+  socialUploadMedia: (userId, file) => uploadReq(`/admin/users/${encodeURIComponent(userId)}/social-publish/uploads`, file),
+  /** @param {object} payload - {poster_id?, image_url?, caption, platforms: [...], cta_url?} — exactly one of poster_id/image_url */
+  socialPublish: (userId, payload) => req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/publish`, payload),
+  /** @param {object} payload - {poster_id?, image_url?, day_date, caption, platforms: [...facebook/instagram only], scheduled_time, cta_url?} */
+  socialSchedule: (userId, payload) => req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/schedule`, payload),
+  socialListScheduled: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled`),
+  socialCancelScheduled: (userId, scheduleId) =>
+    req("DELETE", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled/${encodeURIComponent(scheduleId)}`),
 };

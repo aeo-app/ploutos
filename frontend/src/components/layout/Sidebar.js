@@ -25,6 +25,7 @@ function getNav(isAdmin) {
         { id: 'profile',  icon: '📋', label: 'Company Profile' },
         { id: 'contentStrategy', icon: '✍️', label: 'Content Strategy' },
         { id: 'blogTopics', icon: '📝', label: 'Blog Topics' },
+        { id: 'articleGenerator', icon: '📰', label: 'Article Generator' },
         { id: 'relocationCalendar', icon: '📅', label: 'Social Media Calendar' },
       ],
     },
@@ -114,6 +115,7 @@ export function Sidebar({ open, onClose }) {
                   : item.id === 'billing' ? false
                   : item.id === 'admin' ? false
                   : item.id === 'blogTopics' ? false
+                  : item.id === 'articleGenerator' ? false
                   : !!state.results[item.id] || !!state.results.fullReport;
                 return (
                   <button

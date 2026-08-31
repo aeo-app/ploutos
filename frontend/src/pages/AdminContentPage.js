@@ -5,6 +5,8 @@ import { withTokenExpiry } from '../api/authApi';
 import { useAuth } from '../context/AuthContext';
 import { Card, Badge, SectionHeader, Empty, ErrorCard, SkeletonCard, CopyButton } from '../components/ui/UI';
 import { RelocationCalendarResultView } from './RelocationCalendarPage';
+import { SocialPublishPanel } from '../components/canva/SocialPublishPanel';
+import { ScheduledPostsList } from '../components/canva/ScheduledPostsList';
 import s from './AdminPage.module.css';
 
 /**
@@ -226,6 +228,23 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
   const companyNames = Object.keys(companiesMap).sort((a, b) => a.localeCompare(b));
 
   const unlockedDays = contentType === 'calendars' && selected ? (selected?.result?.days || []).filter(d => !d?.locked) : [];
+
+  const adminSocialApi = useMemo(() => {
+    if (!selectedUser?.user_id) return null;
+    const userId = selectedUser.user_id;
+    return {
+      status: () => adminApi.socialStatus(userId),
+      uploadMedia: (file) => adminApi.socialUploadMedia(userId, file),
+      publish: (payload) => adminApi.socialPublish(userId, payload),
+      schedule: (payload) => adminApi.socialSchedule(userId, payload),
+      listScheduled: () => adminApi.socialListScheduled(userId),
+      cancelScheduled: (scheduleId) => adminApi.socialCancelScheduled(userId, scheduleId),
+      // Deliberately no `connect` — an admin can't OAuth-authorize Facebook/
+      // Instagram on a customer's behalf, that has to be the actual account
+      // owner. SocialPublishPanel shows "Not connected by customer" instead
+      // of a Connect button when this is absent.
+    };
+  }, [selectedUser?.user_id]);
   const blogPost = contentType === 'blogs' ? selected?.result?.post : null;
   const label = contentType === 'blogs' ? 'blog posts' : 'social media calendars';
 
@@ -436,10 +455,30 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                   {revising ? 'Revising…' : 'Revise & save'}
                 </button>
               </Card>
+
+              {contentType === 'calendars' && reviseDate && adminSocialApi && (
+                <>
+                  <ScheduledPostsList api={adminSocialApi} />
+                  <Card>
+                    <SocialPublishPanel
+                      api={adminSocialApi}
+                      dayDate={reviseDate}
+                      posterId={null}
+                      defaultCaption={_dayPostCaption(selected, reviseDate, revisePostNumber)}
+                    />
+                  </Card>
+                </>
+              )}
             </>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function _dayPostCaption(selected, dayDate, postNumber) {
+  const day = (selected?.result?.days || []).find(d => d?.date === dayDate);
+  const post = (day?.schedule?.posts || []).find(p => p?.post_number === postNumber);
+  return post?.captions?.instagram || post?.cta || '';
 }

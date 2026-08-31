@@ -371,3 +371,131 @@ async def create_blog_for_user(user_id: str, req: CreateBlogForUserRequest, admi
     )
     logger.info(f"[admin] {admin_id} created blog {analysis_id} for user {user_id}, topic={req.topic!r}")
     return _to_blog_detail(analysis_id, user_id, get_analysis(user_id, analysis_id))
+
+
+# ── Social publishing (Facebook, Instagram — post/schedule on behalf of a
+# customer, using THEIR connected accounts, not the admin's own) ───────────
+from db import (
+    cancel_scheduled_post as _cancel_scheduled_post,
+    get_social_connection as _get_social_connection,
+    list_scheduled_posts_for_user as _list_scheduled_posts_for_user,
+    list_social_connections as _list_social_connections,
+    save_scheduled_post as _save_scheduled_post,
+)
+from models.social_publish_models import (
+    CancelScheduledPostResponse,
+    PublishRequest as SocialPublishRequest,
+    PublishResponse as SocialPublishResponse,
+    ScheduledPostListResponse,
+    ScheduledPostSummary,
+    ScheduleRequest as SocialScheduleRequest,
+    ScheduleResponse as SocialScheduleResponse,
+    SocialConnectionsStatusResponse,
+    SocialPlatformStatus,
+    UploadMediaResponse,
+)
+from services.media_upload_service import MediaUploadError, upload_image as _upload_image
+from services.social_publish.publish_service import publish_to_platforms as _publish_to_platforms
+from routers.social_publish_router import _resolve_image_url as _resolve_social_image_url
+from fastapi import File as _File, UploadFile as _UploadFile
+import uuid as _uuid
+from datetime import datetime as _datetime, timezone as _timezone
+
+
+@router.get(
+    "/users/{user_id}/social-publish/status",
+    response_model=SocialConnectionsStatusResponse,
+    summary="Which social platforms this customer has connected",
+)
+async def user_social_status(user_id: str, admin_id: str = Depends(require_admin)):
+    connections = {c["platform"]: c for c in _list_social_connections(user_id)}
+    platforms = []
+    for platform in ("facebook", "instagram", "linkedin", "google_business"):
+        conn = connections.get(platform)
+        platforms.append(SocialPlatformStatus(
+            platform=platform, connected=conn is not None,
+            account_label=(conn or {}).get("extra", {}).get("label", ""),
+        ))
+    return SocialConnectionsStatusResponse(platforms=platforms)
+
+
+@router.post(
+    "/users/{user_id}/social-publish/uploads",
+    response_model=UploadMediaResponse,
+    summary="Upload an image on behalf of a customer, to post/schedule to their connected accounts",
+)
+async def admin_upload_media(user_id: str, admin_id: str = Depends(require_admin), file: _UploadFile = _File(...)):
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=422, detail="Uploaded file is empty")
+    try:
+        url = _upload_image(contents, file.filename or "upload.jpg", user_id)
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return UploadMediaResponse(image_url=url)
+
+
+@router.post(
+    "/users/{user_id}/social-publish/publish",
+    response_model=SocialPublishResponse,
+    summary="Post to a customer's connected Facebook/Instagram/LinkedIn/Google Business right now",
+)
+async def admin_publish(user_id: str, req: SocialPublishRequest, admin_id: str = Depends(require_admin)):
+    image_url = _resolve_social_image_url(user_id, req.poster_id, req.image_url)
+    results = _publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url)
+    logger.info(f"[admin] {admin_id} published to {req.platforms} on behalf of user {user_id}")
+    return SocialPublishResponse(results=results)
+
+
+@router.post(
+    "/users/{user_id}/social-publish/schedule",
+    response_model=SocialScheduleResponse,
+    summary="Schedule a post to a customer's Facebook/Instagram for a future time",
+)
+async def admin_schedule(user_id: str, req: SocialScheduleRequest, admin_id: str = Depends(require_admin)):
+    try:
+        scheduled_dt = _datetime.fromisoformat(req.scheduled_time.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid scheduled_time: {req.scheduled_time!r} — use ISO 8601")
+    if scheduled_dt <= _datetime.now(_timezone.utc):
+        raise HTTPException(status_code=422, detail="scheduled_time must be in the future")
+
+    image_url = _resolve_social_image_url(user_id, req.poster_id, req.image_url)
+    schedule_id = str(_uuid.uuid4())
+    scheduled_iso = scheduled_dt.astimezone(_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    _save_scheduled_post(
+        schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, platforms=req.platforms,
+        caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
+    )
+    logger.info(f"[admin] {admin_id} scheduled a post for user {user_id} at {scheduled_iso}")
+    return SocialScheduleResponse(schedule_id=schedule_id, scheduled_time=scheduled_iso, status="pending")
+
+
+@router.get(
+    "/users/{user_id}/social-publish/scheduled",
+    response_model=ScheduledPostListResponse,
+    summary="List a customer's scheduled posts",
+)
+async def admin_list_scheduled(user_id: str, admin_id: str = Depends(require_admin)):
+    items = _list_scheduled_posts_for_user(user_id)
+    return ScheduledPostListResponse(items=[
+        ScheduledPostSummary(
+            schedule_id=i["schedule_id"], day_date=i.get("day_date", ""), platforms=i.get("platforms", []),
+            caption=i.get("caption", ""), image_url=i.get("image_url", ""), scheduled_time=i.get("scheduled_time", ""),
+            status=i.get("status", "pending"), results=i.get("results", []),
+        )
+        for i in items
+    ])
+
+
+@router.delete(
+    "/users/{user_id}/social-publish/scheduled/{schedule_id}",
+    response_model=CancelScheduledPostResponse,
+    summary="Cancel a customer's pending scheduled post",
+)
+async def admin_cancel_scheduled(user_id: str, schedule_id: str, admin_id: str = Depends(require_admin)):
+    ok = _cancel_scheduled_post(schedule_id, user_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for this customer")
+    return CancelScheduledPostResponse(cancelled=True)

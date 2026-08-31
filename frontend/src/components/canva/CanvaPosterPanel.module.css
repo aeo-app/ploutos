@@ -18,6 +18,12 @@
 
 .posterResult { display: flex; gap: 14px; margin-top: 10px; align-items: flex-start; flex-wrap: wrap; }
 .posterThumb { width: 130px; height: 130px; object-fit: cover; border-radius: var(--r-md); border: 1px solid var(--c-slate-200); }
+.posterThumbFallback {
+  width: 130px; height: 130px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; font-size: 12px; color: var(--c-slate-500); background: var(--c-slate-50);
+  border-radius: var(--r-md); border: 1px dashed var(--c-slate-200); padding: 8px;
+}
+.posterThumbFallbackHint { font-size: 10.5px; color: var(--c-slate-400); margin-top: 4px; }
 .posterActions { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 200px; }
 .editLink {
   font-size: 12px; font-weight: 700; color: var(--c-indigo-600); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
@@ -41,3 +47,7 @@
 .spinner { width: 14px; height: 14px; border: 2px solid var(--c-slate-200); border-top-color: var(--c-indigo-600); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .errorText { font-size: 12px; color: var(--c-danger); margin-top: 8px; }
+.noTemplatesMessage {
+  grid-column: 1 / -1; font-size: 12.5px; line-height: 1.6; color: var(--c-warning-text, #92400E);
+  background: var(--c-warning-bg); border: 1px solid var(--c-warning); border-radius: var(--r-md); padding: 12px 14px;
+}

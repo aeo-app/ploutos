@@ -21,6 +21,7 @@ import { RelocationCalendarPage } from './pages/RelocationCalendarPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { BillingPage } from './pages/BillingPage';
 import { BlogTopicsPage } from './pages/BlogTopicsPage';
+import { ArticleGeneratorPage } from './pages/ArticleGeneratorPage';
 import { AdminApp } from './pages/AdminApp';
 
 // Auth pages
@@ -46,6 +47,7 @@ const APP_PAGES = {
   history: HistoryPage,
   billing: BillingPage,
   blogTopics: BlogTopicsPage,
+  articleGenerator: ArticleGeneratorPage,
 };
 
 const AUTH_SCREENS = {

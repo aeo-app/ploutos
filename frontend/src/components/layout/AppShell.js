@@ -4,6 +4,7 @@ import { TopBar }  from './TopBar';
 import { useApp } from '../../context/AppContext';
 import { UnlockModal } from '../payment/UnlockModal';
 import { historyApi } from '../../api/historyApi';
+import { consumeRememberedPage } from '../../utils/oauthReturn';
 import s from './AppShell.module.css';
 
 const FEATURE_LABEL = {
@@ -25,7 +26,7 @@ const ANALYSIS_TYPE_TO_RESULT_KEY = {
 
 export function AppShell({ children, profile, onEnterAdminView }) {
   const [open, setOpen] = useState(false);
-  const { state, setRequest, setResultKey, clearPaymentRequired, toast, setAdmin } = useApp();
+  const { state, setRequest, setResultKey, clearPaymentRequired, toast, setAdmin, setPage } = useApp();
 
   useEffect(() => {
     setAdmin(!!profile?.is_admin);
@@ -35,6 +36,15 @@ export function AppShell({ children, profile, onEnterAdminView }) {
   // routers/canva_router.py's /canva/callback) — there's no in-app state to
   // react to, just a query param confirming how it went. Surface it once,
   // then clean the URL so a refresh doesn't re-show the toast.
+  //
+  // Both this and the social_publish effect below restore whichever page
+  // the user was on before the OAuth redirect (see components/canva/
+  // CanvaPosterPanel.js and SocialPublishPanel.js, which stash it via
+  // rememberPageBeforeOAuthRedirect right before navigating away) —
+  // WHETHER the connection succeeded or failed. Without this, every OAuth
+  // round-trip is a full browser navigation that reloads the app from
+  // scratch, landing back on the default page instead of wherever the user
+  // actually was.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const canvaResult = params.get('canva');
@@ -44,6 +54,8 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     } else if (canvaResult === 'error') {
       toast({ type: 'error', message: 'Could not connect Canva. Please try again.' });
     }
+    const returnPage = consumeRememberedPage();
+    if (returnPage) setPage(returnPage);
     params.delete('canva');
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
@@ -62,6 +74,8 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     } else if (result === 'error') {
       toast({ type: 'error', message: 'Could not connect that social account. Please try again.' });
     }
+    const returnPage = consumeRememberedPage();
+    if (returnPage) setPage(returnPage);
     params.delete('social_publish');
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
