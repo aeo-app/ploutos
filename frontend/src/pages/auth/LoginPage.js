@@ -4,6 +4,7 @@ import { AuthLayout } from './AuthLayout';
 import { Button }     from '../../components/ui/Button';
 import { useAuth }    from '../../context/AuthContext';
 import { authApi, withTokenExpiry }    from '../../api/authApi';
+import { PasswordInput } from './PasswordInput';
 import s from './Auth.module.css';
 
 export function LoginPage() {
@@ -98,8 +99,7 @@ export function LoginPage() {
             <label className={s.fieldLabel}>
               Password<span className={s.fieldRequired}>*</span>
             </label>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="current-password"
               value={password}
               placeholder="Enter your password"

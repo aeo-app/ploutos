@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { authApi, withTokenExpiry } from '../../api/authApi';
 import { PasswordRequirementsChecklist, isPasswordValid, firstUnmetPasswordRequirement } from './PasswordRequirements';
+import { PasswordInput } from './PasswordInput';
 import s from './Auth.module.css';
 
 function validate(name, email, password, confirmPassword, companyName, domain) {
@@ -187,8 +188,7 @@ export function SignupPage() {
             <label className={s.fieldLabel}>
               Password<span className={s.fieldRequired}>*</span>
             </label>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={password}
               placeholder="Enter password (min. 8 characters)"
@@ -207,8 +207,7 @@ export function SignupPage() {
             <label className={s.fieldLabel}>
               Confirm Password<span className={s.fieldRequired}>*</span>
             </label>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={confirmPassword}
               placeholder="Confirm your password"

@@ -260,6 +260,17 @@
   box-shadow: 0 0 0 3.5px rgba(79,70,229,0.12);
   background: #fff;
 }
+
+.passwordWrap { position: relative; width: 100%; }
+.passwordInput { padding-right: 44px; }
+.passwordToggle {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  border: none; background: none; color: var(--c-slate-400); cursor: pointer; border-radius: var(--r-sm, 6px);
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.passwordToggle:hover { color: var(--c-slate-600); background: var(--c-slate-50); }
+.passwordToggle:focus-visible { outline: 2px solid var(--c-indigo-400); outline-offset: 1px; }
 .inputError { border-color: var(--c-danger) !important; }
 .inputError:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,0.12) !important; }
 

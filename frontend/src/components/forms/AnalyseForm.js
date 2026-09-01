@@ -4,10 +4,14 @@ import { useApp } from '../../context/AppContext';
 import { Button } from '../ui/Button';
 import s from './AnalyseForm.module.css';
 
+// const QUICK = [
+//   { company_name: 'Santa Fe Relocation', url: 'https://www.santaferelo.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
+//   { company_name: 'Crown Relocations', url: 'https://www.crownrelo.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
+//   { company_name: 'PropertyGuru', url: 'https://www.propertyguru.com.sg', market: 'Singapore', industry: 'Real Estate Portal' },
+// ];
 const QUICK = [
-  { company_name: 'Santa Fe Relocation', url: 'https://www.santaferelo.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
-  { company_name: 'Crown Relocations', url: 'https://www.crownrelo.com', market: 'Singapore', industry: 'International Relocation / Moving Services' },
-  { company_name: 'PropertyGuru', url: 'https://www.propertyguru.com.sg', market: 'Singapore', industry: 'Real Estate Portal' },
+  { company_name: '', url: '', market: '' },
+ 
 ];
 
 function Field({ label, name, value, onChange, placeholder, required, type = 'text' }) {
@@ -43,7 +47,7 @@ export function AnalyseForm({ onSubmit, loading, buttonLabel = 'Analyse', compac
       >
         <Field label="Company" name="company_name" value={request.company_name} onChange={set} placeholder="Santa Fe Relocation" required />
         <Field label="URL" name="url" value={request.url} onChange={set} placeholder="https://www.santaferelo.com" required />
-        {/* <Field label="Market" name="market" value={request.market} onChange={set} placeholder="Singapore" /> */}
+        <Field label="Country" name="market" value={request.market} onChange={set} placeholder="e.g. United States" />
         <Button type="submit" size="md" loading={loading} disabled={!request.company_name}>
           {loading ? 'Analysing…' : buttonLabel}
         </Button>
@@ -53,7 +57,7 @@ export function AnalyseForm({ onSubmit, loading, buttonLabel = 'Analyse', compac
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-      {showQuickStarts && (
+      {/* {showQuickStarts && (
         <div>
           <div className={s.label} style={{ marginBottom: 8 }}>Quick start</div>
           <div className={s.quickStarts}>
@@ -64,16 +68,15 @@ export function AnalyseForm({ onSubmit, loading, buttonLabel = 'Analyse', compac
             ))}
           </div>
         </div>
-      )}
+      )} */}
       <form onSubmit={submit} className={s.form}>
         <div className={s.formTitle}>Run SEO Analysis</div>
         <div className={s.formSub}>Enter any company to generate AI-powered competitive intelligence in seconds.</div>
         <div className={s.grid}>
           <Field label="Company Name" name="company_name" value={request.company_name} onChange={set} placeholder="e.g. Santa Fe Relocation" required />
           <Field label="Website URL" name="url" value={request.url} onChange={set} placeholder="https://www.santaferelo.com" />
-          <Field label="Country" name="country" value={request.market} onChange={set} placeholder="e.g. United States" />
-          {/* <Field label="Market / City" name="market" value={request.market} onChange={set} placeholder="Singapore" />
-          <Field label="Industry" name="industry" value={request.industry} onChange={set} placeholder="International Relocation / Moving Services" /> */}
+          <Field label="Country" name="market" value={request.market} onChange={set} placeholder="e.g. United States" required />
+          {/* <Field label="Industry" name="industry" value={request.industry} onChange={set} placeholder="International Relocation / Moving Services" /> */}
         </div>
         <div className={s.footer}>
           <Button type="submit" size="lg" loading={loading} disabled={!request.company_name}>
