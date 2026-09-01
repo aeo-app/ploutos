@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # ── Config ───────────────────────────────────────────────────────────────────
 CANVA_CLIENT_ID = os.getenv("CANVA_CLIENT_ID", "")
 CANVA_CLIENT_SECRET = os.getenv("CANVA_CLIENT_SECRET", "")
-CANVA_REDIRECT_URI = os.getenv("CANVA_REDIRECT_URI")
+CANVA_REDIRECT_URI = os.getenv("CANVA_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/canva/callback")
 
 AUTHORIZE_URL = "https://www.canva.com/api/oauth/authorize"
 API_BASE = "https://api.canva.com/rest/v1"

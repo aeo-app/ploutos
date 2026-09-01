@@ -12,11 +12,12 @@ import s from './CanvaPosterPanel.module.css';
  * implemented as "re-run the same job with new image field values", which
  * is exactly how Canva's own autofill model works.
  */
-export function CanvaPosterPanel({ dayDate, postNumber, defaultText, onPosterChange }) {
+export function CanvaPosterPanel({ dayDate, postNumber, defaultText, visualSuggestion, category, tone, cta, onPosterChange }) {
   const { state } = useApp();
   const [connected, setConnected] = useState(null); // null = checking
   const [connectError, setConnectError] = useState(null);
   const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [autoGenerating, setAutoGenerating] = useState(false);
 
   const [templates, setTemplates] = useState(null);
   const [picking, setPicking] = useState(false);
@@ -138,6 +139,34 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText, onPosterCha
     }
   };
 
+  const handleAutoGenerate = async () => {
+    setAutoGenerating(true);
+    setError(null);
+    try {
+      const created = await canvaApi.autoGeneratePoster({
+        day_date: dayDate,
+        post_number: postNumber,
+        visual_suggestion: visualSuggestion || defaultText || '',
+        caption: defaultText || '',
+        cta: cta || '',
+        category: category || '',
+        tone: tone || '',
+      });
+      setPoster(created);
+      setThumbnailFailed(false);
+      onPosterChange?.(created);
+      // The auto-picked template's fields are needed for the "replace
+      // image" controls to render, same as the rehydration effect above.
+      const { fields: f } = await canvaApi.brandTemplateDataset(created.brand_template_id);
+      setFields(f);
+      setSelectedTemplate({ id: created.brand_template_id, title: '' });
+    } catch (e) {
+      setError(e.message || 'Could not auto-generate a poster for this post.');
+    } finally {
+      setAutoGenerating(false);
+    }
+  };
+
   const replaceImagesAndRegenerate = async () => {
     setStage('replacing');
     setError(null);
@@ -188,13 +217,25 @@ export function CanvaPosterPanel({ dayDate, postNumber, defaultText, onPosterCha
   return (
     <div className={s.wrap}>
       <div className={s.headRow}>
-        <span className={s.title}>🎨 Canva poster {selectedTemplate && `— ${selectedTemplate.title}`}</span>
+        <span className={s.title}>🎨 Canva poster {selectedTemplate?.title && `— ${selectedTemplate.title}`}</span>
         {!poster && !selectedTemplate && (
-          <button type="button" className={s.createBtn} onClick={openTemplatePicker} disabled={picking}>
-            Create poster
-          </button>
+          <div className={s.headActions}>
+            <button type="button" className={s.autoGenerateBtn} onClick={handleAutoGenerate} disabled={autoGenerating || picking}>
+              {autoGenerating ? 'Generating…' : '✨ Auto-generate poster'}
+            </button>
+            <button type="button" className={s.createBtn} onClick={openTemplatePicker} disabled={picking || autoGenerating}>
+              Pick template manually
+            </button>
+          </div>
         )}
       </div>
+      {!poster && !selectedTemplate && (
+        <div className={s.autoGenerateHint}>
+          Auto-generate picks a Brand Template for you and creates a new, relevant image from this
+          post's visual suggestion{visualSuggestion ? ` ("${visualSuggestion}")` : ''} — recommended
+          for most posts. Pick manually only if you want to choose the exact template and images yourself.
+        </div>
+      )}
 
       {picking && (
         <div className={s.templateGrid}>

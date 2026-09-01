@@ -170,9 +170,32 @@ async def payment_status(
 
     ent = get_user_entitlement(user_id)
     plan_id = ent.get("plan")
+
+    # Previously this returned ent.get("is_paid", False) directly — the
+    # raw, stored flag, which is only ever changed by an explicit
+    # set_user_paid() call and never re-evaluated against the current
+    # date. That meant a user's actual access correctly got blocked once
+    # paid_until passed (is_user_paid(), used everywhere else, DOES check
+    # expiry) — but this status endpoint kept reporting is_paid: true
+    # forever, so the Billing page showed "✓ Plan active" indefinitely
+    # even after the user was already locked out and needed to repay.
+    # Same expiry check as is_user_paid(), without its admin-bypass
+    # clause — this endpoint reports the entitlement's own true status,
+    # not "does this account have access" (admins reach the billing page
+    # rarely to never, since Sidebar.js hides it for them, and they have
+    # no plan of their own to report on regardless).
+    is_paid = bool(ent.get("is_paid", False))
+    paid_until = ent.get("paid_until")
+    if is_paid and paid_until:
+        try:
+            is_paid = datetime.fromisoformat(paid_until.replace("Z", "+00:00")) > datetime.now(timezone.utc)
+        except (ValueError, AttributeError):
+            logger.warning(f"[payment] unparseable paid_until={paid_until!r} for user={user_id} in status check; reporting as expired")
+            is_paid = False
+
     return {
-        "is_paid": ent.get("is_paid", False),
-        "paid_until": ent.get("paid_until"),
+        "is_paid": is_paid,
+        "paid_until": paid_until,
         "plan": plan_id,
         "plan_name": PLANS.get(plan_id, {}).get("name") if plan_id else None,
     }

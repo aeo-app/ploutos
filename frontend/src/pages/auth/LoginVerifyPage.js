@@ -10,6 +10,7 @@ import s from './Auth.module.css';
 export function LoginVerifyPage() {
   const { auth, goScreen, login } = useAuth();
   const email  = auth.pendingEmail;
+  const password = auth.pendingPassword;
   const masked = email.replace(/(.{2}).+(@.+)/, '$1***$2');
 
   const [code,    setCode]    = useState('');
@@ -25,11 +26,26 @@ export function LoginVerifyPage() {
     setError('');
     setLoading(true);
     try {
-      const data = await authApi.verifyOTP({ email, code });
+      // Confirming an account is the same Cognito operation regardless of
+      // whether the user reached it via signup or (as here) tried to log
+      // in before ever verifying — reuses the same real endpoint
+      // SignupVerifyPage.js uses. The previous code called
+      // authApi.verifyOTP, which didn't exist as an actual function at
+      // all (it was commented out in authApi.js) — this whole screen was
+      // unreachable-but-broken until now, since LoginPage.js never
+      // actually routed here either.
+      await authApi.verifyEmail({ email, code });
+      const data = await authApi.login({ email, password });
       setSuccess(true);
       setTimeout(() => login({ email, ...data?.user }), 1200);
     } catch (e) {
-      setError(e.message || 'Invalid code. Please try again.');
+      if (e.code === 'CodeMismatchException') {
+        setError('Incorrect verification code. Please check your email and try again.');
+      } else if (e.code === 'ExpiredCodeException') {
+        setError('This code has expired. Request a new one below.');
+      } else {
+        setError(e.message || 'Invalid code. Please try again.');
+      }
       resetRef.current?.();
     } finally {
       setLoading(false);
@@ -38,7 +54,7 @@ export function LoginVerifyPage() {
 
   const handleResend = async () => {
     try {
-      await authApi.resendCode({ email, type: 'login' });
+      await authApi.resendCode({ email });
       setError('');
     } catch (e) {
       setError(e.message);

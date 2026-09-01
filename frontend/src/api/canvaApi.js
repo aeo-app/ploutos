@@ -71,6 +71,8 @@ export const canvaApi = {
 
   /** @param {object} req - {day_date, post_number, brand_template_id, text_fields, image_urls, image_asset_ids} */
   createPoster: (req) => post("/canva/posters", req),
+  /** @param {object} req - {day_date, post_number, visual_suggestion, caption, cta?, category?, tone?} - no template/image selection needed, the backend picks a template and generates a unique image */
+  autoGeneratePoster: (req) => post("/canva/posters/auto-generate", req),
   /** @param {object} req - {text_fields, image_urls, image_asset_ids} — only send what's changing */
   regeneratePoster: (posterId, req) => post(`/canva/posters/${encodeURIComponent(posterId)}/regenerate`, req),
   listPosters: () => get("/canva/posters"),

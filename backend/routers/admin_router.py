@@ -499,3 +499,20 @@ async def admin_cancel_scheduled(user_id: str, schedule_id: str, admin_id: str =
     if not ok:
         raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for this customer")
     return CancelScheduledPostResponse(cancelled=True)
+
+
+# ── Canva poster auto-generation (template rotation + AI image, on behalf of
+# a customer, using THEIR connected Canva account) ──────────────────────────
+from routers.canva_router import _auto_generate_poster as _canva_auto_generate_poster
+from models.canva_models import AutoGeneratePosterRequest, PosterResponse as CanvaPosterResponse
+
+
+@router.post(
+    "/users/{user_id}/canva/posters/auto-generate",
+    response_model=CanvaPosterResponse,
+    summary="Auto-generate a poster (rotated template + AI-generated image) for a customer, saved under their account",
+)
+async def admin_auto_generate_poster(user_id: str, req: AutoGeneratePosterRequest, admin_id: str = Depends(require_admin)):
+    result = await _canva_auto_generate_poster(user_id, req)
+    logger.info(f"[admin] {admin_id} auto-generated a poster for user {user_id}, day={req.day_date} post={req.post_number}")
+    return result

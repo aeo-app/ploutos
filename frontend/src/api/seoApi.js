@@ -1,7 +1,10 @@
 import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
 // export const BASE = "https://api.aeo-app.ai/api/v1";
-export const BASE = "http://127.0.0.1:8000/api/v1"; // Local development
+// Configurable via REACT_APP_API_BASE_URL — see authApi.js's BASE_URL for
+// the full explanation of why this must not be hardcoded to localhost.
+export const BASE = "https://api.aeo-app.ai/api/v1";
+// export const BASE = "http://localhost:8000/api/v1"; // for local dev, override with REACT_APP_API_BASE_URL
 
 // 🔹 Check Token & User Validity (forcefully redirect to login if missing)
 // Exported so every other API module (socialApi.js, etc.) reuses THIS exact

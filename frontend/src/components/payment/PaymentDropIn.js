@@ -1,7 +1,15 @@
 import { useRef, useEffect } from 'react';
 import { init, createElement } from '@airwallex/components-sdk';
+import { AIRWALLEX_ENV } from '../../api/config';
 
-const AIRWALLEX_ENV = 'demo'; // 'demo' (sandbox) | 'prod' — same convention as CheckoutPage.js
+// Previously this had its OWN local `const AIRWALLEX_ENV = 'demo'`, completely
+// separate from and ignoring src/api/config.js's shared value ("prod") — the
+// SDK was initializing in sandbox mode while the backend (almost certainly
+// configured for prod Airwallex credentials in a real deployment) creates
+// PaymentIntents whose client_secret only works in ITS environment. That
+// mismatch is exactly what produces Airwallex's "Access denied,
+// authentication failed" error — the two sides were never in the same
+// environment to begin with.
 
 /**
  * Mounts an Airwallex Drop-in element for a given PaymentIntent. Pure

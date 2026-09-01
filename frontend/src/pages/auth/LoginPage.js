@@ -7,7 +7,7 @@ import { authApi, withTokenExpiry }    from '../../api/authApi';
 import s from './Auth.module.css';
 
 export function LoginPage() {
-  const { login, goScreen } = useAuth();
+  const { login, goScreen, setPending } = useAuth();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState('');
@@ -34,10 +34,21 @@ export function LoginPage() {
     } catch (err) {
       // Only show error if not TokenExpired (withTokenExpiry already handles redirect)
       if (err.code !== 'TokenExpired') {
-        if (err.code === 'UserNotFound') {
+        if (err.code === 'UserNotConfirmedException') {
+          // Account exists but was never verified — send them to finish
+          // that instead of leaving them stuck on a login error they can't
+          // act on. LoginVerifyPage already exists for exactly this case,
+          // it just was never actually reachable from here before.
+          setPending(email.trim(), '', password);
+          goScreen('login-verify');
+          return;
+        }
+        if (err.code === 'UserNotFoundException') {
           setError('No account found with this email. Please create an account first.');
-        } else if (err.code === 'InvalidPassword' || err.code === 'InvalidCredentials') {
+        } else if (err.code === 'NotAuthorizedException') {
           setError('Invalid email or password. Please try again.');
+        } else if (err.code === 'LimitExceededException' || err.code === 'TooManyRequestsException') {
+          setError('Too many attempts. Please wait a few minutes and try again.');
         } else if (err.code === 'NetworkError') {
           setError('Network error. Please check your connection and try again.');
         } else {

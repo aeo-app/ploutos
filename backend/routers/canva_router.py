@@ -9,6 +9,7 @@ set of image field values.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
@@ -30,6 +31,7 @@ from db import (
 )
 from models.canva_models import (
     AssetUploadResponse,
+    AutoGeneratePosterRequest,
     BrandTemplateDatasetResponse,
     BrandTemplateFieldInfo,
     BrandTemplateInfo,
@@ -56,6 +58,7 @@ from services.canva_service import (
     upload_asset_from_bytes,
     upload_asset_from_url,
 )
+from services.image_generation_service import ImageGenerationError, generate_image_from_prompt
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/canva", tags=["Canva"])
@@ -256,6 +259,100 @@ def _run_autofill(
     return design, used_images
 
 
+def _select_template_for_post(templates: list[dict], day_date: str, post_number: int, category: str = "") -> dict:
+    """
+    Deterministic selection across the account's available Brand Templates —
+    NOT always the first/same one. The same exact post (day_date +
+    post_number) always maps to the same template if regenerated, but
+    different posts spread across whatever templates exist. When a
+    category is given, all posts in that category land on the same
+    template (so a recognizable structure can emerge per content category
+    without hardcoding a category->template mapping) while different
+    categories are spread across different templates — the account owner
+    still controls the actual look by how they design each template.
+    """
+    if not templates:
+        raise ValueError("no templates available")
+    if len(templates) == 1:
+        return templates[0]
+    seed_key = category.strip().lower() or f"{day_date}#{post_number}"
+    idx = int(hashlib.sha256(seed_key.encode()).hexdigest(), 16) % len(templates)
+    return templates[idx]
+
+
+def _best_effort_field_mapping(fields: list[dict], caption: str, cta: str) -> dict:
+    """Best-effort match of a template's actual text field names to the
+    post's caption/cta — template authors name fields however they like,
+    so this can't assume an exact name. Falls back to caption for anything
+    unmatched rather than leaving a field empty."""
+    text_fields = {}
+    for f in fields:
+        if f.get("type") != "text":
+            continue
+        name_lower = f["name"].strip().lower()
+        if any(k in name_lower for k in ("cta", "button", "action")):
+            text_fields[f["name"]] = cta or caption
+        else:
+            text_fields[f["name"]] = caption
+    return text_fields
+
+
+async def _auto_generate_poster(user_id: str, req: AutoGeneratePosterRequest) -> PosterResponse:
+    """Shared by the regular and admin auto-generate endpoints. Picks a
+    template, generates a genuinely new image from visual_suggestion
+    (rather than reusing whatever was manually uploaded before), and runs
+    the normal autofill flow — see module docstring on why this exists at
+    all (Canva's Autofill API stamps one fixed layout; it can't design a
+    new layout or pick its own image, so both of those have to happen
+    before autofill is even called)."""
+    token = _get_valid_access_token(user_id)
+
+    templates = list_brand_templates(token)
+    if not templates:
+        raise HTTPException(
+            status_code=422,
+            detail="No Brand Templates found in your connected Canva account. Create one in "
+                   "Canva first (design it, add autofill data fields, publish as a Brand Template) "
+                   "before posters can be auto-generated.",
+        )
+    template = _select_template_for_post(templates, req.day_date, req.post_number, req.category)
+
+    dataset = get_brand_template_dataset(token, template["id"])
+    fields = [{"name": name, "type": info.get("type", "text")} for name, info in dataset.items()]
+    image_fields = [f for f in fields if f["type"] == "image"]
+    if not image_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Brand Template '{template.get('title', template['id'])}' has no image fields — "
+                   f"add at least one image data field in Canva's Data autofill app before using it here.",
+        )
+
+    try:
+        image_bytes = generate_image_from_prompt(req.visual_suggestion)
+        asset_id = upload_asset_from_bytes(token, image_bytes, name=f"{req.day_date}-post{req.post_number}.png")
+    except ImageGenerationError as e:
+        raise HTTPException(status_code=502, detail=f"Could not generate an image for this poster: {e}")
+    except CanvaError as e:
+        raise HTTPException(status_code=502, detail=f"Could not upload the generated image to Canva: {e}")
+
+    image_asset_ids = {f["name"]: asset_id for f in image_fields}
+    text_fields = _best_effort_field_mapping(fields, req.caption, req.cta)
+
+    try:
+        design, used_images = _run_autofill(token, template["id"], text_fields, {}, image_asset_ids)
+    except CanvaError as e:
+        raise HTTPException(status_code=502, detail=f"Could not generate the poster: {e}")
+
+    poster_id = str(uuid.uuid4())
+    save_poster(
+        user_id=user_id, poster_id=poster_id, day_date=req.day_date, post_number=req.post_number,
+        brand_template_id=template["id"], design_id=design["design_id"], edit_url=design["edit_url"],
+        thumbnail_url=design["thumbnail_url"], image_field_values=used_images, text_field_values=text_fields,
+    )
+    logger.info(f"[canva] auto-generated poster {poster_id} for user={user_id} using template={template['id']}")
+    return _record_to_poster_response(get_poster(user_id, poster_id))
+
+
 @router.post(
     "/assets/upload",
     response_model=AssetUploadResponse,
@@ -294,6 +391,15 @@ async def create_poster(req: CreatePosterRequest, user_id: str = Depends(get_cur
     )
     saved = get_poster(user_id, poster_id)
     return _record_to_poster_response(saved)
+
+
+@router.post(
+    "/posters/auto-generate",
+    response_model=PosterResponse,
+    summary="Fully automatic poster: picks a Brand Template and generates a new image from visual_suggestion — no manual template/field selection needed",
+)
+async def auto_generate_poster(req: AutoGeneratePosterRequest, user_id: str = Depends(get_current_user_id)):
+    return await _auto_generate_poster(user_id, req)
 
 
 @router.post(

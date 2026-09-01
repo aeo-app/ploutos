@@ -1,12 +1,41 @@
-// export const BASE_URL = "https://api.aeo-app.ai/api/v1";
-const BASE_URL = "http://127.0.0.1:8000/api/v1"; // Local development
-
+// Configurable via REACT_APP_API_BASE_URL (set in .env.production or your
+// CI/CD build environment) — CRA embeds this at BUILD TIME, so a production
+// build needs this set before building, not just in a runtime .env file.
+// Previously this was hardcoded to the local dev URL with the production
+// URL commented out above it — meaning any production build could never
+// reach the real backend at all, and every request failed as a generic
+// network error regardless of what actually went wrong (login, signup,
+// anything). That's likely why error messages looked wrong or generic in
+// production — the app was silently trying to call the tester's own
+// machine, not the real API.
+// const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+const BASE_URL = "https://api.aeo-app.ai/api/v1";
 // 🔹 Error message mapping
+// Matches routers/auth_router.py's _STATUS dict exactly — these are the
+// REAL Cognito exception codes the backend actually sends in
+// {"detail": {"code": "...", "message": "..."}}. Previously this mapping
+// (and the specific-code checks in LoginPage.js/SignupPage.js) used
+// different, made-up codes like "InvalidCredentials"/"UserNotFound" that
+// never actually matched anything the backend sent — every login/signup
+// failure silently fell through to a generic fallback message instead of
+// the intended specific one.
 const ERROR_MESSAGES = {
   UsernameExistsException:
     "This email is already registered. Please sign in instead.",
+  UserNotFoundException: "No account found with this email. Please check your email address or create an account.",
+  NotAuthorizedException: "Invalid email or password. Please try again.",
+  CodeMismatchException: "Invalid verification code. Please try again.",
+  ExpiredCodeException: "Verification code has expired. Please request a new one.",
+  LimitExceededException: "Too many attempts. Please wait a few minutes and try again.",
+  TooManyRequestsException: "Too many requests. Please wait a moment and try again.",
+  UserNotConfirmedException: "Please verify your email before signing in — check your inbox for the verification code.",
+  InvalidPasswordException:
+    "Password doesn't meet the requirements: at least 8 characters, with an uppercase letter, a lowercase letter, a number, and a symbol.",
+  InvalidParameterException: "Please check your input and try again.",
+  AliasExistsException: "This email is already associated with another account.",
+  // Kept for any older/direct-custom-code paths still in use elsewhere.
   InvalidCredentials: "Invalid email or password. Please try again.",
-  UserNotFound: "User not found. Please check your email address.",
+  UserNotFound: "No account found with this email. Please check your email address.",
   InvalidPassword: "Password is incorrect. Please try again.",
   ValidationError: "Please check your input and try again.",
   NetworkError: "Network error. Please check your connection and try again.",
@@ -134,8 +163,18 @@ export const fetchClient = async (
 
     const data = await res.json().catch(() => ({}));
 
-    // Handle 401 Unauthorized (Token Expired)
-    if (res.status === 401) {
+    // A 401 only means "your session expired" on a call that's actually
+    // USING a session — never on the auth endpoints themselves. Login
+    // returning 401 for wrong credentials is a fresh, explicit auth
+    // attempt, not a continuation of an existing session, even if a stale
+    // token happens to still be sitting in localStorage from a previous
+    // login. NotAuthorizedException (wrong password) maps to HTTP 401 on
+    // the backend — treating every 401 as session expiry meant a wrong
+    // password never got the chance to show its real error at all; this
+    // branch discarded the response body and threw "session expired"
+    // before parseError() ever ran.
+    const isAuthEndpoint = ["/auth/login", "/auth/signup", "/auth/verify", "/auth/resend"].includes(url);
+    if (res.status === 401 && token && !isAuthEndpoint) {
       localStorage.removeItem("id_token");
       localStorage.removeItem("access_token");
       localStorage.removeItem("user_id");

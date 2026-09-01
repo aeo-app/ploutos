@@ -71,6 +71,7 @@ export function AnalyseForm({ onSubmit, loading, buttonLabel = 'Analyse', compac
         <div className={s.grid}>
           <Field label="Company Name" name="company_name" value={request.company_name} onChange={set} placeholder="e.g. Santa Fe Relocation" required />
           <Field label="Website URL" name="url" value={request.url} onChange={set} placeholder="https://www.santaferelo.com" />
+          <Field label="Country" name="country" value={request.market} onChange={set} placeholder="e.g. United States" />
           {/* <Field label="Market / City" name="market" value={request.market} onChange={set} placeholder="Singapore" />
           <Field label="Industry" name="industry" value={request.industry} onChange={set} placeholder="International Relocation / Moving Services" /> */}
         </div>

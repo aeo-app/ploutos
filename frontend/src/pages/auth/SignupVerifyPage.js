@@ -34,9 +34,14 @@ export function SignupVerifyPage() {
     } catch (e) {
       // Only show error if not TokenExpired (withTokenExpiry already handles redirect)
       if (e.code !== 'TokenExpired') {
-        if (e.code === 'InvalidCode' || e.code === 'CodeExpired') {
-          setError(e.message || 'Invalid or expired verification code. Please try again.');
+        if (e.code === 'CodeMismatchException') {
+          setError('Incorrect verification code. Please check your email and try again.');
           resetRef.current?.();
+        } else if (e.code === 'ExpiredCodeException') {
+          setError('This code has expired. Request a new one below.');
+          resetRef.current?.();
+        } else if (e.code === 'LimitExceededException' || e.code === 'TooManyRequestsException') {
+          setError('Too many attempts. Please wait a few minutes and try again.');
         } else {
           setError(e.message || 'Verification failed. Please try again.');
           resetRef.current?.();

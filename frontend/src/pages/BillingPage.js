@@ -108,6 +108,11 @@ export function BillingPage() {
               <Badge variant="success">✓ {planName || catalog?.plans?.find(p => p.plan_id === plan)?.name || plan} plan active</Badge>
               {paidUntil && <span className={s.statusText}>Renews/expires {formatDate(paidUntil)}</span>}
             </>
+          ) : paidUntil ? (
+            <>
+              <Badge variant="warning">⚠ Plan expired</Badge>
+              <span className={s.statusText}>Your {planName || plan || 'previous'} plan expired on {formatDate(paidUntil)} — pick a plan below to renew and regain access.</span>
+            </>
           ) : (
             <Badge variant="warning">No active plan</Badge>
           )}

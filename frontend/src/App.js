@@ -23,11 +23,13 @@ import { BillingPage } from './pages/BillingPage';
 import { BlogTopicsPage } from './pages/BlogTopicsPage';
 import { ArticleGeneratorPage } from './pages/ArticleGeneratorPage';
 import { AdminApp } from './pages/AdminApp';
+import { AdminErrorBoundary } from './components/AdminErrorBoundary';
 
 // Auth pages
 import { SignupPage }       from './pages/auth/SignupPage';
 import { SignupVerifyPage } from './pages/auth/SignupVerifyPage';
 import { LoginPage }        from './pages/auth/LoginPage';
+import { LoginVerifyPage }  from './pages/auth/LoginVerifyPage';
 
 // Landing page (entry point)
 import { LandingPage }      from './pages/landing/LandingPage';
@@ -53,6 +55,7 @@ const APP_PAGES = {
 const AUTH_SCREENS = {
   'landing':       LandingPage,
   'login':         LoginPage,
+  'login-verify':  LoginVerifyPage,
   'signup':        SignupPage,
   'signup-verify': SignupVerifyPage,
 };
@@ -192,7 +195,9 @@ function AdminAwareRoot({ profile }) {
   return (
     <>
       <div style={{ display: viewMode === 'admin' ? 'block' : 'none' }}>
-        <AdminApp onExitToUserView={() => setViewMode('user')} />
+        <AdminErrorBoundary onExitToUserView={() => setViewMode('user')}>
+          <AdminApp onExitToUserView={() => setViewMode('user')} />
+        </AdminErrorBoundary>
       </div>
       <div style={{ display: viewMode === 'user' ? 'block' : 'none' }}>
         <AppShell profile={profile} onEnterAdminView={() => setViewMode('admin')}>

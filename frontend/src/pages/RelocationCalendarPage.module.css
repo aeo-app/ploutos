@@ -38,6 +38,14 @@
 .platformTabs { display: flex; gap: 4px; background: var(--c-white); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 3px; width: fit-content; }
 .platformTab { border: none; background: none; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--c-slate-500); border-radius: var(--r-sm, 6px); cursor: pointer; transition: all var(--t-fast); }
 .platformTabActive { background: var(--c-indigo-600); color: white; }
+
+.actionTabBar { display: flex; gap: 6px; margin-top: 14px; border-bottom: 1.5px solid var(--c-slate-200); }
+.actionTab {
+  border: none; background: none; padding: 9px 4px; margin-bottom: -1.5px; font-size: 12.5px; font-weight: 700;
+  color: var(--c-slate-400); cursor: pointer; border-bottom: 2.5px solid transparent; transition: all var(--t-fast);
+}
+.actionTab + .actionTab { margin-left: 12px; }
+.actionTabActive { color: var(--c-indigo-600); border-bottom-color: var(--c-indigo-600); }
 .captionBox { background: var(--c-white); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 12px 14px; font-size: 13px; color: var(--c-slate-700); white-space: pre-wrap; line-height: 1.6; position: relative; }
 .captionCopyBtn { position: absolute; top: 8px; right: 8px; }
 
@@ -58,4 +66,8 @@
 @media (max-width: 640px) {
   .formRow { flex-direction: column; align-items: stretch; }
   .input, .select { min-width: 0; width: 100%; }
+}
+.formToggleBtn {
+  border: 1.5px solid var(--c-indigo-300); background: var(--c-white); color: var(--c-indigo-700);
+  font-weight: 700; font-size: 12.5px; padding: 7px 14px; border-radius: var(--r-md); cursor: pointer; white-space: nowrap;
 }

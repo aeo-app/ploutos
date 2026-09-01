@@ -30,6 +30,7 @@ function PostCard({ post, dayDate }) {
   const [platform, setPlatform] = useState('instagram');
   const caption = post.captions?.[platform] || '';
   const [posterId, setPosterId] = useState(null);
+  const [actionTab, setActionTab] = useState('create'); // 'create' | 'publish'
 
   return (
     <div className={s?.postCard}>
@@ -96,17 +97,37 @@ function PostCard({ post, dayDate }) {
         </div>
       )}
 
-      <CanvaPosterPanel
-        dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta}
-        onPosterChange={p => setPosterId(p?.poster_id || null)}
-      />
+      <div className={s?.actionTabBar}>
+        <button
+          type="button" className={`${s?.actionTab} ${actionTab === 'create' ? s?.actionTabActive : ''}`}
+          onClick={() => setActionTab('create')}
+        >
+          🎨 Create Poster
+        </button>
+        <button
+          type="button" className={`${s?.actionTab} ${actionTab === 'publish' ? s?.actionTabActive : ''}`}
+          onClick={() => setActionTab('publish')}
+        >
+          📤 Publish{posterId ? '' : ' (upload your own)'}
+        </button>
+      </div>
 
-      <SocialPublishPanel
-        api={socialPublishApi}
-        dayDate={dayDate}
-        posterId={posterId}
-        defaultCaption={caption || post.cta}
-      />
+      <div style={{ display: actionTab === 'create' ? 'block' : 'none' }}>
+        <CanvaPosterPanel
+          dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta}
+          visualSuggestion={post.visual_suggestion} category={post.category} tone={post.tone} cta={post.cta}
+          onPosterChange={p => { setPosterId(p?.poster_id || null); if (p) setActionTab('publish'); }}
+        />
+      </div>
+
+      <div style={{ display: actionTab === 'publish' ? 'block' : 'none' }}>
+        <SocialPublishPanel
+          api={socialPublishApi}
+          dayDate={dayDate}
+          posterId={posterId}
+          defaultCaption={caption || post.cta}
+        />
+      </div>
     </div>
   );
 }
@@ -229,7 +250,7 @@ export function RelocationCalendarPage() {
         // an admin-created or admin-revised calendar (or any change made
         // in another tab/session) wouldn't show up here until the user did
         // a full browser refresh, not just clicking back into this page.
-        if (full?.result) setResultKey('relocationCalendar', full.result);
+        if (full?.result) { setResultKey('relocationCalendar', full.result); setFormExpanded(false); }
       })
       .catch(err => console.warn('[RelocationCalendarPage] history prepopulation failed:', err?.message || err));
   }, []);
@@ -247,6 +268,7 @@ export function RelocationCalendarPage() {
   const [disclaimer, setDisclaimer] = useState(null);
   const [streaming, setStreaming] = useState(false);
   const [streamError, setStreamError] = useState(null);
+  const [formExpanded, setFormExpanded] = useState(!state.results.relocationCalendar);
   const [showUnlock, setShowUnlock] = useState(false);
   const abortRef = useRef(null);
 
@@ -280,6 +302,7 @@ export function RelocationCalendarPage() {
         if (data.result) {
           setResultKey('relocationCalendar', data.result);
           setDisclaimer(data?.result?.content_disclaimer || null);
+          setFormExpanded(false);
         }
         break;
       case 'error':
@@ -357,9 +380,18 @@ export function RelocationCalendarPage() {
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <SectionHeader
           title="Relocation Social Media Calendar"
-          subtitle="Any country, any date range — platform-ready captions for Instagram, Facebook, LinkedIn & Google Business, with a randomised, non-repetitive posting schedule."
+          subtitle={formExpanded
+            ? "Any country, any date range — platform-ready captions for Instagram, Facebook, LinkedIn & Google Business, with a randomised, non-repetitive posting schedule."
+            : `${company?.name || 'Your'} calendar for ${country || 'your destination'}, ${periodLabel || `${startDate} → ${endDate}`}`}
+          right={
+            <button type="button" className={s?.formToggleBtn} onClick={() => setFormExpanded(v => !v)}>
+              {formExpanded ? 'Hide form' : '✎ New calendar / edit settings'}
+            </button>
+          }
         />
 
+        {formExpanded && (
+          <>
         <div className={s?.formRow}>
           <div className={s?.field}>
             <span className={s?.fieldLabel}>Country*</span>
@@ -416,6 +448,8 @@ export function RelocationCalendarPage() {
           {loading && <Button variant="ghost" onClick={cancel}>Cancel</Button>}
           {loading && <span style={{ fontSize: 13, color: 'var(--c-slate-400)' }}>Days stream in as they're written — one short call per day, not one giant one.</span>}
         </div>
+          </>
+        )}
       </Card>
 
       {hasStarted && (

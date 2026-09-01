@@ -4,12 +4,18 @@ import { usePayment } from '../context/PaymentContext';
 import { useAuth } from '../context/AuthContext';
 import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
+import { AIRWALLEX_ENV } from '../api/config';
 import { PlanCards, PricingSectionHeader, CycleToggle, PricingFooter } from '../components/payment/PlanCards';
 import s from './CheckoutPage.module.css';
 
-// 'demo' (sandbox) | 'prod' — flip when deploying, same convention as the
-// hardcoded API BASE URL in seoApi.js.
-const AIRWALLEX_ENV = 'demo';
+// Previously this had its own local `const AIRWALLEX_ENV = 'demo'`, with a
+// comment noting it needed to be "flipped when deploying" — same
+// hardcoded-toggle anti-pattern as the API base URL fix, and it was never
+// actually flipped, meaning production was always initializing the
+// Airwallex SDK in sandbox mode while the backend creates real PaymentIntents
+// in prod — exactly the mismatch behind Airwallex's "Access denied,
+// authentication failed" error. Now uses the same shared, configurable
+// value as PaymentDropIn.js.
 
 // How long to keep polling /payment/status after the Drop-in reports
 // success, before giving up and telling the user to refresh (the webhook

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '../../context/AppContext';
 import s from './Sidebar.module.css';
 
-function getNav(isAdmin) {
+function getNav() {
   const nav = [
     {
       section: 'Overview',
@@ -39,11 +39,18 @@ function getNav(isAdmin) {
       section: 'Account',
       items: [
         { id: 'history', icon: '🗂️', label: 'History' },
-        // Admins bypass payment entirely (see is_user_paid's admin check on
-        // the backend) — a billing/plans screen is meaningless for an
-        // account that never needs to pay, so it's left out rather than
-        // shown with a permanently-empty "no active plan" state.
-        ...(isAdmin ? [] : [{ id: 'billing', icon: '💳', label: 'Billing & Plans' }]),
+        // Previously hidden for admin accounts entirely, on the reasoning
+        // that admins bypass payment (is_user_paid()'s admin check) so
+        // billing is "meaningless" for them. But this component only ever
+        // renders inside AppShell — which is exactly what an admin sees
+        // AFTER clicking "Exit to my account" in the separate admin
+        // dashboard (see AdminShell.js/AdminApp.js, which have their own
+        // completely separate navigation and never touch this file at
+        // all). Hiding it based on account-level admin status, rather than
+        // "is the admin dashboard currently showing", meant an admin could
+        // never see their own billing screen even when deliberately
+        // viewing their own account, not the admin view.
+        { id: 'billing', icon: '💳', label: 'Billing & Plans' },
       ],
     },
   ];
@@ -66,7 +73,7 @@ function SearchIcon() {
 export function Sidebar({ open, onClose }) {
   const { state, setPage, clearAll } = useApp();
   const hasAny = Object.values(state.results).some(Boolean);
-  const NAV = getNav(state.isAdmin);
+  const NAV = getNav();
 
   const go = (id) => { setPage(id); onClose?.(); };
 

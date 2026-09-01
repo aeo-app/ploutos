@@ -81,3 +81,22 @@ class PosterListResponse(BaseModel):
 
 class ExportPosterResponse(BaseModel):
     export_urls: list[str]
+
+
+class AutoGeneratePosterRequest(BaseModel):
+    """Fully automatic poster generation for one calendar post — no
+    brand_template_id or field values required. The system picks a Brand
+    Template (rotating across the account's available templates, matched
+    to category/tone where possible so the same category tends to land on
+    the same template) and generates a genuinely new image from
+    visual_suggestion via Bedrock, rather than reusing whatever image was
+    manually uploaded last time. See services/canva_service.py's
+    select_template_for_post and services/image_generation_service.py."""
+    day_date: str = Field(..., example="2026-09-03")
+    post_number: int = Field(..., ge=1, le=2)
+    visual_suggestion: str = Field(..., min_length=1, description="Used as the image generation prompt — this is what drives what the poster actually looks like")
+    caption: str = Field(..., min_length=1)
+    cta: str = Field("", description="Falls back to caption if a template has a separate CTA field and none is given")
+    category: str = Field("", description="e.g. 'Educational', 'Practical Tips' — used to bias template selection, not required")
+    tone: str = Field("", description="e.g. 'warm', 'confident' — used to bias template selection, not required")
+

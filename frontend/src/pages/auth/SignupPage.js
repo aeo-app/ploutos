@@ -4,6 +4,7 @@ import { AuthLayout } from './AuthLayout';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../context/AuthContext';
 import { authApi, withTokenExpiry } from '../../api/authApi';
+import { PasswordRequirementsChecklist, isPasswordValid, firstUnmetPasswordRequirement } from './PasswordRequirements';
 import s from './Auth.module.css';
 
 function validate(name, email, password, confirmPassword, companyName, domain) {
@@ -12,7 +13,7 @@ function validate(name, email, password, confirmPassword, companyName, domain) {
   if (!email.trim())                   return 'Email address is required';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address';
   if (!password.trim())                return 'Password is required';
-  if (password.length < 8)             return 'Password must be at least 8 characters';
+  if (!isPasswordValid(password))      return `Password needs: ${firstUnmetPasswordRequirement(password)}`;
   if (password !== confirmPassword)    return 'Passwords do not match';
   if (!companyName.trim())             return 'Company name is required';
   if (!domain.trim())                  return 'Your company domain/website is required';
@@ -37,8 +38,8 @@ export function SignupPage() {
   const emailErr = touched.email && (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     ? (!email.trim() ? 'Email is required' : 'Enter a valid email')
     : '';
-  const passwordErr = touched.password && (!password.trim() || password.length < 8)
-    ? (!password.trim() ? 'Password is required' : 'Password must be at least 8 characters')
+  const passwordErr = touched.password && (!password.trim() || !isPasswordValid(password))
+    ? (!password.trim() ? 'Password is required' : `Password needs: ${firstUnmetPasswordRequirement(password)}`)
     : '';
   const confirmPasswordErr = touched.confirmPassword && (!confirmPassword.trim() || password !== confirmPassword)
     ? (!confirmPassword.trim() ? 'Confirm password is required' : 'Passwords do not match')
@@ -65,6 +66,8 @@ export function SignupPage() {
       if (e.code !== 'TokenExpired') {
         if (e.code === 'UsernameExistsException') {
           setError('This email is already registered. Please sign in to your account instead.');
+        } else if (e.code === 'InvalidPasswordException') {
+          setError(e.message || "Password doesn't meet the requirements below.");
         } else if (e.code === 'ValidationError') {
           setError(e.message || 'Please check your input and try again.');
         } else if (e.code === 'NetworkError') {
@@ -191,11 +194,12 @@ export function SignupPage() {
               placeholder="Enter password (min. 8 characters)"
               className={`${s.input} ${passwordErr ? s.inputError : ''}`}
               onChange={e => setPassword(e.target.value)}
+              onFocus={() => setTouched(p => ({ ...p, password: true }))}
               onBlur={() => setTouched(p => ({ ...p, password: true }))}
               disabled={loading}
               aria-invalid={!!passwordErr}
             />
-            {passwordErr && <div className={s.fieldErr}>⚠ {passwordErr}</div>}
+            {touched.password && <PasswordRequirementsChecklist password={password} />}
           </div>
 
           {/* Confirm Password */}

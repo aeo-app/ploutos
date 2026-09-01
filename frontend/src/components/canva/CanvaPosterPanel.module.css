@@ -7,6 +7,17 @@
 }
 .connectBtn:disabled, .createBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.headActions { display: flex; gap: 8px; align-items: center; }
+.autoGenerateBtn {
+  border: none; background: var(--grad-brand); color: white; font-weight: 700; font-size: 12.5px;
+  padding: 8px 14px; border-radius: var(--r-md); cursor: pointer;
+}
+.autoGenerateBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.createBtn {
+  background: var(--c-white); color: var(--c-slate-600); border: 1.5px solid var(--c-slate-200);
+}
+.autoGenerateHint { font-size: 11px; line-height: 1.5; color: var(--c-slate-400); margin-top: 6px; }
+
 .templateGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-top: 10px; }
 .templateCard {
   border: 1.5px solid var(--c-slate-200); border-radius: var(--r-md); overflow: hidden; cursor: pointer;

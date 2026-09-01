@@ -27,7 +27,7 @@ BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-uploads")
 AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
 EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
 EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
-MEDIA_UPLOAD_ROLE_ARN = os.getenv("MEDIA_UPLOAD_ROLE_ARN")
+ROLE_ARN = os.getenv("MEDIA_UPLOAD_ROLE_ARN")
 
 _s3 = None
 
@@ -49,7 +49,7 @@ def _get_s3_client():
                 "sts", aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY, region_name=AWS_REGION,
             )
-            resp = sts.assume_role(RoleArn=MEDIA_UPLOAD_ROLE_ARN, RoleSessionName="media-upload-session")
+            resp = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="media-upload-session")
             creds = resp["Credentials"]
             _s3 = boto3.client(
                 "s3", region_name=AWS_REGION,
