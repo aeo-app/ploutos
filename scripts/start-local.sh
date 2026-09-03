@@ -34,7 +34,7 @@ log "Starting backend (FastAPI) on port 8000 …"
 BACKEND_PID=$!
 
 # ── frontend ─────────────────────────────────────────────────
-export REACT_APP_API_URL="${REACT_APP_API_URL:-http://localhost:8000/api/v1}"
+export REACT_APP_API_BASE_URL="${REACT_APP_API_BASE_URL:-http://localhost:8000/api/v1}"
 log "Starting frontend (CRA) on port 3000 …"
 (cd "$ROOT/frontend" && npx react-scripts start) &
 FRONTEND_PID=$!
