@@ -13,14 +13,14 @@ Two independent codebases — no shared root `package.json`:
 
 ## Key conventions to honor
 
-**Python (backend)** — consult `documents/backend-architecture.md` (§13):
+**Python (backend)** — consult `documents/backend-architecture.md` (§14 Coding Conventions):
 - Type hints on public functions; `dict[...]` / `list[...]` / `str | None`.
 - Pydantic v2 (`Field`, `field_validator`, `model_dump()`).
 - FastAPI: `Depends(get_current_user_id)`, `response_model`, `summary`.
 - Services raise domain exceptions; routers map to `HTTPException`.
 - No bare `except:`, no mutable default args, no wildcard imports.
 
-**React (frontend/src)** — consult `documents/frontend-architecture.md` (§10):
+**React (frontend/src)** — consult `documents/frontend-architecture.md` (§11 Coding Conventions):
 - Components are function declarations with named exports (only root `App` uses default export).
 - Global state via `useReducer` + Context; local state via `useState`.
 - CSS Modules + CSS custom properties; no hardcoded hex in inline styles.

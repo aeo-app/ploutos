@@ -2,7 +2,7 @@
 
 FastAPI + boto3 (AWS Bedrock, Cognito, DynamoDB, S3), Pydantic v2. Entry point: `backend/main.py`. Current API version: **4.1.0**.
 
-> This is the canonical backend reference. It documents both the **structure** of the codebase and the **coding conventions** it follows. `documents/code-review.md` points here for the authoritative Python rules. Update this doc when structure or conventions change.
+> This is the canonical backend reference. It documents both the **structure** of the codebase and the **coding conventions** it follows (see §14). Update this doc when structure or conventions change.
 
 ---
 
@@ -437,7 +437,7 @@ Terraform configs (not Python):
 
 ## 14. Python Coding Conventions
 
-Derived from the existing codebase. Follow these when adding or modifying backend code. (`documents/code-review.md` summarizes the checklist form; this is the reference.)
+Derived from the existing codebase. Follow these when adding or modifying backend code.
 
 ### Imports
 Order: stdlib → third-party → local. Use `from __future__ import annotations` at the top of every module. Prefer `dict`, `list`, `str | None` over `typing.Dict` / `typing.List` / `Optional[str]`.
