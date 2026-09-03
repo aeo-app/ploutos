@@ -2,7 +2,7 @@
 
 React 18 (Create React App, JSX), react-scripts 5.0.1, framer-motion. **Active code is `frontend/src/`**. The root `App.jsx`/`index.js` are legacy single-file code — NOT used by CRA; treat as reference only.
 
-> This is the canonical frontend reference. It documents both the **structure** of `src/` and the **coding conventions** it follows. `documents/code-review.md` points here for the authoritative React rules. Update this doc when structure or conventions change.
+> This is the canonical frontend reference. It documents both the **structure** of `src/` and the **coding conventions** it follows (see §11). Update this doc when structure or conventions change.
 
 ---
 
@@ -306,7 +306,7 @@ Token naming: `--c-{color}-{shade}`, `--font-{role}`, `--r-{size}`, `--shadow-{s
 
 ## 11. React Coding Conventions
 
-Derived from the existing codebase. Follow these when adding or modifying `frontend/src/`. (`documents/code-review.md` summarizes the checklist form; this is the reference.)
+Derived from the existing codebase. Follow these when adding or modifying `frontend/src/`.
 
 ### File naming
 | Type | Convention | Example |
