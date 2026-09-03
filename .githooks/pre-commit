@@ -38,7 +38,7 @@ secret_patterns=(
   'AKIA[0-9A-Z]{16}'
   'ASIA[0-9A-Z]{16}'
   'gh[pousr]_[A-Za-z0-9_]{20,}'
-  'xox[baprs]-[A-Za-z0-9-]{ dix,}'
+  'xox[baprs]-[A-Za-z0-9-]+'
   '-----BEGIN ([A-Z ]+ )?PRIVATE KEY-----'
   '(AWS|AWS_ACCESS|AWS_SECRET|ANTHROPIC|OPENAI|GITHUB|SLACK)[A-Z_]*[[:space:]]*=[[:space:]]*["'"'][^"'"']+["'"']'
   '(api[_-]?key|access[_-]?token|secret|password|private[_-]?key)[[:space:]]*:[[:space:]]*["'"'][^"'"']+["'"']'
@@ -51,7 +51,7 @@ for file in "${staged_files[@]}"; do
   [[ -n "$additions" ]] || continue
 
   for pattern in "${secret_patterns[@]}"; do
-    if matches=$(printf '%s\n' "$additions" | grep -nE "$pattern"); then
+    if matches=$(printf '%s\n' "$additions" | grep -nE -- "$pattern"); then
       fail "possible secret in $file: $(printf '%s' "$matches" | head -n 1 | cut -c1-160)"
     fi
   done

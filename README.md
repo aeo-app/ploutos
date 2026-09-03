@@ -41,7 +41,7 @@ ploutos/
 cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 # Frontend
-cd frontend && REACT_APP_API_URL=http://localhost:8000/api/v1 npm start
+cd frontend && REACT_APP_API_BASE_URL=http://localhost:8000/api/v1 npm start
 ```
 
 ### Prerequisites
@@ -63,9 +63,11 @@ The hook blocks common secret files and credential patterns in staged changes, a
 
 ## Backend
 
-**Stack**: FastAPI, uvicorn, boto3 (Bedrock + Cognito + DynamoDB), Pydantic v2
+**Stack**: FastAPI, uvicorn, boto3 (Bedrock + Cognito + DynamoDB + S3), Pydantic v2
 
 ### Environment Variables
+
+See `backend/.env.example` for the full list. Key ones:
 
 | Variable | Default | Required |
 |----------|---------|----------|
@@ -74,10 +76,12 @@ The hook blocks common secret files and credential patterns in staged changes, a
 | `AWS_REGION` | `ap-southeast-1` | |
 | `COGNITO_USER_POOL_ID` | — | For auth |
 | `COGNITO_CLIENT_ID` | — | For auth |
+| `AIRWALLEX_ENV` | `demo` | `demo`/`prod` — payments |
+| `CANVA_CLIENT_ID` / `CANVA_CLIENT_SECRET` | — | Canva integration |
 
 ### API Endpoints
 
-All SEO endpoints require a valid Cognito `Bearer` token.
+All SEO, social, blog, article, payment, canva, admin and social-publish endpoints require a valid Cognito `Bearer` token (payment webhook uses an Airwallex HMAC signature). Full endpoint inventory in `documents/backend-architecture.md` §3. Highlights:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -89,6 +93,12 @@ All SEO endpoints require a valid Cognito `Bearer` token.
 | POST | `/api/v1/seo/content-strategy` | Content strategy generator |
 | POST | `/api/v1/social/relocation-calendar` | Relocation content calendar |
 | GET | `/api/v1/history` | User analysis history |
+| GET | `/api/v1/payment/plans` | Plan catalog (Starter/Growth/Scale) |
+| POST | `/api/v1/payment/create-intent` | Start Airwallex payment |
+| POST | `/api/v1/blog/generate` | Generate a blog post |
+| POST | `/api/v1/articles/research-brief` | Article research brief |
+
+**Free-preview / paid model**: no endpoint requires payment to be called. Unpaid users get a real-but-partial result — a couple of real rows per table, with the rest returned as zero-cost `locked: true` placeholders. Paid users get full rows. Payment is triggered contextually by the frontend (a locked row's "Unlock" button), never forced upfront. See `documents/backend-architecture.md` §7.
 
 ### Anti-Hallucination Pipeline
 
@@ -106,9 +116,11 @@ Two codebases exist in `frontend/`:
 - **`src/`** — modular version (components, pages, context, api). This is the active codebase.
 - **Root `App.jsx`** — legacy single-file version. Not used by CRA.
 
-**Auth**: Cognito tokens in `localStorage`. Auto-redirect on expiry. See `frontend/TOKEN_EXPIRY_USAGE.md`.
+**Auth**: Password-based — email + password → Cognito (tokens in `localStorage`). Email OTP only for signup confirmation. Auto-redirect on expiry. See `TOKEN_EXPIRY_USAGE.md`.
 
-**Design**: Dark theme, CSS custom properties, Plus Jakarta Sans + Syne display fonts.
+**Payments**: Contextual, not a gate. Free-preview results carry `locked: true` items; a `402` or a locked teaser opens an Airwallex checkout modal. `PaymentContext` exposes `isPaid`.
+
+**Design**: Dark theme, CSS custom properties, Plus Jakarta Sans + Inter fonts.
 
 ## Infrastructure
 
