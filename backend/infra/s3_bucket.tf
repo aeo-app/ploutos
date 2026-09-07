@@ -34,6 +34,20 @@ resource "aws_s3_bucket_ownership_controls" "media_uploads" {
   }
 }
 
+resource "aws_s3_bucket_policy" "media_uploads_public_read" {
+  bucket = aws_s3_bucket.media_uploads.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "PublicReadForSocialPublishing"
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "s3:GetObject"
+      Resource  = "${aws_s3_bucket.media_uploads.arn}/uploads/*"
+    }]
+  })
+}
+
 resource "aws_s3_bucket_cors_configuration" "media_uploads" {
   bucket = aws_s3_bucket.media_uploads.id
   cors_rule {

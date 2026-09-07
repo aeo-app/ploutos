@@ -55,14 +55,19 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
       .catch(err => console.warn('[SocialPublishPanel] status refresh failed:', err?.message || err));
   };
 
-  const handleSendInvite = async (connectGroup) => {
+  const handleConnect = async (connectGroup) => {
     setSendingInvite(connectGroup);
     setError(null);
     try {
+      if (connectGroup === 'meta' && api.connect) {
+        const { authorize_url } = await api.connect('meta');
+        window.location.href = authorize_url;
+        return;
+      }
       const { invite_url } = await api.createInvite({ connect_group: connectGroup });
       setInviteLinks(prev => ({ ...prev, [connectGroup]: { url: invite_url, copied: false } }));
     } catch (e) {
-      setError(e.message || `Could not create an invite for ${connectGroup}.`);
+      setError(e.message || `Could not start the ${connectGroup} connection.`);
     } finally {
       setSendingInvite(null);
     }
@@ -121,6 +126,7 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
 
   const selectedPlatforms = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
   const isConnected = (platform) => statusList?.find(p => p?.platform === platform)?.connected;
+  const uploadState = uploading ? 'Uploading image' : uploadedUrl ? 'Ready to post' : 'No upload selected';
 
   const buildImageSourcePayload = () => {
     if (imageSource === 'poster') {
@@ -193,14 +199,22 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
                   {disabledForMode && <span className={s.notSchedulable}>(not schedulable)</span>}
                 </label>
                 {connected ? (
-                  <span className={s.connectedBadge}>Connected</span>
+                  <span className={s.connectedBadge}>
+                    Connected{statusList.find(p => p?.platform === platform)?.account_label
+                      ? `: ${statusList.find(p => p?.platform === platform).account_label}`
+                      : ''}
+                  </span>
                 ) : api.createInvite ? (
                   <button
                     type="button" className={s.connectBtn}
                     disabled={sendingInvite === meta.connectGroup}
-                    onClick={() => handleSendInvite(meta.connectGroup)}
+                    onClick={() => handleConnect(meta.connectGroup)}
                   >
-                    {sendingInvite === meta.connectGroup ? 'Creating…' : invite ? 'New invite link' : 'Send invite to page admin'}
+                    {sendingInvite === meta.connectGroup
+                      ? 'Connecting…'
+                      : invite
+                        ? 'New invite link'
+                        : (meta.connectGroup === 'meta' ? 'Connect account' : 'Send invite to page admin')}
                   </button>
                 ) : (
                   <span className={s.notConnectedText}>Not connected by customer</span>
@@ -233,6 +247,13 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
         );
       })}
 
+      <div className={s.sectionHeading}>
+        <div>
+          <div className={s.sectionTitle}>1. Choose your image</div>
+          <div className={s.sectionHint}>Uploaded images stay ready here until you post or schedule them.</div>
+        </div>
+        {imageSource === 'upload' && <span className={`${s.statePill} ${uploadedUrl ? s.stateReady : ''}`}>{uploadState}</span>}
+      </div>
       <div className={s.sourceToggleRow}>
         {posterId && (
           <button type="button" className={`${s.toggleBtn} ${imageSource === 'poster' ? s.toggleBtnActive : ''}`} onClick={() => setImageSource('poster')}>
@@ -248,13 +269,24 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
         <div className={s.uploadRow}>
           <input type="file" accept="image/*" onChange={handleFileChange} className={s.fileInput} />
           {uploading && <span className={s.loadingText}>Uploading…</span>}
-          {uploadedUrl && !uploading && <img className={s.uploadPreview} src={uploadedUrl} alt="Upload preview" />}
+          {uploadedUrl && !uploading && (
+            <div className={s.uploadedAsset}>
+              <img className={s.uploadPreview} src={uploadedUrl} alt="Uploaded post preview" />
+              <div><strong>Uploaded image</strong><span>Ready for posting</span></div>
+            </div>
+          )}
         </div>
       )}
       {imageSource === 'poster' && !posterId && (
         <div className={s.hintText}>No Canva poster created yet for this post — create one above, or upload your own image instead.</div>
       )}
 
+      <div className={s.sectionHeading}>
+        <div>
+          <div className={s.sectionTitle}>2. Decide when to publish</div>
+          <div className={s.sectionHint}>Posted and scheduled items appear in the status board below.</div>
+        </div>
+      </div>
       <div className={s.sourceToggleRow}>
         <button type="button" className={`${s.toggleBtn} ${mode === 'now' ? s.toggleBtnActive : ''}`} onClick={() => switchMode('now')}>
           Post now
@@ -290,18 +322,24 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
       {error && <div className={s.errorText}>{error}</div>}
 
       {results && (
-        <div className={s.resultsList}>
+        <div className={s.outcomeBox}>
+          <div className={s.outcomeTitle}>Published status</div>
+          <div className={s.resultsList}>
           {results.map(r => (
             <div key={r?.platform} className={r?.success ? s.resultSuccess : s.resultError}>
               {PLATFORM_META[r?.platform]?.icon} {PLATFORM_META[r?.platform]?.label}: {r?.success ? '✓ Posted' : `✗ ${r?.error || 'Failed'}`}
             </div>
           ))}
+          </div>
         </div>
       )}
 
       {scheduleConfirmation && (
-        <div className={s.resultSuccess}>
-          ✓ Scheduled for {new Date(scheduleConfirmation.scheduled_time).toLocaleString()}
+        <div className={s.outcomeBox}>
+          <div className={s.outcomeTitle}>Scheduled status</div>
+          <div className={s.resultSuccess}>
+            ✓ Queued for {new Date(scheduleConfirmation.scheduled_time).toLocaleString()}
+          </div>
         </div>
       )}
     </div>

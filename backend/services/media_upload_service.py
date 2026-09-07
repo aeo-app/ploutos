@@ -24,7 +24,7 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 
 BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-uploads")
-AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+MEDIA_UPLOAD_REGION = os.getenv("MEDIA_UPLOAD_REGION", "ap-southeast-2")
 EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
 EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
 ROLE_ARN = os.getenv("MEDIA_UPLOAD_ROLE_ARN")
@@ -43,16 +43,16 @@ def _get_s3_client():
     if _s3 is None:
         endpoint = os.getenv("S3_ENDPOINT_URL")  # for local dev against a fake S3 (e.g. moto/localstack)
         if endpoint:
-            _s3 = boto3.client("s3", region_name=AWS_REGION, endpoint_url=endpoint)
+            _s3 = boto3.client("s3", region_name=MEDIA_UPLOAD_REGION, endpoint_url=endpoint)
         else:
             sts = boto3.client(
                 "sts", aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY, region_name=AWS_REGION,
+                aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY, region_name=MEDIA_UPLOAD_REGION,
             )
             resp = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="media-upload-session")
             creds = resp["Credentials"]
             _s3 = boto3.client(
-                "s3", region_name=AWS_REGION,
+                "s3", region_name=MEDIA_UPLOAD_REGION,
                 aws_access_key_id=creds["AccessKeyId"], aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
@@ -76,4 +76,4 @@ def upload_image(image_bytes: bytes, filename: str, user_id: str) -> str:
         logger.error(f"[media_upload] S3 put_object failed: {e.response['Error']}")
         raise MediaUploadError(f"Could not upload image: {e.response['Error'].get('Message', e)}")
 
-    return f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
+    return f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/{key}"

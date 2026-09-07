@@ -50,6 +50,9 @@ export function ConnectPageApprovalPage({ inviteToken }) {
     try {
       const result = await invitesApi.selectPage(inviteToken, pageId);
       setApprovedPage(result.selected_page_label);
+      if (data.return_to_app) {
+        window.location.replace(`${window.location.origin}/?social_publish=connected`);
+      }
     } catch (e) {
       setError(e.message || 'Could not connect that page.');
     } finally {

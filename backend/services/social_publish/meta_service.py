@@ -97,6 +97,34 @@ def _post(path: str, data: dict) -> dict:
     return resp.json()
 
 
+def _post_multipart(path: str, data: dict, files: dict) -> dict:
+    resp = requests.post(
+        f"{GRAPH_BASE}{path}", data=data, files=files, timeout=REQUEST_TIMEOUT,
+    )
+    if not resp.ok:
+        logger.error(f"[meta] POST {path} -> {resp.status_code}: {resp.text}")
+        raise MetaError(f"Meta API error ({resp.status_code}): {resp.text}", resp.status_code)
+    return resp.json()
+
+
+def _download_image(image_url: str) -> tuple[bytes, str]:
+    """Fetch and validate an image before sending it to a platform."""
+    try:
+        resp = requests.get(image_url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise MetaError(f"Could not fetch image URL for Facebook: {e}") from e
+
+    content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].lower()
+    if not content_type.startswith("image/"):
+        raise MetaError(
+            f"Image URL returned {content_type or 'no content type'}, not an image"
+        )
+    if not resp.content:
+        raise MetaError("Image URL returned an empty file")
+    return resp.content, content_type
+
+
 def exchange_code_for_token(code: str) -> dict:
     """Short-lived user access token (~1-2 hours)."""
     _require_config()
@@ -129,9 +157,12 @@ def list_pages(user_access_token: str) -> list[dict]:
 
 def post_to_facebook_page(page_id: str, page_access_token: str, image_url: str, caption: str) -> str:
     """Returns the new post's Facebook object ID."""
-    resp = _post(f"/{page_id}/photos", {
-        "url": image_url, "caption": caption, "access_token": page_access_token,
-    })
+    image_bytes, content_type = _download_image(image_url)
+    resp = _post_multipart(
+        f"/{page_id}/photos",
+        {"caption": caption, "access_token": page_access_token},
+        {"source": ("post-image", image_bytes, content_type)},
+    )
     post_id = resp.get("post_id") or resp.get("id")
     if not post_id:
         raise MetaError(f"Facebook post did not return an id: {resp}")

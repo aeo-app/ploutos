@@ -15,11 +15,10 @@ BOTH a `facebook` and an `instagram` social connection record if an
 Instagram Business Account is linked, so the rest of the app (status,
 publish) can treat all four platforms uniformly.
 
-Simplification worth knowing: if a connected account manages multiple
-Facebook Pages / LinkedIn Company Pages / Google Business locations, this
-picks the FIRST one found rather than presenting a picker. Fine for a
-single-location business; would need a picker UI added for a multi-location
-one.
+Meta connections fetch every Facebook Page the authorizing user manages and
+save the Page token only after the authorizing user picks a specific Page in
+the page-picker UI. LinkedIn and Google Business retain their own connection
+flows.
 """
 from __future__ import annotations
 
@@ -104,8 +103,20 @@ async def disconnect(platform: str, user_id: str = Depends(get_current_user_id))
 # ── Meta (Facebook + Instagram) ──────────────────────────────────────────────
 @router.get("/meta/connect", response_model=ConnectResponse, summary="Get the Meta authorize URL (covers Facebook + Instagram)")
 async def meta_connect(user_id: str = Depends(get_current_user_id)):
-    state = f"{user_id}:{secrets.token_urlsafe(24)}"
-    return ConnectResponse(authorize_url=meta.build_authorize_url(state))
+    # Use the same one-time page-picker flow as a customer invite. The
+    # authenticated user is the requester, so the resulting connection is
+    # stored on their account after they choose a specific Page.
+    invite_token = secrets.token_urlsafe(24)
+    save_page_invite(
+        invite_token=invite_token,
+        platform="meta",
+        requested_by_user_id=user_id,
+        requested_by_label="Your account",
+        return_to_app=True,
+    )
+    return ConnectResponse(
+        authorize_url=meta.build_authorize_url(_invite_state(invite_token)),
+    )
 
 
 @router.get("/meta/callback", summary="Meta OAuth redirect target")
@@ -125,40 +136,13 @@ async def meta_callback(
             f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
         )
         return _redirect_result("error", reason=error_description or "Missing code or state from Meta")
-    user_id, sep, _ = state.partition(":")
-    if not sep or not user_id:
-        return _redirect_result("error", reason="Malformed state parameter")
-
     is_invite, invite_token = _is_invite_state(state)
     if is_invite:
         return await _handle_meta_invite_callback(invite_token, code)
 
-    try:
-        short_lived = meta.exchange_code_for_token(code)
-        long_lived = meta.exchange_for_long_lived_token(short_lived["access_token"])
-        user_token = long_lived["access_token"]
-
-        pages = meta.list_pages(user_token)
-        if not pages:
-            logger.warning(f"[social-publish] Meta connect for {user_id}: no Facebook Pages found")
-            return _redirect_result("error", reason="No Facebook Pages found for this account")
-
-        page = pages[0]  # see module docstring — first Page, no picker yet
-        save_social_connection(
-            user_id=user_id, platform="facebook", access_token=page["access_token"],
-            extra={"page_id": page["id"], "label": page.get("name", "")},
-        )
-
-        ig_account = page.get("instagram_business_account")
-        if ig_account and ig_account.get("id"):
-            save_social_connection(
-                user_id=user_id, platform="instagram", access_token=page["access_token"],
-                extra={"ig_user_id": ig_account["id"], "page_id": page["id"], "label": page.get("name", "")},
-            )
-        return _redirect_result("connected")
-    except Exception as e:
-        logger.error(f"[social-publish] Meta OAuth callback failed: {e}", exc_info=True)
-        return _redirect_result("error", reason=str(e))
+    # Meta connections must use a server-created invite state so the Page
+    # selection step cannot be skipped and state cannot be forged.
+    return _redirect_result("error", reason="Invalid or expired Meta connection state")
 
 
 # ── LinkedIn ─────────────────────────────────────────────────────────────────
@@ -321,10 +305,10 @@ async def upload_media(user_id: str = Depends(get_current_user_id), file: Upload
 
 
 # ── Page connection invitations ─────────────────────────────────────────────
-# Users never connect their own Facebook/Instagram/LinkedIn/Google Business
-# account directly anymore (see the removed direct-connect UI in
-# SocialPublishPanel.js) — instead, they generate an invite link and send
-# it to whoever actually administers the page/profile they want connected.
+# For a normal Meta connection, the authenticated user starts the same
+# server-backed picker used by invites. For LinkedIn/Google Business, users
+# still generate an invite link and send it to whoever administers the
+# page/profile they want connected.
 # That person clicks the link, authorizes DIRECTLY with the platform
 # themselves (there's no way around this — every one of these platforms
 # requires the actual admin to go through their own OAuth consent screen;
@@ -404,6 +388,7 @@ async def get_invite_public_status(invite_token: str):
             "platform": invite["platform"],
             "requested_by_label": invite["requested_by_label"],
             "selected_page_label": (invite.get("selected_page") or {}).get("label", ""),
+            "return_to_app": invite.get("return_to_app", False),
         }
     if invite["status"] == "pages_ready":
         return {
@@ -411,6 +396,7 @@ async def get_invite_public_status(invite_token: str):
             "platform": invite["platform"],
             "requested_by_label": invite["requested_by_label"],
             "available_pages": invite.get("available_pages", []),
+            "return_to_app": invite.get("return_to_app", False),
         }
     return {
         "stage": "pending",
@@ -635,3 +621,6 @@ async def cancel_scheduled(schedule_id: str, user_id: str = Depends(get_current_
     if not ok:
         raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for your account")
     return CancelScheduledPostResponse(cancelled=True)
+
+
+

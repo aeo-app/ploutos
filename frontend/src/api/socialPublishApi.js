@@ -62,11 +62,8 @@ export const socialPublishApi = {
   cancelScheduled: (scheduleId) => req("DELETE", `/social-publish/scheduled/${encodeURIComponent(scheduleId)}`),
 
   // ── Page connection invitations ──────────────────────────────────────────
-  // Users never connect their own account directly anymore — they send an
-  // invite link to whoever actually administers the page, that person
-  // approves it themselves. createInvite/listInvites are authenticated
-  // (the requester's own account); everything the approving admin uses is
-  // deliberately public/unauthenticated — see invitesApi below.
+  // Meta direct connections use the server-backed Page picker. The other
+  // connect groups can still be sent to an external page administrator.
   /** @param {object} payload - {connect_group: 'meta'|'linkedin'|'google_business', label?} */
   createInvite: (payload) => req("POST", "/social-publish/invites", payload),
   listInvites: () => req("GET", "/social-publish/invites"),

@@ -873,7 +873,7 @@ def save_page_invite(
     *, invite_token: str, platform: str, requested_by_user_id: str, requested_by_label: str,
     status: str = "pending", available_pages: Optional[list] = None,
     oauth_access_token: str = "", oauth_refresh_token: str = "",
-    selected_page: Optional[dict] = None,
+    selected_page: Optional[dict] = None, return_to_app: bool = False,
 ) -> None:
     table = _get_table()
     now = _now_iso()
@@ -891,6 +891,7 @@ def save_page_invite(
         "oauth_access_token": oauth_access_token,
         "oauth_refresh_token": oauth_refresh_token,
         "selected_page": selected_page or {},
+        "return_to_app": return_to_app,
         "created_at": now,
         "expires_at": expires_at,
         "approved_at": None,

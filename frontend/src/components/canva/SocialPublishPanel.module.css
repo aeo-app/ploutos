@@ -1,5 +1,10 @@
 .wrap { margin-top: 14px; padding: 14px; border: 1.5px dashed var(--c-slate-200); border-radius: var(--r-md); background: var(--c-slate-50); }
 .title { font-size: 12.5px; font-weight: 700; color: var(--c-slate-600); margin-bottom: 10px; }
+.sectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin: 14px 0 8px; }
+.sectionTitle { font-size: 12.5px; font-weight: 800; color: var(--c-slate-700); }
+.sectionHint { font-size: 11px; color: var(--c-slate-400); margin-top: 2px; }
+.statePill { font-size: 10.5px; font-weight: 800; color: var(--c-slate-500); background: var(--c-slate-100); padding: 5px 8px; border-radius: 999px; white-space: nowrap; }
+.stateReady { color: var(--c-success); background: #ecfdf3; }
 .loadingText { font-size: 12.5px; color: var(--c-slate-400); }
 
 .platformGrid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -43,6 +48,9 @@
 .toggleBtnActive { border-color: var(--c-indigo-500); color: var(--c-indigo-700); background: var(--c-indigo-50); }
 .uploadRow { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .fileInput { font-size: 12px; }
+.uploadedAsset { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--c-slate-700); }
+.uploadedAsset strong, .uploadedAsset span { display: block; }
+.uploadedAsset span { color: var(--c-success); margin-top: 2px; }
 .uploadPreview { width: 60px; height: 60px; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--c-slate-200); }
 .hintText { font-size: 11.5px; color: var(--c-slate-400); margin-bottom: 8px; line-height: 1.5; }
 .dateTimeInput {
@@ -50,6 +58,8 @@
   border: 1.5px solid var(--c-slate-200); margin-bottom: 6px;
 }
 .notConnectedText { font-size: 11px; color: var(--c-slate-400); font-style: italic; }
+.outcomeBox { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--c-slate-200); border-radius: var(--r-md); background: var(--c-white); }
+.outcomeTitle { font-size: 11px; font-weight: 800; color: var(--c-slate-500); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px; }
 
 .inviteLinkRow { margin-bottom: 12px; padding: 10px 12px; background: var(--c-indigo-50); border-radius: var(--r-md); border: 1px solid var(--c-indigo-100); }
 .inviteLinkHint { font-size: 11.5px; line-height: 1.5; color: var(--c-slate-600); margin-bottom: 8px; }
