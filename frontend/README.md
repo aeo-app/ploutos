@@ -1,14 +1,16 @@
 # APAC Intel — Premium Frontend
 
-Complete React SaaS application integrating all 5 backend API endpoints.
+> ⚠️ **Active codebase is `src/`.** The root `App.jsx`/`index.js` described below is the **legacy single-file version** and is NOT what CRA runs — treat that section as reference only. For the current architecture, source of truth, and conventions see `../documents/frontend-architecture.md`.
+
+Complete React SaaS application integrating the backend API endpoints.
 
 ## Quick Start
 
 ```bash
 npm install
 
-# Point at your FastAPI backend
-echo "REACT_APP_API_URL=http://localhost:8000/api/v1" > .env
+# Point at your FastAPI backend (read by src/api/authApi.js)
+echo "REACT_APP_API_BASE_URL=http://localhost:8000/api/v1" > .env
 
 npm start
 # → http://localhost:3000
