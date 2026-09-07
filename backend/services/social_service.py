@@ -1,5 +1,5 @@
 """
-services/social_service.py — Relocation Social Media Content Calendar
+services/social_service.py — Social Media Content Calendar (any industry)
 ========================================================================
 Reuses the Bedrock plumbing (_converse, _parse_json, retry/timeout config)
 already built in bedrock_service.py rather than duplicating a second
@@ -38,8 +38,8 @@ from models.social_models import (
     DailySchedule,
     DayScheduleSlot,
     RecommendedTimes,
-    RelocationSocialRequest,
-    RelocationSocialResponse,
+    SocialCalendarRequest,
+    SocialCalendarResponse,
     SocialPost,
     TONES,
 )
@@ -139,39 +139,45 @@ def _build_schedule_slots(start_date: date, end_date: date, seed: int | None = N
 
 
 # ── System prompt ───────────────────────────────────────────────────────────
-SOCIAL_SYSTEM_PROMPT = """You are an advanced social media strategist and copywriter
-specialised in relocation services, writing platform-native captions for Instagram,
-Facebook, LinkedIn, and Google Business Profile.
+SOCIAL_SYSTEM_PROMPT = """You are an advanced social media strategist and copywriter who
+adapts to whatever industry and business you're writing for — you never assume the company
+is in any particular line of work. Every post must be grounded in the SPECIFIC company's
+actual products, services, industry, and target audience as given in the prompt — never
+generic filler that could apply to any business, and never content that assumes an
+industry other than the one you were told about.
 
 CRITICAL RULES:
 - Always respond with ONLY valid JSON — no markdown fences, no preamble, no commentary,
   nothing before the opening brace or after the closing brace.
-- Every field MUST be populated with specific, non-generic content. Never write filler
-  like "Great tips for moving!" with no substance.
+- Every field MUST be populated with specific, non-generic content grounded in THIS
+  company's actual business — never write filler like "Great tips!" with no substance,
+  and never content that reads as if written for a different kind of business.
 - INSTAGRAM: hook-based opening line, emojis welcome, short and punchy, 10-15 hashtags.
 - FACEBOOK: a bit more detail than Instagram, warm and informative tone.
-- LINKEDIN: professional register, positions the company as a credible authority,
-  insight-driven — no emojis, no hashtag spam.
-- GOOGLE BUSINESS: short, SEO-focused, must naturally include the country name and a
-  relocation-related keyword, ends with a strong call to action.
+- LINKEDIN: professional register, positions the company as a credible authority in its
+  actual industry, insight-driven — no emojis, no hashtag spam.
+- GOOGLE BUSINESS: short, SEO-focused, must naturally include the company's actual
+  location/market and a keyword relevant to what it actually does, ends with a strong
+  call to action.
 - GOOGLE BUSINESS CAPTIONS MUST NEVER CONTAIN A CUSTOMER TESTIMONIAL, REVIEW, OR QUOTE
   FROM A CUSTOMER — this is a hard rule with NO exceptions, even when the post's category
   is "Customer Experience". For that category, write the Google Business caption as a
-  plain informative/service-focused post instead (e.g. about the service or destination),
-  never as a retelling of "a customer said...".
+  plain informative/service-focused post instead (about the product, service, or
+  location), never as a retelling of "a customer said...".
 - If the assigned category is "Customer Experience", the story must read as an engaging,
-  illustrative, ILLUSTRATIVE narrative — never claim it is a specific real, verified person's
-  account, never invent a real name presented as fact. Write it in a way that is honestly
-  presentable as a simulated/illustrative story, not a fabricated real testimonial.
+  illustrative narrative relevant to THIS company's actual products/services — never claim
+  it is a specific real, verified person's account, never invent a real name presented as
+  fact. Write it in a way that is honestly presentable as a simulated/illustrative story,
+  not a fabricated real testimonial.
 - Match the assigned tone, content_type, and cta_style exactly as given for each post —
   these were already decided; your job is the creative writing within them.
 - If content_type is "Carousel", write 5-7 slides: slide 1 is the hook, the middle slides
   carry the content, the final slide is the CTA. If "Poster", omit carousel_slides entirely.
-- Hashtags: 10-15 relevant, non-repetitive Instagram-style tags (no spaces, include the
-  country name and relocation-relevant terms).
+- Hashtags: 10-15 relevant, non-repetitive Instagram-style tags (no spaces) — reflect the
+  ACTUAL industry, products/services, and market given, not a generic or unrelated set.
 - Never fabricate specific verifiable facts (exact prices, named real people, named real
-  competitor claims) — keep content engaging and specific to the *service and country*
-  without inventing unverifiable data points.
+  competitor claims) — keep content engaging and specific to what this company actually
+  offers and where, without inventing unverifiable data points.
 - If contact details (phone/email/website/social handles) are provided, weave the most
   relevant one naturally into the CTA or caption where it fits (e.g. Google Business ending
   with the phone number or website) — never invent contact details that weren't given, and
@@ -179,7 +185,7 @@ CRITICAL RULES:
 """
 
 
-def _company_contact_line(req: RelocationSocialRequest) -> str:
+def _company_contact_line(req: SocialCalendarRequest) -> str:
     c = req.company
     parts = []
     if c.phone:
@@ -197,7 +203,7 @@ def _company_contact_line(req: RelocationSocialRequest) -> str:
     return " | ".join(parts) if parts else "(none provided — don't invent any)"
 
 
-def _build_day_prompt(req: RelocationSocialRequest, day: dict) -> str:
+def _build_day_prompt(req: SocialCalendarRequest, day: dict) -> str:
     posts_spec = "\n".join(
         f"""  Post {p['post_number']}: content_type="{p['content_type']}", """
         f"""category="{p['category']}", tone="{p['tone']}", cta_style="{p['cta_style']}\""""
@@ -209,13 +215,18 @@ def _build_day_prompt(req: RelocationSocialRequest, day: dict) -> str:
         if req.content_suggestions and req.content_suggestions.strip() else ""
     )
     return f"""
-Country: {req.country}
 Company: {req.company.name}
+Industry: {req.industry}
+What this company actually does: {req.business_description}
+Target audience: {req.target_audience}
+Market: {req.market}
 Contact details available (use naturally where relevant, don't invent others): {_company_contact_line(req)}
 Date: {day['date']} ({day['day_of_week']})
 {suggestions_block}
 Write the creative content for exactly 2 posts today, matching these pre-assigned specs
-EXACTLY (content_type/category/tone/cta_style are fixed — do not change them):
+EXACTLY (content_type/category/tone/cta_style are fixed — do not change them). Ground every
+post in what THIS company actually does — its real products/services, industry, and target
+audience above — never generic content, and never content that assumes a different industry:
 {posts_spec}
 
 Return a JSON object with EXACTLY this shape:
@@ -295,7 +306,7 @@ professional with no emojis, etc.) even while applying the requested edit."""
 
 
 def _generate_day_posts(
-    req: RelocationSocialRequest, day: dict, usage_tracker: TokenUsageTracker | None = None
+    req: SocialCalendarRequest, day: dict, usage_tracker: TokenUsageTracker | None = None
 ) -> DailySchedule:
     prompt = _build_day_prompt(req, day)
     has_carousel = any(p["content_type"] == "Carousel" for p in day["posts"])
@@ -310,7 +321,7 @@ def _generate_day_posts(
 
 
 def _run_days_concurrently(
-    req: RelocationSocialRequest, day_slots: list[dict],
+    req: SocialCalendarRequest, day_slots: list[dict],
     usage_tracker: TokenUsageTracker | None = None,
 ) -> tuple[list[DailySchedule], dict[str, str]]:
     schedules: dict[str, DailySchedule] = {}
@@ -344,11 +355,11 @@ def _locked_day_slot(day: dict) -> DayScheduleSlot:
     )
 
 
-def generate_relocation_calendar(
-    req: RelocationSocialRequest,
+def generate_social_calendar(
+    req: SocialCalendarRequest,
     usage_tracker: TokenUsageTracker | None = None,
     is_paid: bool = True,
-) -> RelocationSocialResponse:
+) -> SocialCalendarResponse:
     """
     - Paid users: every day in the requested range is fully generated
       (concurrently, bounded by MAX_CONCURRENT_DAYS).
@@ -363,7 +374,7 @@ def generate_relocation_calendar(
     locked_slots_src = [] if is_paid else day_slots[1:]
 
     logger.info(
-        f"[social] relocation_calendar — {req.country} — {period_label} "
+        f"[social] social_calendar — industry={req.industry!r} market={req.market!r} — {period_label} "
         f"({len(day_slots)} days requested, {len(real_slots)} to generate for real, is_paid={is_paid})"
     )
 
@@ -375,8 +386,9 @@ def generate_relocation_calendar(
     slots += [_locked_day_slot(day) for day in locked_slots_src]
     slots.sort(key=lambda s: s.date)
 
-    return RelocationSocialResponse(
-        country=req.country,
+    return SocialCalendarResponse(
+        industry=req.industry,
+        market=req.market,
         company=req.company,
         period_label=period_label,
         days=slots,
@@ -385,8 +397,8 @@ def generate_relocation_calendar(
 
 
 # ── Streaming (SSE) path ────────────────────────────────────────────────────
-async def stream_relocation_calendar_events(
-    req: RelocationSocialRequest, is_disconnected,
+async def stream_social_calendar_events(
+    req: SocialCalendarRequest, is_disconnected,
     usage_tracker: TokenUsageTracker | None = None,
     is_paid: bool = True,
 ):
@@ -398,7 +410,7 @@ async def stream_relocation_calendar_events(
       day_error    — a day failed; the rest keep going
       done         — {"failed_dates": {...}, "result": {...}}
 
-    Same free-preview rule as generate_relocation_calendar: unpaid users get
+    Same free-preview rule as generate_social_calendar: unpaid users get
     only the FIRST requested day generated for real; every other day is
     emitted immediately as `day_locked` with no Bedrock call made for it.
     """
@@ -450,8 +462,9 @@ async def stream_relocation_calendar_events(
     all_slots += list(locked_by_date.values())
     all_slots.sort(key=lambda s: s.date)
 
-    result = RelocationSocialResponse(
-        country=req.country,
+    result = SocialCalendarResponse(
+        industry=req.industry,
+        market=req.market,
         company=req.company,
         period_label=period_label,
         days=all_slots,

@@ -858,6 +858,118 @@ def cancel_scheduled_post(schedule_id: str, user_id: str) -> bool:
     return True
 
 
+# ── Page connection invitations ─────────────────────────────────────────────
+# The person approving a connection (a page/profile admin) may have no
+# account on this platform at all — they just click a link, authorize with
+# Facebook/LinkedIn/Google directly, and pick a page. So this can't be
+# keyed under the requester's user_id the way everything else in this file
+# is; it needs its own globally-addressable-by-token storage, same
+# architectural reason as the scheduled-posts queue above.
+INVITE_PK = "PAGE_INVITE"
+INVITE_TTL_DAYS = 7
+
+
+def save_page_invite(
+    *, invite_token: str, platform: str, requested_by_user_id: str, requested_by_label: str,
+    status: str = "pending", available_pages: Optional[list] = None,
+    oauth_access_token: str = "", oauth_refresh_token: str = "",
+    selected_page: Optional[dict] = None,
+) -> None:
+    table = _get_table()
+    now = _now_iso()
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)).isoformat().replace("+00:00", "Z")
+    item = {
+        "PK": INVITE_PK,
+        "SK": invite_token,
+        "analysis_id": invite_token,  # shared GSI hash key, same pattern as scheduled posts/posters
+        "invite_token": invite_token,
+        "platform": platform,
+        "requested_by_user_id": requested_by_user_id,
+        "requested_by_label": requested_by_label,
+        "status": status,  # pending | pages_ready | approved | expired | cancelled
+        "available_pages": available_pages or [],
+        "oauth_access_token": oauth_access_token,
+        "oauth_refresh_token": oauth_refresh_token,
+        "selected_page": selected_page or {},
+        "created_at": now,
+        "expires_at": expires_at,
+        "approved_at": None,
+    }
+    try:
+        table.put_item(Item=_to_dynamo(item))
+        logger.info(f"[dynamo] page invite {invite_token} created for platform={platform} by user={requested_by_user_id}")
+    except ClientError as e:
+        logger.error(f"[dynamo] save_page_invite failed: {e.response['Error']}")
+        raise
+
+
+def get_page_invite(invite_token: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": INVITE_PK, "SK": invite_token})
+        item = resp.get("Item")
+        if not item:
+            return None
+        invite = _from_dynamo(item)
+        # Lazily expire — cheaper than a scheduled sweep for something with
+        # no functional cost to checking at read time.
+        if invite.get("status") == "pending" and invite.get("expires_at"):
+            try:
+                if datetime.fromisoformat(invite["expires_at"].replace("Z", "+00:00")) < datetime.now(timezone.utc):
+                    invite["status"] = "expired"
+                    update_page_invite(invite_token, status="expired")
+            except (ValueError, AttributeError):
+                pass
+        return invite
+    except ClientError as e:
+        logger.error(f"[dynamo] get_page_invite failed: {e.response['Error']}")
+        raise
+
+
+def list_page_invites_for_user(user_id: str, limit: int = 100) -> list[dict]:
+    """All invites a given account has SENT (not received — the receiver
+    doesn't need an account). Scans the global invite partition and filters
+    in Python, same trade-off as list_scheduled_posts_for_user — fine at
+    the volume a single team's invite history actually reaches."""
+    table = _get_table()
+    try:
+        resp = table.query(KeyConditionExpression=Key("PK").eq(INVITE_PK), Limit=limit)
+        items = [_from_dynamo(i) for i in resp.get("Items", [])]
+        items = [i for i in items if i.get("requested_by_user_id") == user_id]
+        items.sort(key=lambda i: i.get("created_at", ""), reverse=True)
+        return items
+    except ClientError as e:
+        logger.error(f"[dynamo] list_page_invites_for_user failed: {e.response['Error']}")
+        raise
+
+
+def update_page_invite(invite_token: str, **fields) -> None:
+    """Generic partial update — status transitions, storing the OAuth
+    token once the admin authorizes, storing available_pages once fetched,
+    recording the final selected_page once approved."""
+    table = _get_table()
+    if not fields:
+        return
+    set_parts, values, names = [], {}, {}
+    for i, (k, v) in enumerate(fields.items()):
+        set_parts.append(f"#f{i} = :v{i}")
+        names[f"#f{i}"] = k
+        values[f":v{i}"] = v
+    if "status" in fields and fields["status"] == "approved":
+        set_parts.append("approved_at = :approved_at")
+        values[":approved_at"] = _now_iso()
+    try:
+        table.update_item(
+            Key={"PK": INVITE_PK, "SK": invite_token},
+            UpdateExpression="SET " + ", ".join(set_parts),
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+    except ClientError as e:
+        logger.error(f"[dynamo] update_page_invite failed: {e.response['Error']}")
+        raise
+
+
 def save_poster(
     *,
     user_id: str,

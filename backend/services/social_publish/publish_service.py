@@ -67,8 +67,8 @@ def publish_to_platform(user_id: str, platform: str, image_url: str, caption: st
             post_id = meta.post_to_instagram(conn["extra"]["ig_user_id"], conn["access_token"], image_url, caption)
         elif platform == "linkedin":
             image_bytes = requests.get(image_url, timeout=30).content
-            image_urn = li.upload_image(conn["access_token"], conn["extra"]["organization_urn"], image_bytes)
-            post_id = li.create_post(conn["access_token"], conn["extra"]["organization_urn"], caption, image_urn)
+            image_urn = li.upload_image(conn["access_token"], conn["extra"]["person_urn"], image_bytes)
+            post_id = li.create_post(conn["access_token"], conn["extra"]["person_urn"], caption, image_urn)
         elif platform == "google_business":
             token = _get_valid_google_token(user_id, conn)
             post_id = gbp.create_local_post(

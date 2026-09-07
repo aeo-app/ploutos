@@ -31,7 +31,7 @@ class AdminCalendarSummary(BaseModel):
     analysis_id: str
     user_id: str
     company_name: str
-    country: str  # stored under the generic "market" field — see routers/social_router.py's _save_social
+    market: str
     created_at: str
     status: str
 
@@ -44,11 +44,11 @@ class AdminCalendarDetailResponse(BaseModel):
     analysis_id: str
     user_id: str
     company_name: str
-    country: str
+    market: str
     created_at: str
     status: str
-    result: dict   # the saved RelocationSocialResponse payload
-    request: dict  # the original RelocationSocialRequest that generated it
+    result: dict   # the saved SocialCalendarResponse payload
+    request: dict  # the original SocialCalendarRequest that generated it
 
 
 class UpdateCalendarRequest(BaseModel):
@@ -119,12 +119,19 @@ class CreateBlogForUserRequest(BaseModel):
 
 
 class CreateCalendarForUserRequest(BaseModel):
-    """Admin creates a brand-new relocation social media calendar ON BEHALF
-    OF a specific customer — saved under THAT user's account, same
-    "create, not just revise" capability CreateBlogForUserRequest gives for
-    blogs. Company contact details default to the customer's own registry
-    info if left blank, but can be overridden here."""
-    country: str = Field(..., min_length=1, example="Canada")
+    """Admin creates a brand-new social media calendar ON BEHALF OF a
+    specific customer — saved under THAT user's account, same "create, not
+    just revise" capability CreateBlogForUserRequest gives for blogs.
+    Company contact details default to the customer's own registry info if
+    left blank, but can be overridden here. industry/business_description/
+    target_audience are required — the customer registry doesn't store
+    these today, so there's nothing to default from; the admin fills them
+    in directly (typically copy-pasted from what the customer already told
+    them)."""
+    market: str = Field(..., min_length=1, example="Austin, Texas")
+    industry: str = Field(..., min_length=1, example="Bakery & Café")
+    business_description: str = Field(..., min_length=1, max_length=1500, example="A boutique bakery specializing in artisan sourdough and custom cakes.")
+    target_audience: str = Field(..., min_length=1, max_length=500, example="Local families and event planners")
     start_date: str = Field(..., example="2026-09-01", description="YYYY-MM-DD, inclusive")
     end_date: str = Field(..., example="2026-09-14", description="YYYY-MM-DD, inclusive")
     phone: str = Field("", example="+65 6520 1914")
@@ -134,6 +141,6 @@ class CreateCalendarForUserRequest(BaseModel):
     facebook: str = ""
     linkedin: str = ""
     content_suggestions: str = Field(
-        "", max_length=2000, example="Focus more on families with school-age kids.",
+        "", max_length=2000, example="Focus more on our weekend workshop series.",
         description="Optional free-text guidance — same field as the regular user-facing calendar form.",
     )

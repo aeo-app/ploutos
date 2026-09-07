@@ -23,10 +23,10 @@ class BlogTopicSuggestion(BaseModel):
 
 
 class SuggestBlogTopicsRequest(BaseModel):
-    company_name: str = Field(..., example="APAC Relocation")
-    url: str = Field(..., example="https://apacrelocation.com")
-    market: str = Field(..., example="Singapore")
-    industry: str = Field(..., example="International Relocation Services")
+    company_name: str = Field(..., example="Your Company")
+    url: str = Field(..., example="https://www.example.com")
+    market: str = Field(..., example="Austin, Texas")
+    industry: str = Field(..., example="Bakery & Café")
     count: int = Field(8, ge=3, le=15, description="How many topic ideas to suggest")
 
 

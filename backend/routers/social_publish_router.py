@@ -35,22 +35,34 @@ from core.security import get_current_user_id
 from db import (
     cancel_scheduled_post,
     delete_social_connection,
+    get_page_invite,
     get_social_connection,
+    list_page_invites_for_user,
     list_scheduled_posts_for_user,
     list_social_connections,
+    save_page_invite,
     save_scheduled_post,
     save_social_connection,
+    update_page_invite,
 )
 from db.dynamo import get_poster
 from models.social_publish_models import (
+    AvailablePageOption,
     CancelScheduledPostResponse,
     ConnectResponse,
+    CreateInviteRequest,
+    CreateInviteResponse,
+    INVITABLE_CONNECT_GROUPS,
+    PageInviteListItem,
+    PageInviteListResponse,
     PublishRequest,
     PublishResponse,
     ScheduledPostListResponse,
     ScheduledPostSummary,
     ScheduleRequest,
     ScheduleResponse,
+    SelectInvitePageRequest,
+    SelectInvitePageResponse,
     SocialConnectionsStatusResponse,
     SocialPlatformStatus,
     UploadMediaResponse,
@@ -112,10 +124,15 @@ async def meta_callback(
             f"[social-publish] Meta callback incomplete or errored: error={error!r}, "
             f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
         )
-        return _redirect_result("error")
+        return _redirect_result("error", reason=error_description or "Missing code or state from Meta")
     user_id, sep, _ = state.partition(":")
     if not sep or not user_id:
-        return _redirect_result("error")
+        return _redirect_result("error", reason="Malformed state parameter")
+
+    is_invite, invite_token = _is_invite_state(state)
+    if is_invite:
+        return await _handle_meta_invite_callback(invite_token, code)
+
     try:
         short_lived = meta.exchange_code_for_token(code)
         long_lived = meta.exchange_for_long_lived_token(short_lived["access_token"])
@@ -124,7 +141,7 @@ async def meta_callback(
         pages = meta.list_pages(user_token)
         if not pages:
             logger.warning(f"[social-publish] Meta connect for {user_id}: no Facebook Pages found")
-            return _redirect_result("error")
+            return _redirect_result("error", reason="No Facebook Pages found for this account")
 
         page = pages[0]  # see module docstring — first Page, no picker yet
         save_social_connection(
@@ -141,7 +158,7 @@ async def meta_callback(
         return _redirect_result("connected")
     except Exception as e:
         logger.error(f"[social-publish] Meta OAuth callback failed: {e}", exc_info=True)
-        return _redirect_result("error")
+        return _redirect_result("error", reason=str(e))
 
 
 # ── LinkedIn ─────────────────────────────────────────────────────────────────
@@ -161,29 +178,32 @@ async def linkedin_callback(
             f"[social-publish] LinkedIn callback incomplete or errored: error={error!r}, "
             f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
         )
-        return _redirect_result("error")
+        return _redirect_result("error", reason=error_description or "Missing code or state from LinkedIn")
     user_id, sep, _ = state.partition(":")
     if not sep or not user_id:
-        return _redirect_result("error")
+        return _redirect_result("error", reason="Malformed state parameter")
+
+    is_invite, invite_token = _is_invite_state(state)
+    if is_invite:
+        return await _handle_linkedin_invite_callback(invite_token, code)
+
     try:
         tokens = li.exchange_code_for_token(code)
         access_token = tokens["access_token"]
 
-        orgs = li.list_organizations(access_token)
-        if not orgs:
-            logger.warning(f"[social-publish] LinkedIn connect for {user_id}: no administered Company Pages found")
-            return _redirect_result("error")
-
-        org = orgs[0]  # see module docstring — first Page, no picker yet
+        # No page-picker step here (unlike Meta) — posting to the member's
+        # own profile just needs to know who they are, not which of
+        # several pages to act as.
+        member = li.get_member_urn(access_token)
         save_social_connection(
             user_id=user_id, platform="linkedin", access_token=access_token,
             refresh_token=tokens.get("refresh_token", ""),
-            extra={"organization_urn": org["organization_urn"], "label": org["organization_urn"]},
+            extra={"person_urn": member["person_urn"], "label": member.get("name") or "LinkedIn profile"},
         )
         return _redirect_result("connected")
     except Exception as e:
         logger.error(f"[social-publish] LinkedIn OAuth callback failed: {e}", exc_info=True)
-        return _redirect_result("error")
+        return _redirect_result("error", reason=str(e))
 
 
 # ── Google Business Profile ──────────────────────────────────────────────────
@@ -203,10 +223,15 @@ async def google_business_callback(
             f"[social-publish] Google Business callback incomplete or errored: error={error!r}, "
             f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
         )
-        return _redirect_result("error")
+        return _redirect_result("error", reason=error_description or "Missing code or state from Google")
     user_id, sep, _ = state.partition(":")
     if not sep or not user_id:
-        return _redirect_result("error")
+        return _redirect_result("error", reason="Malformed state parameter")
+
+    is_invite, invite_token = _is_invite_state(state)
+    if is_invite:
+        return await _handle_google_business_invite_callback(invite_token, code)
+
     try:
         tokens = gbp.exchange_code_for_token(code)
         access_token = tokens["access_token"]
@@ -214,14 +239,14 @@ async def google_business_callback(
         accounts = gbp.list_accounts(access_token)
         if not accounts:
             logger.warning(f"[social-publish] Google Business connect for {user_id}: no accounts found")
-            return _redirect_result("error")
+            return _redirect_result("error", reason="No Google Business accounts found")
         account = accounts[0]
         account_id = account["name"].split("/")[-1]
 
         locations = gbp.list_locations(access_token, account["name"])
         if not locations:
             logger.warning(f"[social-publish] Google Business connect for {user_id}: no locations found")
-            return _redirect_result("error")
+            return _redirect_result("error", reason="No Google Business locations found")
         location = locations[0]  # see module docstring — first location, no picker yet
         location_id = location["name"].split("/")[-1]
 
@@ -233,7 +258,7 @@ async def google_business_callback(
         return _redirect_result("connected")
     except Exception as e:
         logger.error(f"[social-publish] Google Business OAuth callback failed: {e}", exc_info=True)
-        return _redirect_result("error")
+        return _redirect_result("error", reason=str(e))
 
 # Absolute URL, not a relative path — a relative "/" redirect only lands on
 # the frontend if it happens to share the exact same origin as this backend
@@ -244,9 +269,16 @@ async def google_business_callback(
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 
-def _redirect_result(result: str):
+def _redirect_result(result: str, reason: str | None = None):
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url=f"{FRONTEND_URL}/?social_publish={result}")
+    from urllib.parse import quote
+
+    url = f"{FRONTEND_URL}/?social_publish={result}"
+    if reason:
+        # Truncate — this is for a quick diagnostic glance at the URL, not
+        # a replacement for server logs, which still get the full message.
+        url += f"&reason={quote(reason[:200])}"
+    return RedirectResponse(url=url)
 
 
 # ── Resolving an image source (Canva poster OR a direct upload) ────────────
@@ -286,6 +318,272 @@ async def upload_media(user_id: str = Depends(get_current_user_id), file: Upload
     except MediaUploadError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return UploadMediaResponse(image_url=url)
+
+
+# ── Page connection invitations ─────────────────────────────────────────────
+# Users never connect their own Facebook/Instagram/LinkedIn/Google Business
+# account directly anymore (see the removed direct-connect UI in
+# SocialPublishPanel.js) — instead, they generate an invite link and send
+# it to whoever actually administers the page/profile they want connected.
+# That person clicks the link, authorizes DIRECTLY with the platform
+# themselves (there's no way around this — every one of these platforms
+# requires the actual admin to go through their own OAuth consent screen;
+# there's no API to "request access" without that), picks the specific
+# page from what they manage, and the connection is saved under the
+# ORIGINAL REQUESTER's account — not the approving admin's, who may have
+# no account here at all.
+_INVITE_CONNECT_GROUP_TO_PLATFORMS = {
+    "meta": ("facebook", "instagram"),
+    "linkedin": ("linkedin",),
+    "google_business": ("google_business",),
+}
+
+
+def _invite_state(invite_token: str) -> str:
+    return f"invite:{invite_token}"
+
+
+def _is_invite_state(state: str) -> tuple[bool, str]:
+    if state.startswith("invite:"):
+        return True, state.split(":", 1)[1]
+    return False, ""
+
+
+@router.post("/invites", response_model=CreateInviteResponse, summary="Create a page-connection invite link to send to a page/profile admin")
+async def create_invite(req: CreateInviteRequest, user_id: str = Depends(get_current_user_id)):
+    if req.connect_group not in INVITABLE_CONNECT_GROUPS:
+        raise HTTPException(status_code=422, detail=f"Unknown connect_group: {req.connect_group!r}")
+
+    from db.dynamo import register_user
+    users = {}
+    try:
+        from db.dynamo import list_all_users
+        users = {u["user_id"]: u for u in list_all_users()}
+    except Exception:
+        pass
+    requester_label = (users.get(user_id) or {}).get("company_name") or "A business using AEO Intel"
+
+    invite_token = secrets.token_urlsafe(24)
+    save_page_invite(
+        invite_token=invite_token, platform=req.connect_group,
+        requested_by_user_id=user_id, requested_by_label=req.label.strip() or requester_label,
+    )
+    invite = get_page_invite(invite_token)
+    return CreateInviteResponse(
+        invite_token=invite_token, invite_url=f"{FRONTEND_URL}/connect-page/{invite_token}",
+        platform=req.connect_group, status=invite["status"], expires_at=invite["expires_at"],
+    )
+
+
+@router.get("/invites", response_model=PageInviteListResponse, summary="List invites you've sent, and their status")
+async def list_invites(user_id: str = Depends(get_current_user_id)):
+    items = list_page_invites_for_user(user_id)
+    return PageInviteListResponse(items=[
+        PageInviteListItem(
+            invite_token=i["invite_token"], platform=i["platform"], status=i["status"],
+            created_at=i["created_at"], expires_at=i["expires_at"], approved_at=i.get("approved_at"),
+            selected_page_label=(i.get("selected_page") or {}).get("label", ""),
+        )
+        for i in items
+    ])
+
+
+@router.get("/invites/{invite_token}", summary="PUBLIC — what the approving page admin sees before authorizing (no login required)")
+async def get_invite_public_status(invite_token: str):
+    """Deliberately unauthenticated — the person opening this link is a
+    page admin who may have no account on this platform at all. Returns a
+    different shape depending on where the invite is in its lifecycle;
+    the frontend's /connect-page/:token route branches on `stage`."""
+    invite = get_page_invite(invite_token)
+    if not invite:
+        raise HTTPException(status_code=404, detail="This invite link is invalid.")
+
+    if invite["status"] in ("expired", "cancelled", "approved"):
+        return {
+            "stage": invite["status"],
+            "platform": invite["platform"],
+            "requested_by_label": invite["requested_by_label"],
+            "selected_page_label": (invite.get("selected_page") or {}).get("label", ""),
+        }
+    if invite["status"] == "pages_ready":
+        return {
+            "stage": "pick_page",
+            "platform": invite["platform"],
+            "requested_by_label": invite["requested_by_label"],
+            "available_pages": invite.get("available_pages", []),
+        }
+    return {
+        "stage": "pending",
+        "platform": invite["platform"],
+        "requested_by_label": invite["requested_by_label"],
+        "expires_at": invite["expires_at"],
+    }
+
+
+@router.get("/invites/{invite_token}/{connect_group}/connect", response_model=ConnectResponse, summary="PUBLIC — authorize URL for the page admin to click")
+async def invite_connect(invite_token: str, connect_group: str):
+    invite = get_page_invite(invite_token)
+    if not invite:
+        raise HTTPException(status_code=404, detail="This invite link is invalid.")
+    if invite["platform"] != connect_group:
+        raise HTTPException(status_code=422, detail="This invite is not for this platform.")
+    if invite["status"] not in ("pending",):
+        raise HTTPException(status_code=409, detail=f"This invite is already {invite['status']} and can't be re-authorized.")
+
+    state = _invite_state(invite_token)
+    if connect_group == "meta":
+        return ConnectResponse(authorize_url=meta.build_authorize_url(state))
+    elif connect_group == "linkedin":
+        return ConnectResponse(authorize_url=li.build_authorize_url(state))
+    elif connect_group == "google_business":
+        return ConnectResponse(authorize_url=gbp.build_authorize_url(state))
+    raise HTTPException(status_code=422, detail=f"Unknown connect_group: {connect_group!r}")
+
+
+@router.post("/invites/{invite_token}/select-page", response_model=SelectInvitePageResponse, summary="PUBLIC — the page admin picks which specific page/location to connect")
+async def select_invite_page(invite_token: str, req: SelectInvitePageRequest):
+    invite = get_page_invite(invite_token)
+    if not invite:
+        raise HTTPException(status_code=404, detail="This invite link is invalid.")
+    if invite["status"] != "pages_ready":
+        raise HTTPException(status_code=409, detail=f"This invite isn't ready for page selection (status: {invite['status']}).")
+
+    page = next((p for p in invite.get("available_pages", []) if p["id"] == req.page_id), None)
+    if not page:
+        raise HTTPException(status_code=404, detail="That page wasn't in this invite's available list.")
+
+    requester_id = invite["requested_by_user_id"]
+    access_token = invite["oauth_access_token"]
+
+    if invite["platform"] == "meta":
+        save_social_connection(
+            user_id=requester_id, platform="facebook", access_token=page["page_access_token"],
+            extra={"page_id": page["id"], "label": page["label"]},
+        )
+        if page.get("ig_user_id"):
+            save_social_connection(
+                user_id=requester_id, platform="instagram", access_token=page["page_access_token"],
+                extra={"ig_user_id": page["ig_user_id"], "page_id": page["id"], "label": page["label"]},
+            )
+    elif invite["platform"] == "google_business":
+        save_social_connection(
+            user_id=requester_id, platform="google_business", access_token=access_token,
+            refresh_token=invite.get("oauth_refresh_token", ""),
+            extra={"account_id": page["account_id"], "location_id": page["location_id"], "label": page["label"]},
+        )
+    else:
+        raise HTTPException(status_code=422, detail=f"{invite['platform']} doesn't use a page-selection step.")
+
+    update_page_invite(invite_token, status="approved", selected_page={"id": page["id"], "label": page["label"]})
+    logger.info(f"[social-publish] invite {invite_token} approved: {invite['platform']} page {page['label']!r} connected to user {requester_id}")
+    return SelectInvitePageResponse(approved=True, selected_page_label=page["label"])
+
+
+async def _handle_meta_invite_callback(invite_token: str, code: str):
+    """Called from meta_callback when the admin authorized via an invite
+    link rather than the direct logged-in-user flow. Fetches EVERY page
+    this admin manages (not just the first one) and hands them to the
+    frontend's page-picker — the admin, not this app, decides which
+    specific page gets connected."""
+    invite = get_page_invite(invite_token)
+    if not invite or invite["status"] != "pending":
+        return _invite_redirect(invite_token, error=True)
+    try:
+        short_lived = meta.exchange_code_for_token(code)
+        long_lived = meta.exchange_for_long_lived_token(short_lived["access_token"])
+        user_token = long_lived["access_token"]
+        pages = meta.list_pages(user_token)
+        if not pages:
+            update_page_invite(invite_token, status="pending")  # stays retryable
+            logger.warning(f"[social-publish] invite {invite_token}: no Facebook Pages found for this admin")
+            return _invite_redirect(invite_token, error=True)
+
+        available = [
+            {
+                "id": p["id"], "label": p.get("name", p["id"]), "page_access_token": p["access_token"],
+                "ig_user_id": (p.get("instagram_business_account") or {}).get("id", ""),
+            }
+            for p in pages
+        ]
+        update_page_invite(invite_token, status="pages_ready", available_pages=available, oauth_access_token=user_token)
+        return _invite_redirect(invite_token)
+    except Exception as e:
+        logger.error(f"[social-publish] invite {invite_token} Meta callback failed: {e}", exc_info=True)
+        return _invite_redirect(invite_token, error=True)
+
+
+async def _handle_linkedin_invite_callback(invite_token: str, code: str):
+    """LinkedIn has no page-picker step — w_member_social posts as the
+    member themselves, so identifying them IS the whole connection. Goes
+    straight to approved, no intermediate 'pick a page' stage."""
+    invite = get_page_invite(invite_token)
+    if not invite or invite["status"] != "pending":
+        return _invite_redirect(invite_token, error=True)
+    try:
+        tokens = li.exchange_code_for_token(code)
+        access_token = tokens["access_token"]
+        member = li.get_member_urn(access_token)
+
+        save_social_connection(
+            user_id=invite["requested_by_user_id"], platform="linkedin", access_token=access_token,
+            refresh_token=tokens.get("refresh_token", ""),
+            extra={"person_urn": member["person_urn"], "label": member.get("name") or "LinkedIn profile"},
+        )
+        update_page_invite(
+            invite_token, status="approved",
+            selected_page={"id": member["person_urn"], "label": member.get("name") or "LinkedIn profile"},
+        )
+        logger.info(f"[social-publish] invite {invite_token} approved: LinkedIn profile connected to user {invite['requested_by_user_id']}")
+        return _invite_redirect(invite_token)
+    except Exception as e:
+        logger.error(f"[social-publish] invite {invite_token} LinkedIn callback failed: {e}", exc_info=True)
+        return _invite_redirect(invite_token, error=True)
+
+
+async def _handle_google_business_invite_callback(invite_token: str, code: str):
+    """Fetches EVERY location across every account this admin manages, so
+    the picker can offer all of them — a Business Profile manager often
+    has several locations, not just one."""
+    invite = get_page_invite(invite_token)
+    if not invite or invite["status"] != "pending":
+        return _invite_redirect(invite_token, error=True)
+    try:
+        tokens = gbp.exchange_code_for_token(code)
+        access_token = tokens["access_token"]
+
+        accounts = gbp.list_accounts(access_token)
+        available = []
+        for account in accounts:
+            account_id = account["name"].split("/")[-1]
+            locations = gbp.list_locations(access_token, account["name"])
+            for loc in locations:
+                available.append({
+                    "id": loc["name"], "label": loc.get("title", loc["name"]),
+                    "account_id": account_id, "location_id": loc["name"].split("/")[-1],
+                })
+
+        if not available:
+            update_page_invite(invite_token, status="pending")
+            logger.warning(f"[social-publish] invite {invite_token}: no Google Business locations found for this admin")
+            return _invite_redirect(invite_token, error=True)
+
+        update_page_invite(
+            invite_token, status="pages_ready", available_pages=available,
+            oauth_access_token=access_token, oauth_refresh_token=tokens.get("refresh_token", ""),
+        )
+        return _invite_redirect(invite_token)
+    except Exception as e:
+        logger.error(f"[social-publish] invite {invite_token} Google Business callback failed: {e}", exc_info=True)
+        return _invite_redirect(invite_token, error=True)
+
+
+def _invite_redirect(invite_token: str, error: bool = False):
+    """Sends the admin back to the SAME approval landing page (not the
+    logged-in user's app) — it re-fetches invite status and renders
+    whichever stage applies (pick a page, or an error banner)."""
+    from fastapi.responses import RedirectResponse
+    suffix = "?error=1" if error else ""
+    return RedirectResponse(url=f"{FRONTEND_URL}/connect-page/{invite_token}{suffix}")
 
 
 # ── Publish now ──────────────────────────────────────────────────────────────

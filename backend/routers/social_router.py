@@ -15,10 +15,10 @@ from fastapi.responses import StreamingResponse
 
 from core.security import get_current_user_id
 from db import check_and_lock_domain, DomainMismatchError, is_user_paid, save_analysis
-from models.social_models import RelocationSocialRequest
+from models.social_models import SocialCalendarRequest
 from services.social_service import (
-    generate_relocation_calendar,
-    stream_relocation_calendar_events,
+    generate_social_calendar,
+    stream_social_calendar_events,
 )
 from services.bedrock_service import TokenUsageTracker
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Social Media Content"])
 
 
-def _enforce_domain(user_id: str, req: RelocationSocialRequest) -> None:
+def _enforce_domain(user_id: str, req: SocialCalendarRequest) -> None:
     """Same one-to-one user<->domain mapping as seo_router.py. `company.website`
     is optional here — if not given, there's nothing to check or lock."""
     if not req.company.website:
@@ -38,7 +38,7 @@ def _enforce_domain(user_id: str, req: RelocationSocialRequest) -> None:
 
 
 def _save_social(
-    *, user_id: str, req: RelocationSocialRequest, result_dict: dict,
+    *, user_id: str, req: SocialCalendarRequest, result_dict: dict,
     status: str = "success", token_usage: dict | None = None,
 ) -> str:
     """Persist to the same DynamoDB table as SEO analyses, under its own
@@ -49,14 +49,14 @@ def _save_social(
             analysis_type="relocation_social_calendar",
             company_name=req.company.name,
             url=req.company.website or "",
-            market=req.country,
-            industry="Relocation Services",
+            market=req.market,
+            industry=req.industry,
             result=result_dict,
             request_data=req.model_dump(mode="json"),
             status=status,
             token_usage=token_usage,
         )
-        logger.info(f"[social] saved relocation_social_calendar aid={aid} user={user_id} tokens={token_usage}")
+        logger.info(f"[social] saved social_calendar aid={aid} user={user_id} industry={req.industry!r} tokens={token_usage}")
         return aid
     except Exception as e:
         logger.error(f"[social] DynamoDB save failed: {e}", exc_info=True)
@@ -68,7 +68,7 @@ def _save_social(
     summary="Relocation social media content calendar for a custom date range (Bedrock, blocking)",
 )
 async def relocation_calendar(
-    req: RelocationSocialRequest,
+    req: SocialCalendarRequest,
     user_id: str = Depends(get_current_user_id),
 ):
     """
@@ -96,7 +96,7 @@ async def relocation_calendar(
     _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_relocation_calendar(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        result = generate_social_calendar(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"relocation_calendar failed: {e}", exc_info=True)
@@ -114,7 +114,7 @@ async def relocation_calendar(
     summary="Relocation social media content calendar — streamed via Server-Sent Events",
 )
 async def relocation_calendar_stream(
-    req: RelocationSocialRequest,
+    req: SocialCalendarRequest,
     request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
@@ -138,7 +138,7 @@ async def relocation_calendar_stream(
     async def event_source():
         tracker = TokenUsageTracker()
         try:
-            async for event, data in stream_relocation_calendar_events(
+            async for event, data in stream_social_calendar_events(
                 req, request.is_disconnected, usage_tracker=tracker, is_paid=is_paid
             ):
                 yield f"event: {event}\ndata: {json.dumps(data)}\n\n"

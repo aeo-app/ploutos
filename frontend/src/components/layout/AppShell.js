@@ -72,11 +72,13 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     if (result === 'connected') {
       toast({ type: 'success', message: '✓ Social account connected.' });
     } else if (result === 'error') {
-      toast({ type: 'error', message: 'Could not connect that social account. Please try again.' });
+      const reason = params.get('reason');
+      toast({ type: 'error', message: reason ? `Could not connect: ${reason}` : 'Could not connect that social account. Please try again.' });
     }
     const returnPage = consumeRememberedPage();
     if (returnPage) setPage(returnPage);
     params.delete('social_publish');
+    params.delete('reason');
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
     // eslint-disable-next-line

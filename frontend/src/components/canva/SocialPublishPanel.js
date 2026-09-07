@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useApp } from '../../context/AppContext';
-import { rememberPageBeforeOAuthRedirect } from '../../utils/oauthReturn';
 import s from './SocialPublishPanel.module.css';
 
 const PLATFORM_META = {
   facebook: { label: 'Facebook', icon: '📘', connectGroup: 'meta' },
   instagram: { label: 'Instagram', icon: '📷', connectGroup: 'meta' },
-  linkedin: { label: 'LinkedIn', icon: '💼', connectGroup: 'linkedin' },
+  linkedin: { label: 'LinkedIn (personal profile)', icon: '💼', connectGroup: 'linkedin' },
   google_business: { label: 'Google Business', icon: '📍', connectGroup: 'google_business' },
 };
 const SCHEDULABLE_PLATFORMS = new Set(['facebook', 'instagram']);
@@ -24,9 +22,9 @@ const SCHEDULABLE_PLATFORMS = new Set(['facebook', 'instagram']);
  * AdminContentPage.js for how each wires this up.
  */
 export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
-  const { state } = useApp();
   const [statusList, setStatusList] = useState(null);
-  const [connecting, setConnecting] = useState(null);
+  const [sendingInvite, setSendingInvite] = useState(null);
+  const [inviteLinks, setInviteLinks] = useState({}); // connectGroup -> {url, copied}
 
   const [imageSource, setImageSource] = useState(posterId ? 'poster' : 'upload'); // 'poster' | 'upload'
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -51,17 +49,32 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
     // eslint-disable-next-line
   }, []);
 
-  const handleConnect = async (connectGroup) => {
-    setConnecting(connectGroup);
+  const refreshStatus = () => {
+    api.status()
+      .then(d => setStatusList(d?.platforms || []))
+      .catch(err => console.warn('[SocialPublishPanel] status refresh failed:', err?.message || err));
+  };
+
+  const handleSendInvite = async (connectGroup) => {
+    setSendingInvite(connectGroup);
     setError(null);
     try {
-      const { authorize_url } = await api.connect(connectGroup);
-      rememberPageBeforeOAuthRedirect(state.page);
-      window.location.href = authorize_url;
+      const { invite_url } = await api.createInvite({ connect_group: connectGroup });
+      setInviteLinks(prev => ({ ...prev, [connectGroup]: { url: invite_url, copied: false } }));
     } catch (e) {
-      setError(e.message || `Could not start ${connectGroup} connection.`);
-      setConnecting(null);
+      setError(e.message || `Could not create an invite for ${connectGroup}.`);
+    } finally {
+      setSendingInvite(null);
     }
+  };
+
+  const handleCopyInvite = (connectGroup) => {
+    const link = inviteLinks[connectGroup];
+    if (!link) return;
+    navigator.clipboard?.writeText(link.url).then(() => {
+      setInviteLinks(prev => ({ ...prev, [connectGroup]: { ...prev[connectGroup], copied: true } }));
+      setTimeout(() => setInviteLinks(prev => ({ ...prev, [connectGroup]: { ...prev[connectGroup], copied: false } })), 2000);
+    });
   };
 
   const handleFileChange = async (e) => {
@@ -166,6 +179,7 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
           {Object.entries(PLATFORM_META).map(([platform, meta]) => {
             const connected = isConnected(platform);
             const disabledForMode = mode === 'schedule' && !SCHEDULABLE_PLATFORMS.has(platform);
+            const invite = inviteLinks[meta.connectGroup];
             return (
               <div key={platform} className={s.platformRow}>
                 <label className={s.platformLabel}>
@@ -180,13 +194,13 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
                 </label>
                 {connected ? (
                   <span className={s.connectedBadge}>Connected</span>
-                ) : api.connect ? (
+                ) : api.createInvite ? (
                   <button
                     type="button" className={s.connectBtn}
-                    disabled={connecting === meta.connectGroup}
-                    onClick={() => handleConnect(meta.connectGroup)}
+                    disabled={sendingInvite === meta.connectGroup}
+                    onClick={() => handleSendInvite(meta.connectGroup)}
                   >
-                    {connecting === meta.connectGroup ? 'Connecting…' : 'Connect'}
+                    {sendingInvite === meta.connectGroup ? 'Creating…' : invite ? 'New invite link' : 'Send invite to page admin'}
                   </button>
                 ) : (
                   <span className={s.notConnectedText}>Not connected by customer</span>
@@ -196,6 +210,28 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
           })}
         </div>
       )}
+
+      {Object.entries(inviteLinks).map(([connectGroup, link]) => {
+        const groupPlatforms = Object.entries(PLATFORM_META).filter(([, m]) => m.connectGroup === connectGroup).map(([p]) => p);
+        if (groupPlatforms.some(p => isConnected(p))) return null; // now connected - link no longer relevant
+        return (
+        <div key={connectGroup} className={s.inviteLinkRow}>
+          <div className={s.inviteLinkHint}>
+            Send this link to whoever administers your {connectGroup === 'meta' ? 'Facebook Page' : connectGroup === 'linkedin' ? 'LinkedIn profile' : 'Google Business location'} —
+            they'll authorize directly with the platform and pick the exact page to connect. Nothing connects until they do.
+          </div>
+          <div className={s.inviteLinkBox}>
+            <input type="text" readOnly value={link.url} className={s.inviteLinkInput} onFocus={e => e.target.select()} />
+            <button type="button" className={s.inviteCopyBtn} onClick={() => handleCopyInvite(connectGroup)}>
+              {link.copied ? '✓ Copied' : 'Copy link'}
+            </button>
+            <button type="button" className={s.inviteCopyBtn} onClick={refreshStatus} title="Check if the admin has approved it yet">
+              ↻ Check status
+            </button>
+          </div>
+        </div>
+        );
+      })}
 
       <div className={s.sourceToggleRow}>
         {posterId && (

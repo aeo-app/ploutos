@@ -1,29 +1,44 @@
 """
-services/social_publish/linkedin_service.py — LinkedIn Company Page posting
+services/social_publish/linkedin_service.py — LinkedIn personal profile posting
 ================================================================================
-Verified against LinkedIn's current docs (2026) — deliberately uses the
-CURRENT /rest/posts + /rest/images endpoints, not the deprecated /v2/ugcPosts
-or /v2/shares (still technically callable but no longer guaranteed feature
-parity, and new features are Posts-API-only).
+Posts to the AUTHENTICATED MEMBER'S OWN personal profile, not a Company
+Page — uses w_member_social, which (unlike w_organization_social, the
+Company Page equivalent) is granted purely self-serve via the "Share on
+LinkedIn" product in the Developer Portal, no Community Management API
+partner-program review required. Verified against LinkedIn's current docs
+(2026) and multiple independent developer reports confirming this exact
+self-serve/reviewed split.
 
   OAuth (standard 3-legged, no PKCE required):
     Authorize: GET  https://www.linkedin.com/oauth/v2/authorization
     Token:     POST https://www.linkedin.com/oauth/v2/accessToken
+    Scopes:    openid profile w_member_social
+      - openid + profile: from the self-serve "Sign In with LinkedIn using
+        OpenID Connect" product — needed to identify WHO the authenticated
+        member is (there's no organization to look up here, so the
+        member's own id has to come from their profile instead).
+      - w_member_social: from the self-serve "Share on LinkedIn" product —
+        the actual posting permission.
 
-  Posting to a Company Page requires the w_organization_social scope, which
-  comes through LinkedIn's Community Management API partner programme — a
-  separate application/approval, not available purely self-serve the way
-  w_member_social (personal profile posting) is.
+  Identifying the member (replaces the old list_organizations() lookup —
+  there's no "which page do you administer" step for personal posting,
+  just "who are you"):
+    GET /v2/userinfo (requires the openid scope)
+      -> {"sub": "...", "name": "...", ...}
+    Person URN = f"urn:li:person:{sub}"
+    (NOT /v2/me — that endpoint is legacy and routinely rejects requests
+    with "Not enough permissions" even with both products enabled; /v2/
+    userinfo is LinkedIn's current recommended path via OpenID Connect.)
 
   Image upload (two-step, required before a post can reference an image):
     POST /rest/images?action=initializeUpload
-      {"initializeUploadRequest": {"owner": "urn:li:organization:{id}"}}
+      {"initializeUploadRequest": {"owner": "urn:li:person:{id}"}}
       -> {"value": {"uploadUrl": "...", "image": "urn:li:image:..."}}
     PUT <uploadUrl> with the raw image bytes
 
   Post creation:
     POST /rest/posts
-      {"author": "urn:li:organization:{id}", "commentary": "...",
+      {"author": "urn:li:person:{id}", "commentary": "...",
        "visibility": "PUBLIC", "distribution": {"feedDistribution":
        "MAIN_FEED"}, "lifecycleState": "PUBLISHED",
        "content": {"media": {"id": "urn:li:image:..."}}}
@@ -31,6 +46,10 @@ parity, and new features are Posts-API-only).
 
   Every request needs LinkedIn-Version (YYYYMM) and X-Restli-Protocol-Version
   headers.
+
+  One thing worth knowing: posts made this way show up as coming from the
+  individual person (e.g. "Jane Smith posted: ..."), not from a company's
+  own LinkedIn Page — that's the actual trade-off for not needing review.
 """
 from __future__ import annotations
 
@@ -49,12 +68,16 @@ LINKEDIN_API_VERSION = os.getenv("LINKEDIN_API_VERSION", "202603")
 
 AUTHORIZE_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
+USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 API_BASE = "https://api.linkedin.com"
 
-# w_organization_social: post as a Company Page (needs Community Management
-# API access — see module docstring). r_organization_social: look up the
-# pages this user administers, to get their organization URN.
-SCOPES = "w_organization_social r_organization_social"
+# openid + profile: self-serve via "Sign In with LinkedIn using OpenID
+# Connect" — used only to identify the member via GET /v2/userinfo, not to
+# authenticate them into this app (they're already logged into THIS app;
+# this is purely "who is the LinkedIn account we just connected").
+# w_member_social: self-serve via "Share on LinkedIn" — the actual posting
+# permission. Neither product requires LinkedIn's partner-program review.
+SCOPES = "openid profile w_member_social"
 
 REQUEST_TIMEOUT = int(os.getenv("SOCIAL_PUBLISH_TIMEOUT_SECONDS", "20"))
 
@@ -109,27 +132,36 @@ def exchange_code_for_token(code: str) -> dict:
     return resp.json()  # {"access_token", "expires_in", "refresh_token"?, ...}
 
 
-def list_organizations(access_token: str) -> list[dict]:
-    """Company Pages this user administers, via the organizationAcls
-    finder — needed to get the organization URN to post as."""
+def get_member_urn(access_token: str) -> dict:
+    """Identifies the connected LinkedIn member via OpenID Connect's
+    userinfo endpoint (NOT /v2/me, which is legacy and frequently rejects
+    requests even with the right products enabled). Returns
+    {"person_urn": "urn:li:person:{sub}", "name": "..."} — there's no
+    "which page do you administer" step here, since this posts as the
+    member themselves, not a Company Page."""
     resp = requests.get(
-        f"{API_BASE}/rest/organizationAcls",
-        params={"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED"},
-        headers=_headers(access_token),
+        USERINFO_URL,
+        headers={"Authorization": f"Bearer {access_token}"},
         timeout=REQUEST_TIMEOUT,
     )
     if not resp.ok:
-        raise LinkedInError(f"LinkedIn organizationAcls failed: {resp.status_code} {resp.text}", resp.status_code)
-    elements = resp.json().get("elements", [])
-    return [{"organization_urn": e.get("organization"), "role": e.get("role")} for e in elements]
+        raise LinkedInError(f"LinkedIn userinfo failed: {resp.status_code} {resp.text}", resp.status_code)
+    data = resp.json()
+    sub = data.get("sub")
+    if not sub:
+        raise LinkedInError(f"LinkedIn userinfo did not return a 'sub' claim: {data}")
+    return {"person_urn": f"urn:li:person:{sub}", "name": data.get("name", "")}
 
 
-def upload_image(access_token: str, organization_urn: str, image_bytes: bytes) -> str:
-    """Returns the image URN to reference in a post."""
+def upload_image(access_token: str, person_urn: str, image_bytes: bytes) -> str:
+    """Returns the image URN to reference in a post. `person_urn` is the
+    member's own URN (from get_member_urn) — LinkedIn's image upload API
+    calls this parameter "owner" regardless of whether the poster is a
+    person or an organization."""
     init_resp = requests.post(
         f"{API_BASE}/rest/images",
         params={"action": "initializeUpload"},
-        json={"initializeUploadRequest": {"owner": organization_urn}},
+        json={"initializeUploadRequest": {"owner": person_urn}},
         headers=_headers(access_token),
         timeout=REQUEST_TIMEOUT,
     )
@@ -150,10 +182,12 @@ def upload_image(access_token: str, organization_urn: str, image_bytes: bytes) -
     return image_urn
 
 
-def create_post(access_token: str, organization_urn: str, commentary: str, image_urn: str | None = None) -> str:
-    """Returns the new post's URN (from the x-restli-id response header)."""
+def create_post(access_token: str, person_urn: str, commentary: str, image_urn: str | None = None) -> str:
+    """Returns the new post's URN (from the x-restli-id response header).
+    `person_urn` becomes the post's "author" — the post will show up as
+    coming from this individual member, not a company page."""
     body = {
-        "author": organization_urn,
+        "author": person_urn,
         "commentary": commentary,
         "visibility": "PUBLIC",
         "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},

@@ -24,6 +24,7 @@ import { BlogTopicsPage } from './pages/BlogTopicsPage';
 import { ArticleGeneratorPage } from './pages/ArticleGeneratorPage';
 import { AdminApp } from './pages/AdminApp';
 import { AdminErrorBoundary } from './components/AdminErrorBoundary';
+import { ConnectPageApprovalPage } from './pages/ConnectPageApprovalPage';
 
 // Auth pages
 import { SignupPage }       from './pages/auth/SignupPage';
@@ -209,6 +210,17 @@ function AdminAwareRoot({ profile }) {
 }
 
 export default function App() {
+  // Checked BEFORE AuthProvider/Root — a page admin approving a connection
+  // invite may have no account on this platform at all, so this route
+  // can't sit behind any of the normal auth gating. Matched here, not via
+  // a routing library, since the rest of this app is state-based routing
+  // within an authenticated shell — this is the one URL-path route that
+  // genuinely needs to exist outside that entirely.
+  const pathMatch = window.location.pathname.match(/^\/connect-page\/([^/]+)\/?$/);
+  if (pathMatch) {
+    return <ConnectPageApprovalPage inviteToken={pathMatch[1]} />;
+  }
+
   return (
     <AuthProvider>
       <Root />

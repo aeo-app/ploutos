@@ -100,3 +100,74 @@ class ScheduledPostListResponse(BaseModel):
 
 class CancelScheduledPostResponse(BaseModel):
     cancelled: bool
+
+
+# ── Page connection invitations ─────────────────────────────────────────────
+# See db/dynamo.py's page-invite section for the full architectural
+# rationale — the person approving one of these may have no account on
+# this platform at all.
+INVITABLE_CONNECT_GROUPS = {"meta", "linkedin", "google_business"}
+
+
+class CreateInviteRequest(BaseModel):
+    connect_group: str = Field(..., example="meta", description="One of: meta (covers Facebook+Instagram), linkedin, google_business")
+    label: str = Field("", max_length=200, description="Optional note for the page admin, e.g. 'For our September relocation campaign'")
+
+
+class CreateInviteResponse(BaseModel):
+    invite_token: str
+    invite_url: str
+    platform: str
+    status: str
+    expires_at: str
+
+
+class PageInviteListItem(BaseModel):
+    invite_token: str
+    platform: str
+    status: str
+    created_at: str
+    expires_at: str
+    approved_at: Optional[str] = None
+    selected_page_label: str = ""
+
+
+class PageInviteListResponse(BaseModel):
+    items: list[PageInviteListItem]
+
+
+class InvitePublicStatusResponse(BaseModel):
+    """What the approving page admin sees BEFORE authorizing — deliberately
+    minimal, no internal ids or other accounts' data leaked to someone who
+    isn't authenticated on this platform at all."""
+    platform: str
+    requested_by_label: str
+    status: str
+    expires_at: str
+
+
+class InviteConnectResponse(BaseModel):
+    authorize_url: str
+
+
+class AvailablePageOption(BaseModel):
+    id: str
+    label: str
+    thumbnail_url: str = ""
+
+
+class InvitePagesReadyResponse(BaseModel):
+    """After the admin authorizes but before they've picked a specific
+    page — what the frontend's page-picker step renders."""
+    platform: str
+    requested_by_label: str
+    available_pages: list[AvailablePageOption]
+
+
+class SelectInvitePageRequest(BaseModel):
+    page_id: str
+
+
+class SelectInvitePageResponse(BaseModel):
+    approved: bool
+    selected_page_label: str

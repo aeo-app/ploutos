@@ -41,9 +41,9 @@ from models.admin_models import (
     UserListResponse,
     UserSummary,
 )
-from models.social_models import CompanyDetails, RelocationSocialRequest
+from models.social_models import CompanyDetails, SocialCalendarRequest
 from services.bedrock_service import TokenUsageTracker, generate_blog_post, revise_blog_post
-from services.social_service import generate_relocation_calendar, revise_social_post
+from services.social_service import generate_social_calendar, revise_social_post
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/admin", tags=["Admin"])
@@ -62,7 +62,7 @@ def _require_analysis(user_id: str, analysis_id: str, expected_type: str, label:
 def _to_calendar_detail(analysis_id: str, user_id: str, item: dict) -> AdminCalendarDetailResponse:
     return AdminCalendarDetailResponse(
         analysis_id=analysis_id, user_id=user_id, company_name=item.get("company_name", ""),
-        country=item.get("market", ""), created_at=item.get("created_at", ""), status=item.get("status", ""),
+        market=item.get("market", ""), created_at=item.get("created_at", ""), status=item.get("status", ""),
         result=item.get("result", {}), request=item.get("request", {}),
     )
 
@@ -141,7 +141,7 @@ async def list_user_calendars(user_id: str, admin_id: str = Depends(require_admi
     return AdminCalendarListResponse(items=[
         AdminCalendarSummary(
             analysis_id=i["analysis_id"], user_id=user_id, company_name=i.get("company_name", ""),
-            country=i.get("market", ""), created_at=i.get("created_at", ""), status=i.get("status", ""),
+            market=i.get("market", ""), created_at=i.get("created_at", ""), status=i.get("status", ""),
         )
         for i in page["items"]
     ])
@@ -207,7 +207,7 @@ async def revise_user_calendar_post(
 @router.post(
     "/users/{user_id}/calendars/create",
     response_model=AdminCalendarDetailResponse,
-    summary="Admin creates a new relocation social media calendar ON BEHALF OF a customer, saved under their account",
+    summary="Admin creates a new social media calendar ON BEHALF OF a customer, saved under their account",
 )
 async def create_calendar_for_user(user_id: str, req: CreateCalendarForUserRequest, admin_id: str = Depends(require_admin)):
     """
@@ -224,8 +224,9 @@ async def create_calendar_for_user(user_id: str, req: CreateCalendarForUserReque
         raise HTTPException(status_code=404, detail=f"User {user_id} not found in the registry")
 
     try:
-        social_req = RelocationSocialRequest(
-            country=req.country,
+        social_req = SocialCalendarRequest(
+            industry=req.industry, business_description=req.business_description,
+            target_audience=req.target_audience, market=req.market,
             company=CompanyDetails(
                 name=target.get("company_name") or "Your Company",
                 phone=req.phone or None, email=req.email or None, website=req.website or target.get("domain") or None,
@@ -239,7 +240,7 @@ async def create_calendar_for_user(user_id: str, req: CreateCalendarForUserReque
 
     try:
         tracker = TokenUsageTracker()
-        result = generate_relocation_calendar(social_req, usage_tracker=tracker, is_paid=True)
+        result = generate_social_calendar(social_req, usage_tracker=tracker, is_paid=True)
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"[admin] create_calendar_for_user failed: {e}", exc_info=True)
@@ -248,11 +249,11 @@ async def create_calendar_for_user(user_id: str, req: CreateCalendarForUserReque
     result_dict = json.loads(result.model_dump_json())
     analysis_id = save_analysis(
         user_id=user_id, analysis_type=CALENDAR_TYPE, company_name=social_req.company.name,
-        url=social_req.company.website or "", market=social_req.country, industry="Relocation Services",
+        url=social_req.company.website or "", market=social_req.market, industry=social_req.industry,
         result=result_dict, request_data=social_req.model_dump(mode="json"),
         status="partial" if result.failed_dates else "success", token_usage=token_usage,
     )
-    logger.info(f"[admin] {admin_id} created calendar {analysis_id} for user {user_id}, country={req.country!r}")
+    logger.info(f"[admin] {admin_id} created calendar {analysis_id} for user {user_id}, industry={req.industry!r}, market={req.market!r}")
     return _to_calendar_detail(analysis_id, user_id, get_analysis(user_id, analysis_id))
 
 
