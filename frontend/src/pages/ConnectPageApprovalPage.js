@@ -23,6 +23,7 @@ export function ConnectPageApprovalPage({ inviteToken }) {
 
   const params = new URLSearchParams(window.location.search);
   const hadCallbackError = params.get('error') === '1';
+  const callbackReason = params.get('reason');
 
   const load = () => {
     invitesApi.getStatus(inviteToken)
@@ -124,7 +125,9 @@ export function ConnectPageApprovalPage({ inviteToken }) {
               nothing is shared without your explicit selection.
             </div>
             {hadCallbackError && (
-              <div className={s.warningBanner}>Something went wrong during the last attempt. You can try again below.</div>
+              <div className={s.warningBanner}>
+                {callbackReason || 'Something went wrong during the last attempt.'} You can try again below.
+              </div>
             )}
             <button type="button" className={s.connectBtn} onClick={handleConnect} disabled={connecting}>
               {connecting ? 'Redirecting…' : meta.connectLabel}

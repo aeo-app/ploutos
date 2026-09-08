@@ -482,7 +482,7 @@ async def _handle_meta_invite_callback(invite_token: str, code: str):
         if not pages:
             update_page_invite(invite_token, status="pending")  # stays retryable
             logger.warning(f"[social-publish] invite {invite_token}: no Facebook Pages found for this admin")
-            return _invite_redirect(invite_token, error=True)
+            return _invite_redirect(invite_token, error=True, reason="No Facebook Pages were returned for this account")
 
         available = [
             {
@@ -495,7 +495,7 @@ async def _handle_meta_invite_callback(invite_token: str, code: str):
         return _invite_redirect(invite_token)
     except Exception as e:
         logger.error(f"[social-publish] invite {invite_token} Meta callback failed: {e}", exc_info=True)
-        return _invite_redirect(invite_token, error=True)
+        return _invite_redirect(invite_token, error=True, reason=str(e))
 
 
 async def _handle_linkedin_invite_callback(invite_token: str, code: str):
@@ -563,12 +563,15 @@ async def _handle_google_business_invite_callback(invite_token: str, code: str):
         return _invite_redirect(invite_token, error=True)
 
 
-def _invite_redirect(invite_token: str, error: bool = False):
+def _invite_redirect(invite_token: str, error: bool = False, reason: str | None = None):
     """Sends the admin back to the SAME approval landing page (not the
     logged-in user's app) — it re-fetches invite status and renders
     whichever stage applies (pick a page, or an error banner)."""
     from fastapi.responses import RedirectResponse
     suffix = "?error=1" if error else ""
+    if reason:
+        from urllib.parse import quote
+        suffix += f"&reason={quote(reason[:200])}" if suffix else f"?reason={quote(reason[:200])}"
     return RedirectResponse(url=f"{FRONTEND_URL}/connect-page/{invite_token}{suffix}")
 
 
