@@ -90,6 +90,8 @@ export const adminApi = {
   /** @param {object} payload - {poster_id?, image_url?, day_date, caption, platforms: [...facebook/instagram only], scheduled_time, cta_url?} */
   socialSchedule: (userId, payload) => req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/schedule`, payload),
   socialListScheduled: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled`),
+  socialRetryScheduled: (userId, scheduleId) =>
+    req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled/${encodeURIComponent(scheduleId)}/retry`),
   socialCancelScheduled: (userId, scheduleId) =>
     req("DELETE", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled/${encodeURIComponent(scheduleId)}`),
 };

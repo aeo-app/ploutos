@@ -35,6 +35,7 @@ from db import (
     cancel_scheduled_post,
     delete_social_connection,
     get_page_invite,
+    get_scheduled_post,
     get_social_connection,
     list_page_invites_for_user,
     list_scheduled_posts_for_user,
@@ -43,6 +44,7 @@ from db import (
     save_scheduled_post,
     save_social_connection,
     update_page_invite,
+    update_scheduled_post_status,
 )
 from db.dynamo import get_poster
 from models.social_publish_models import (
@@ -88,6 +90,7 @@ async def status(user_id: str = Depends(get_current_user_id)):
             platform=platform,
             connected=conn is not None,
             account_label=(conn or {}).get("extra", {}).get("label", ""),
+            needs_reconnect=bool((conn or {}).get("needs_reconnect", False)),
         ))
     return SocialConnectionsStatusResponse(platforms=platforms)
 
@@ -302,6 +305,39 @@ async def upload_media(user_id: str = Depends(get_current_user_id), file: Upload
     except MediaUploadError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return UploadMediaResponse(image_url=url)
+
+
+@router.delete("/uploads", summary="Delete a previously uploaded image, if it's yours and not needed anymore")
+async def delete_uploaded_image(image_url: str = Query(...), force: bool = Query(False), user_id: str = Depends(get_current_user_id)):
+    from services.media_upload_service import delete_image
+
+    # Safety check: don't delete an image still referenced by a
+    # successfully published post unless the user explicitly overrides it
+    # (force=true) — a published post's image disappearing from a live
+    # Facebook/Instagram post isn't something this can undo, so silently
+    # deleting it out from under a real post would be a real data-loss risk,
+    # not just a UI inconvenience.
+    if not force:
+        posts = list_scheduled_posts_for_user(user_id)
+        still_used = [
+            p for p in posts
+            if p.get("image_url") == image_url and p.get("status") in ("posted", "partial")
+        ]
+        if still_used:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This image is still associated with {len(still_used)} successfully published "
+                    f"post(s). Pass force=true to delete it anyway (the already-published post itself "
+                    f"is unaffected on the platform — only this image's storage here is removed)."
+                ),
+            )
+
+    try:
+        delete_image(image_url, user_id)
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"deleted": True, "image_url": image_url}
 
 
 # ── Page connection invitations ─────────────────────────────────────────────
@@ -564,13 +600,24 @@ async def _handle_google_business_invite_callback(invite_token: str, code: str):
 
 
 def _invite_redirect(invite_token: str, error: bool = False, reason: str | None = None):
-    """Sends the admin back to the SAME approval landing page (not the
-    logged-in user's app) — it re-fetches invite status and renders
-    whichever stage applies (pick a page, or an error banner)."""
+    """Self-connect (the logged-in user connecting their OWN account,
+    return_to_app=True) goes back into THIS app, where the page picker
+    modal takes over. A real invite sent to a different page admin (who
+    may have no account here at all) goes to the standalone public
+    approval page instead."""
     from fastapi.responses import RedirectResponse
+    from urllib.parse import quote
+
+    invite = get_page_invite(invite_token)
+    if invite and invite.get("return_to_app"):
+        result = "error" if error else "pages_ready"
+        url = f"{FRONTEND_URL}/?social_publish={result}&invite_token={invite_token}"
+        if reason:
+            url += f"&reason={quote(reason[:200])}"
+        return RedirectResponse(url=url)
+
     suffix = "?error=1" if error else ""
     if reason:
-        from urllib.parse import quote
         suffix += f"&reason={quote(reason[:200])}" if suffix else f"?reason={quote(reason[:200])}"
     return RedirectResponse(url=f"{FRONTEND_URL}/connect-page/{invite_token}{suffix}")
 
@@ -580,6 +627,32 @@ def _invite_redirect(invite_token: str, error: bool = False, reason: str | None 
 async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_id)):
     image_url = _resolve_image_url(user_id, req.poster_id, req.image_url)
     results = publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url)
+
+    # Previously nothing was persisted here at all — an immediate "post
+    # now" left no trace once the response was received, so there was no
+    # way to see it again in any history/status view (only scheduled posts
+    # were ever saved). Reuses the same storage as scheduled posts, just
+    # with the outcome already known at save time instead of filled in
+    # later by the scheduler.
+    successes = sum(1 for r in results if r["success"])
+    if successes == len(results):
+        overall_status = "posted"
+    elif successes == 0:
+        overall_status = "failed"
+    else:
+        overall_status = "partial"
+
+    schedule_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    save_scheduled_post(
+        schedule_id=schedule_id, user_id=user_id,
+        day_date=req.day_date or datetime.now(timezone.utc).date().isoformat(), post_number=req.post_number,
+        platforms=req.platforms, caption=req.caption, image_url=image_url, cta_url=req.cta_url or "",
+        scheduled_time_iso=now_iso, status=overall_status,
+        results=results,
+    )
+    logger.info(f"[social-publish] immediate publish {schedule_id} for user={user_id}: {overall_status} ({successes}/{len(results)} succeeded)")
+
     return PublishResponse(results=results)
 
 
@@ -598,7 +671,7 @@ async def schedule(req: ScheduleRequest, user_id: str = Depends(get_current_user
     scheduled_iso = scheduled_dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     save_scheduled_post(
-        schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, platforms=req.platforms,
+        schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, post_number=req.post_number, platforms=req.platforms,
         caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
     )
     logger.info(f"[social-publish] scheduled post {schedule_id} for user={user_id} at {scheduled_iso}")
@@ -610,7 +683,7 @@ async def scheduled_posts(user_id: str = Depends(get_current_user_id)):
     items = list_scheduled_posts_for_user(user_id)
     return ScheduledPostListResponse(items=[
         ScheduledPostSummary(
-            schedule_id=i["schedule_id"], day_date=i.get("day_date", ""), platforms=i.get("platforms", []),
+            schedule_id=i["schedule_id"], day_date=i.get("day_date", ""), post_number=i.get("post_number"), platforms=i.get("platforms", []),
             caption=i.get("caption", ""), image_url=i.get("image_url", ""), scheduled_time=i.get("scheduled_time", ""),
             status=i.get("status", "pending"), results=i.get("results", []),
         )
@@ -624,6 +697,36 @@ async def cancel_scheduled(schedule_id: str, user_id: str = Depends(get_current_
     if not ok:
         raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for your account")
     return CancelScheduledPostResponse(cancelled=True)
+
+
+@router.post("/scheduled/{schedule_id}/retry", response_model=ScheduledPostSummary, summary="Retry a failed or partially-failed post")
+async def retry_scheduled(schedule_id: str, user_id: str = Depends(get_current_user_id)):
+    post = get_scheduled_post(schedule_id)
+    if not post or post.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="No scheduled post found with that id for your account")
+    if post.get("status") not in ("failed", "partial"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only failed or partially-failed posts can be retried (this one is {post.get('status')!r}).",
+        )
+
+    # Re-attempts every platform this post targeted, not just the ones
+    # that failed last time — a platform that succeeded before should
+    # still succeed again (same image/caption), and re-running it is
+    # harmless; the alternative (tracking exactly which platforms still
+    # need it) adds real complexity for a case where a duplicate
+    # successful post is a minor, visible thing, not a hidden problem.
+    results = publish_to_platforms(user_id, post["platforms"], post["image_url"], post["caption"], cta_url=post.get("cta_url") or None)
+    successes = sum(1 for r in results if r["success"])
+    overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
+    update_scheduled_post_status(schedule_id, overall_status, results=results)
+    logger.info(f"[social-publish] retry {schedule_id} for user={user_id}: {overall_status} ({successes}/{len(results)} succeeded)")
+
+    return ScheduledPostSummary(
+        schedule_id=schedule_id, day_date=post.get("day_date", ""), post_number=post.get("post_number"), platforms=post.get("platforms", []),
+        caption=post.get("caption", ""), image_url=post.get("image_url", ""), scheduled_time=post.get("scheduled_time", ""),
+        status=overall_status, results=results,
+    )
 
 
 

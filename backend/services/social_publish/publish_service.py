@@ -15,7 +15,7 @@ import logging
 
 import requests
 
-from db import get_social_connection
+from db import get_social_connection, mark_connection_needs_reconnect
 from services.social_publish import google_business_service as gbp
 from services.social_publish import linkedin_service as li
 from services.social_publish import meta_service as meta
@@ -26,6 +26,31 @@ PLATFORM_LABELS = {
     "facebook": "Facebook", "instagram": "Instagram",
     "linkedin": "LinkedIn", "google_business": "Google Business Profile",
 }
+
+
+def _is_auth_failure(platform: str, exc: Exception) -> bool:
+    """True only for "your token is expired/invalid/revoked, you need to
+    reconnect" — never for rate limits, content policy violations, network
+    errors, or malformed requests, since those need a different fix and
+    telling the user to reconnect for those would be actively misleading.
+
+    Verified signatures (2026):
+      Meta:   OAuthException code 190 — often returned over HTTP 400, NOT
+              401, so checking status code alone would miss most of these.
+              The code appears in the raw error text regardless of status.
+      LinkedIn: HTTP 401 specifically for an expired/invalid/revoked token.
+      Google:   HTTP 401, or invalid_grant on a refresh_token that's been revoked.
+    """
+    text = str(exc)
+    status_code = getattr(exc, "status_code", None)
+
+    if platform in ("facebook", "instagram"):
+        return '"code": 190' in text or "code\":190" in text or "OAuthException" in text
+    if platform == "linkedin":
+        return status_code == 401
+    if platform == "google_business":
+        return status_code == 401 or "invalid_grant" in text.lower()
+    return False
 
 
 def _get_valid_google_token(user_id: str, conn: dict) -> str:
@@ -80,7 +105,12 @@ def publish_to_platform(user_id: str, platform: str, image_url: str, caption: st
         return {"platform": platform, "success": True, "post_id": post_id}
     except Exception as e:
         logger.error(f"[social-publish] {platform} publish failed for user={user_id}: {e}", exc_info=True)
-        return {"platform": platform, "success": False, "error": str(e)}
+        result = {"platform": platform, "success": False, "error": str(e)}
+        if _is_auth_failure(platform, e):
+            mark_connection_needs_reconnect(user_id, platform)
+            result["needs_reconnect"] = True
+            result["error"] = f"{PLATFORM_LABELS[platform]} connection has expired or been revoked — please reconnect."
+        return result
 
 
 def publish_to_platforms(user_id: str, platforms: list[str], image_url: str, caption: str, cta_url: str | None = None) -> list[dict]:

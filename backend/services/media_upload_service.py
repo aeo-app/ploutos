@@ -77,3 +77,39 @@ def upload_image(image_bytes: bytes, filename: str, user_id: str) -> str:
         raise MediaUploadError(f"Could not upload image: {e.response['Error'].get('Message', e)}")
 
     return f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/{key}"
+
+
+def _key_from_url(image_url: str) -> str | None:
+    """Extracts the S3 key from a URL this service generated — returns
+    None for anything that doesn't match (a Canva-hosted URL, someone
+    else's bucket, a malformed value), so callers can reject deletion of
+    anything this service doesn't actually own."""
+    prefix = f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/"
+    if not image_url.startswith(prefix):
+        return None
+    return image_url[len(prefix):]
+
+
+def delete_image(image_url: str, user_id: str) -> None:
+    """Deletes an uploaded image — but ONLY one this user actually owns
+    (checked via the key's uploads/{user_id}/ prefix, not just trusting
+    whatever URL the caller provides) and only one this service actually
+    hosts (a Canva-hosted poster URL, or anything not matching this
+    bucket, is silently a no-op — there's nothing here to delete, and the
+    caller has no business asking this service to touch someone else's
+    storage). Callers are responsible for the SEPARATE check of whether
+    the image is still referenced by a successfully published post — see
+    routers/social_publish_router.py's delete_upload endpoint."""
+    key = _key_from_url(image_url)
+    if not key:
+        return  # not one of ours — nothing to do
+    if not key.startswith(f"uploads/{user_id}/"):
+        raise MediaUploadError("This image does not belong to your account.")
+
+    client = _get_s3_client()
+    try:
+        client.delete_object(Bucket=BUCKET_NAME, Key=key)
+        logger.info(f"[media_upload] deleted {key} for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[media_upload] S3 delete_object failed: {e.response['Error']}")
+        raise MediaUploadError(f"Could not delete image: {e.response['Error'].get('Message', e)}")

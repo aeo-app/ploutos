@@ -444,7 +444,21 @@ async def admin_upload_media(user_id: str, admin_id: str = Depends(require_admin
 async def admin_publish(user_id: str, req: SocialPublishRequest, admin_id: str = Depends(require_admin)):
     image_url = _resolve_social_image_url(user_id, req.poster_id, req.image_url)
     results = _publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url)
-    logger.info(f"[admin] {admin_id} published to {req.platforms} on behalf of user {user_id}")
+
+    # Same persistence the customer-facing /publish endpoint has — without
+    # this, an admin's "post now" on a customer's behalf left no history
+    # trace at all, identical to the bug fixed for the customer-facing path.
+    successes = sum(1 for r in results if r["success"])
+    overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
+    schedule_id = str(_uuid.uuid4())
+    now_iso = _datetime.now(_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    _save_scheduled_post(
+        schedule_id=schedule_id, user_id=user_id,
+        day_date=req.day_date or _datetime.now(_timezone.utc).date().isoformat(), post_number=req.post_number,
+        platforms=req.platforms, caption=req.caption, image_url=image_url, cta_url=req.cta_url or "",
+        scheduled_time_iso=now_iso, status=overall_status, results=results,
+    )
+    logger.info(f"[admin] {admin_id} published to {req.platforms} on behalf of user {user_id}: {overall_status}")
     return SocialPublishResponse(results=results)
 
 
@@ -466,7 +480,7 @@ async def admin_schedule(user_id: str, req: SocialScheduleRequest, admin_id: str
     scheduled_iso = scheduled_dt.astimezone(_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     _save_scheduled_post(
-        schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, platforms=req.platforms,
+        schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, post_number=req.post_number, platforms=req.platforms,
         caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
     )
     logger.info(f"[admin] {admin_id} scheduled a post for user {user_id} at {scheduled_iso}")
@@ -482,7 +496,7 @@ async def admin_list_scheduled(user_id: str, admin_id: str = Depends(require_adm
     items = _list_scheduled_posts_for_user(user_id)
     return ScheduledPostListResponse(items=[
         ScheduledPostSummary(
-            schedule_id=i["schedule_id"], day_date=i.get("day_date", ""), platforms=i.get("platforms", []),
+            schedule_id=i["schedule_id"], day_date=i.get("day_date", ""), post_number=i.get("post_number"), platforms=i.get("platforms", []),
             caption=i.get("caption", ""), image_url=i.get("image_url", ""), scheduled_time=i.get("scheduled_time", ""),
             status=i.get("status", "pending"), results=i.get("results", []),
         )
@@ -500,6 +514,34 @@ async def admin_cancel_scheduled(user_id: str, schedule_id: str, admin_id: str =
     if not ok:
         raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for this customer")
     return CancelScheduledPostResponse(cancelled=True)
+
+
+@router.post(
+    "/users/{user_id}/social-publish/scheduled/{schedule_id}/retry",
+    response_model=ScheduledPostSummary,
+    summary="Retry a customer's failed or partially-failed post",
+)
+async def admin_retry_scheduled(user_id: str, schedule_id: str, admin_id: str = Depends(require_admin)):
+    from db import get_scheduled_post as _get_scheduled_post, update_scheduled_post_status as _update_scheduled_post_status
+    from services.social_publish.publish_service import publish_to_platforms as _publish_to_platforms
+
+    post = _get_scheduled_post(schedule_id)
+    if not post or post.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="No scheduled post found with that id for this customer")
+    if post.get("status") not in ("failed", "partial"):
+        raise HTTPException(status_code=409, detail=f"Only failed or partially-failed posts can be retried (this one is {post.get('status')!r}).")
+
+    results = _publish_to_platforms(user_id, post["platforms"], post["image_url"], post["caption"], cta_url=post.get("cta_url") or None)
+    successes = sum(1 for r in results if r["success"])
+    overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
+    _update_scheduled_post_status(schedule_id, overall_status, results=results)
+    logger.info(f"[admin] {admin_id} retried post {schedule_id} for user {user_id}: {overall_status} ({successes}/{len(results)} succeeded)")
+
+    return ScheduledPostSummary(
+        schedule_id=schedule_id, day_date=post.get("day_date", ""), post_number=post.get("post_number"), platforms=post.get("platforms", []),
+        caption=post.get("caption", ""), image_url=post.get("image_url", ""), scheduled_time=post.get("scheduled_time", ""),
+        status=overall_status, results=results,
+    )
 
 
 # ── Canva poster auto-generation (template rotation + AI image, on behalf of

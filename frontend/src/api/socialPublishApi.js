@@ -54,12 +54,15 @@ export const socialPublishApi = {
   disconnect: (platform) => req("POST", `/social-publish/${platform}/disconnect`),
   /** @param {File} file - a browser File object, e.g. from an <input type="file"> */
   uploadMedia: (file) => uploadReq("/social-publish/uploads", file),
+  /** @param {string} imageUrl, @param {boolean} force - force=true overrides the "still used by a published post" safety check */
+  deleteUploadedImage: (imageUrl, force = false) => req("DELETE", `/social-publish/uploads?image_url=${encodeURIComponent(imageUrl)}${force ? '&force=true' : ''}`),
   /** @param {object} payload - {poster_id?, image_url?, caption, platforms: [...], cta_url?} — exactly one of poster_id/image_url */
   publish: (payload) => req("POST", "/social-publish/publish", payload),
   /** @param {object} payload - {poster_id?, image_url?, day_date, caption, platforms: [...facebook/instagram only], scheduled_time, cta_url?} */
   schedule: (payload) => req("POST", "/social-publish/schedule", payload),
   listScheduled: () => req("GET", "/social-publish/scheduled"),
   cancelScheduled: (scheduleId) => req("DELETE", `/social-publish/scheduled/${encodeURIComponent(scheduleId)}`),
+  retryScheduled: (scheduleId) => req("POST", `/social-publish/scheduled/${encodeURIComponent(scheduleId)}/retry`),
 
   // ── Page connection invitations ──────────────────────────────────────────
   // Meta direct connections use the server-backed Page picker. The other

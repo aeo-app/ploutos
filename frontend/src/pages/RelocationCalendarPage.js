@@ -11,6 +11,7 @@ import { LockedTeaser } from '../components/payment/LockedTeaser';
 import { historyApi } from '../api/historyApi';
 import { CanvaPosterPanel } from '../components/canva/CanvaPosterPanel';
 import { SocialPublishPanel } from '../components/canva/SocialPublishPanel';
+import { PostStatusSummary } from '../components/canva/PostStatusSummary';
 import { ScheduledPostsList } from '../components/canva/ScheduledPostsList';
 import { socialPublishApi } from '../api/socialPublishApi';
 import s from './RelocationCalendarPage.module.css';
@@ -26,11 +27,20 @@ const TONE_VARIANT = { emotional: 'danger', professional: 'info', educational: '
 const CTA_VARIANT = { soft: 'default', urgent: 'danger', informative: 'info' };
 
 /* ── One post's platform-tabbed captions ─────────────────────────────── */
-function PostCard({ post, dayDate }) {
+function PostCard({ post, dayDate, historyItems, socialApi }) {
   const [platform, setPlatform] = useState('instagram');
   const caption = post.captions?.[platform] || '';
   const [posterId, setPosterId] = useState(null);
   const [actionTab, setActionTab] = useState('create'); // 'create' | 'publish'
+
+  // The most recent history record for THIS specific post (day_date +
+  // post_number) — there can be more than one if it was retried/rescheduled,
+  // so take the latest by scheduled_time rather than assuming there's only one.
+  const matching = (historyItems || [])
+    .filter(i => i?.day_date === dayDate && i?.post_number === post?.post_number)
+    .sort((a, b) => (b?.scheduled_time || '').localeCompare(a?.scheduled_time || ''));
+  const [statusItem, setStatusItem] = useState(matching[0] || null);
+  useEffect(() => { setStatusItem(matching[0] || null); }, [historyItems]); // eslint-disable-line
 
   return (
     <div className={s?.postCard}>
@@ -42,6 +52,8 @@ function PostCard({ post, dayDate }) {
           <Badge variant={CTA_VARIANT[post?.cta_style] || 'default'}>{post?.cta_style} CTA</Badge>
         </div>
       </div>
+
+      <PostStatusSummary item={statusItem} api={socialApi} onChanged={setStatusItem} />
 
       {post?.is_simulated_story && (
         <div className={s?.simulatedNote}>
@@ -122,8 +134,9 @@ function PostCard({ post, dayDate }) {
 
       <div style={{ display: actionTab === 'publish' ? 'block' : 'none' }}>
         <SocialPublishPanel
-          api={socialPublishApi}
+          api={socialApi || socialPublishApi}
           dayDate={dayDate}
+          postNumber={post.post_number}
           posterId={posterId}
           defaultCaption={caption || post.cta}
         />
@@ -133,7 +146,7 @@ function PostCard({ post, dayDate }) {
 }
 
 /* ── One day's card (collapsible) ────────────────────────────────────── */
-export function DayCard({ day, index, defaultOpen, onUnlock }) {
+export function DayCard({ day, index, defaultOpen, onUnlock, historyItems, socialApi }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const schedule = day.schedule; // DayScheduleSlot wraps the real DailySchedule here — null if locked
   const rt = schedule?.recommended_times;
@@ -168,7 +181,9 @@ export function DayCard({ day, index, defaultOpen, onUnlock }) {
               <span className={s?.dayTimeChip}>GBP: {rt?.google_business}</span>
             </div>
             <div className={s?.dayBody}>
-              {schedule?.posts.map((post, i) => <PostCard key={i} post={post} dayDate={day?.date} />)}
+              {schedule?.posts.map((post, i) => (
+                <PostCard key={i} post={post} dayDate={day?.date} historyItems={historyItems} socialApi={socialApi} />
+              ))}
             </div>
           </>
         )}
@@ -181,7 +196,17 @@ const toISODate = (d) => d.toISOString().slice(0, 10);
 
 /* ── Static result view — renders a saved RelocationSocialResponse (e.g. from
    History) exactly like the live streaming page does. ──────────────────── */
-export function RelocationCalendarResultView({ result }) {
+export function RelocationCalendarResultView({ result, socialApi }) {
+  const api = socialApi || socialPublishApi;
+  const [historyItems, setHistoryItems] = useState([]);
+
+  useEffect(() => {
+    api.listScheduled()
+      .then(d => setHistoryItems(d?.items || []))
+      .catch(err => console.warn('[RelocationCalendarResultView] could not load post history:', err?.message || err));
+    // eslint-disable-next-line
+  }, []);
+
   if (!result) return null;
   const days = result.days || [];
 
@@ -204,7 +229,7 @@ export function RelocationCalendarResultView({ result }) {
       )}
 
       {days.map((day, i) => (
-        <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => {}} />
+        <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => {}} historyItems={historyItems} socialApi={api} />
       ))}
     </div>
   );
@@ -214,6 +239,13 @@ export function RelocationCalendarResultView({ result }) {
 export function RelocationCalendarPage() {
   const { state, setResultKey, setLoadingKey, toast } = useApp();
   const { goScreen, logout } = useAuth();
+  const [historyItems, setHistoryItems] = useState([]);
+
+  useEffect(() => {
+    socialPublishApi.listScheduled()
+      .then(d => setHistoryItems(d?.items || []))
+      .catch(err => console.warn('[RelocationCalendarPage] could not load post history:', err?.message || err));
+  }, []);
 
   const [country, setCountry] = useState('');
   const [contentSuggestions, setContentSuggestions] = useState('');
@@ -493,7 +525,7 @@ export function RelocationCalendarPage() {
           </AnimatePresence>
 
           {days?.map((day, i) => (
-            <DayCard key={day?.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} />
+            <DayCard key={day?.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} historyItems={historyItems} socialApi={socialPublishApi} />
           ))}
         </motion.div>
       )}

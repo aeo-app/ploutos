@@ -238,6 +238,7 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
       publish: (payload) => adminApi.socialPublish(userId, payload),
       schedule: (payload) => adminApi.socialSchedule(userId, payload),
       listScheduled: () => adminApi.socialListScheduled(userId),
+      retryScheduled: (scheduleId) => adminApi.socialRetryScheduled(userId, scheduleId),
       cancelScheduled: (scheduleId) => adminApi.socialCancelScheduled(userId, scheduleId),
       // Deliberately no `connect` — an admin can't OAuth-authorize Facebook/
       // Instagram on a customer's behalf, that has to be the actual account
@@ -395,7 +396,7 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                   </div>
                 </div>
 
-                {view === 'formatted' && contentType === 'calendars' && selected?.result && <RelocationCalendarResultView result={selected.result} />}
+                {view === 'formatted' && contentType === 'calendars' && selected?.result && <RelocationCalendarResultView result={selected.result} socialApi={adminSocialApi} />}
 
                 {view === 'formatted' && contentType === 'blogs' && blogPost && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
