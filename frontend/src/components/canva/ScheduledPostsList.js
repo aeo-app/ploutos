@@ -1,17 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { rememberPageBeforeOAuthRedirect } from '../../utils/oauthReturn';
+import { useApp } from '../../context/AppContext';
 import s from './ScheduledPostsList.module.css';
 
 const PLATFORM_ICON = { facebook: '📘', instagram: '📷', linkedin: '💼', google_business: '📍' };
+const PLATFORM_NAME = { facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn', google_business: 'Google Business' };
+const CONNECT_GROUP = { facebook: 'meta', instagram: 'meta', linkedin: 'linkedin', google_business: 'google_business' };
 const STATUS_LABEL = {
-  pending: 'Pending', posted: 'Posted', failed: 'Failed', cancelled: 'Cancelled',
+  pending: 'Scheduled', posted: 'Posted', partial: 'Partially posted', failed: 'Failed', cancelled: 'Cancelled',
 };
 
 /** `api` needs {listScheduled, cancelScheduled} — see socialPublishApi.js /
  * adminApi.js's social* functions for the two ways this gets bound. */
 export function ScheduledPostsList({ api }) {
+  const { state } = useApp();
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [cancelling, setCancelling] = useState(null);
+  const [retrying, setRetrying] = useState(null);
+  const [reconnecting, setReconnecting] = useState(null);
   const [filter, setFilter] = useState('all');
 
   const load = useCallback(() => {
@@ -35,6 +42,33 @@ export function ScheduledPostsList({ api }) {
     }
   };
 
+  const handleRetry = async (scheduleId) => {
+    setRetrying(scheduleId);
+    setError(null);
+    try {
+      const updated = await api.retryScheduled(scheduleId);
+      setItems(prev => (prev || []).map(i => i?.schedule_id === scheduleId ? updated : i));
+    } catch (err) {
+      setError(err?.message || 'Could not retry that post.');
+    } finally {
+      setRetrying(null);
+    }
+  };
+
+  const handleReconnect = async (platform) => {
+    const connectGroup = CONNECT_GROUP[platform] || platform;
+    setReconnecting(platform);
+    setError(null);
+    try {
+      const { authorize_url } = await api.connect(connectGroup);
+      rememberPageBeforeOAuthRedirect(state.page);
+      window.location.href = authorize_url;
+    } catch (err) {
+      setError(err?.message || `Could not start reconnecting ${PLATFORM_NAME[platform] || platform}.`);
+      setReconnecting(null);
+    }
+  };
+
   if (error) return <div className={s.errorText}>{error}</div>;
   if (!items) return null;
   if (items.length === 0) return null;
@@ -42,15 +76,6 @@ export function ScheduledPostsList({ api }) {
   const filteredItems = filter === 'all'
     ? items
     : items.filter(item => item?.status === filter);
-  const groups = filteredItems.reduce((result, item) => {
-    const date = item?.scheduled_time ? new Date(item.scheduled_time) : null;
-    const key = date && !Number.isNaN(date.getTime())
-      ? date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-      : 'Unscheduled';
-    (result[key] ||= []).push(item);
-    return result;
-  }, {});
-
   return (
     <div className={s.wrap}>
       <div className={s.headerRow}>
@@ -62,7 +87,7 @@ export function ScheduledPostsList({ api }) {
       </div>
       <div className={s.filters} role="tablist" aria-label="Post status">
         {[
-          ['all', 'All'], ['pending', 'Scheduled'], ['posted', 'Posted'], ['failed', 'Failed'], ['cancelled', 'Cancelled'],
+          ['all', 'All'], ['pending', 'Scheduled'], ['posted', 'Posted'], ['partial', 'Partial'], ['failed', 'Failed'], ['cancelled', 'Cancelled'],
         ].map(([value, label]) => (
           <button
             key={value} type="button" role="tab" aria-selected={filter === value}
@@ -74,38 +99,109 @@ export function ScheduledPostsList({ api }) {
         ))}
       </div>
       {filteredItems.length === 0 && <div className={s.empty}>Nothing in this status yet.</div>}
-      {Object.entries(groups).map(([date, dateItems]) => (
-        <section key={date} className={s.dayGroup}>
-          <div className={s.dayLabel}>{date}</div>
-          {dateItems.map(item => (
-            <div key={item?.schedule_id} className={s.row}>
-              <img className={s.thumb} src={item?.image_url} alt="" />
-              <div className={s.info}>
-                <div className={s.caption}>{item?.caption}</div>
-                <div className={s.meta}>
-                  {(item?.platforms || []).map(p => <span key={p}>{PLATFORM_ICON[p] || ''}</span>)}
-                  {' · '}{item?.scheduled_time ? new Date(item.scheduled_time).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'}
-                  {' · '}<span className={s[`status_${item?.status}`] || ''}>{STATUS_LABEL[item?.status] || item?.status}</span>
-                </div>
-                {item?.status === 'failed' && (item?.results || []).some(r => !r?.success) && (
-                  <div className={s.failReason}>
-                    {(item.results || []).filter(r => !r?.success).map(r => `${PLATFORM_ICON[r?.platform] || ''} ${r?.error || 'Failed'}`).join(' · ')}
-                  </div>
-                )}
-              </div>
-              {item?.status === 'pending' && (
-                <button
-                  type="button" className={s.cancelBtn}
-                  disabled={cancelling === item?.schedule_id}
-                  onClick={() => handleCancel(item.schedule_id)}
-                >
-                  {cancelling === item?.schedule_id ? 'Cancelling…' : 'Cancel'}
-                </button>
-              )}
-            </div>
-          ))}
-        </section>
-      ))}
+
+      {filteredItems.length > 0 && (
+        <div className={s.tableScroll}>
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Post content</th>
+                <th>Uploaded image</th>
+                <th>Scheduled date/time</th>
+                <th>Status</th>
+                <th>Scheduled image</th>
+                <th>Posted image</th>
+                <th>Error / message</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.flatMap(item => {
+                const resultByPlatform = Object.fromEntries((item?.results || []).map(r => [r.platform, r]));
+                const hasResults = (item?.results || []).length > 0;
+                const isPending = item?.status === 'pending';
+                const isCancelled = item?.status === 'cancelled';
+
+                return (item?.platforms || []).map(p => {
+                  const result = resultByPlatform[p];
+                  const pState = !hasResults ? 'pending' : (result?.success ? 'success' : 'fail');
+                  const rowStatus = isCancelled ? 'cancelled' : isPending ? 'pending' : (pState === 'success' ? 'posted' : pState === 'fail' ? 'failed' : item?.status);
+
+                  return (
+                    <tr key={`${item?.schedule_id}-${p}`} className={s.tr}>
+                      <td className={s.platformCell}>{PLATFORM_ICON[p] || ''} {PLATFORM_NAME[p] || p}</td>
+                      <td className={s.captionCell} title={item?.caption}>{item?.caption}</td>
+                      <td className={s.imgCell}>
+                        {item?.image_url && (
+                          <a href={item.image_url} target="_blank" rel="noreferrer" className={s.imgLink}>
+                            <img className={s.thumb} src={item.image_url} alt="" />
+                            <span>View</span>
+                          </a>
+                        )}
+                      </td>
+                      <td className={s.timeCell}>
+                        {item?.scheduled_time ? new Date(item.scheduled_time).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
+                      </td>
+                      <td>
+                        <span className={`${s.statusBadge} ${s[`status_${rowStatus}`] || ''}`}>{STATUS_LABEL[rowStatus] || rowStatus}</span>
+                      </td>
+                      <td className={s.imgCell}>
+                        {isPending && item?.image_url && (
+                          <a href={item.image_url} target="_blank" rel="noreferrer" className={s.imgLink}>
+                            <img className={s.thumb} src={item.image_url} alt="" />
+                            <span>View</span>
+                          </a>
+                        )}
+                      </td>
+                      <td className={s.imgCell}>
+                        {pState === 'success' && item?.image_url && (
+                          <a href={item.image_url} target="_blank" rel="noreferrer" className={s.imgLink}>
+                            <img className={s.thumb} src={item.image_url} alt="" />
+                            <span>View</span>
+                          </a>
+                        )}
+                      </td>
+                      <td className={s.errorCell}>
+                        {result?.error && <span className={s.failReason}>{result.error}</span>}
+                        {result?.needs_reconnect && api.connect && (
+                          <button
+                            type="button" className={s.reconnectInlineBtn}
+                            disabled={reconnecting === p}
+                            onClick={() => handleReconnect(p)}
+                          >
+                            {reconnecting === p ? 'Reconnecting…' : `Reconnect ${PLATFORM_NAME[p] || p}`}
+                          </button>
+                        )}
+                      </td>
+                      <td className={s.actionsCell}>
+                        {isPending && (
+                          <button
+                            type="button" className={s.cancelBtn}
+                            disabled={cancelling === item?.schedule_id}
+                            onClick={() => handleCancel(item.schedule_id)}
+                          >
+                            {cancelling === item?.schedule_id ? '…' : 'Cancel'}
+                          </button>
+                        )}
+                        {(item?.status === 'failed' || item?.status === 'partial') && api.retryScheduled && (
+                          <button
+                            type="button" className={s.retryBtn}
+                            disabled={retrying === item?.schedule_id}
+                            onClick={() => handleRetry(item.schedule_id)}
+                          >
+                            {retrying === item?.schedule_id ? '…' : '↻ Retry'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

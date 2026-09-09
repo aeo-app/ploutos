@@ -11,6 +11,9 @@ class SocialPlatformStatus(BaseModel):
     platform: str  # facebook | instagram | linkedin | google_business
     connected: bool
     account_label: str = ""  # Page/org/location name, for display
+    needs_reconnect: bool = False  # set once a publish attempt hits an
+    # expired/revoked/invalid token — connected stays True (there IS a
+    # stored connection) but it can't actually be used until reconnected
 
 
 class SocialConnectionsStatusResponse(BaseModel):
@@ -44,6 +47,8 @@ class PublishRequest(_ImageSourceMixin):
     caption: str = Field(..., min_length=1)
     platforms: list[str] = Field(..., min_length=1, example=["facebook", "instagram", "linkedin", "google_business"])
     cta_url: Optional[str] = Field(None, description="Used for Google Business Profile's 'Learn more' button, if provided")
+    day_date: Optional[str] = Field(None, description="Which calendar day this belongs to, if posting from a specific day's card — defaults to today if not given")
+    post_number: Optional[int] = Field(None, description="Which of that day's posts (1 or 2) this is, if posting from a specific post card — lets the calendar UI match this history record back to the exact post it came from")
 
 
 class PlatformPublishResult(BaseModel):
@@ -51,6 +56,7 @@ class PlatformPublishResult(BaseModel):
     success: bool
     post_id: Optional[str] = None
     error: Optional[str] = None
+    needs_reconnect: bool = False
 
 
 class PublishResponse(BaseModel):
@@ -64,6 +70,7 @@ SCHEDULABLE_PLATFORMS = {"facebook", "instagram"}
 
 class ScheduleRequest(_ImageSourceMixin):
     day_date: str = Field(..., example="2026-09-03", description="Which calendar day this post belongs to")
+    post_number: Optional[int] = Field(None, description="Which of that day's posts (1 or 2) this is — lets the calendar UI match this history record back to the exact post it came from")
     caption: str = Field(..., min_length=1)
     platforms: list[str] = Field(..., min_length=1, example=["facebook", "instagram"])
     scheduled_time: str = Field(..., description="ISO 8601 datetime, must be in the future (e.g. 2026-09-03T09:00:00Z)")
@@ -86,11 +93,12 @@ class ScheduleResponse(BaseModel):
 class ScheduledPostSummary(BaseModel):
     schedule_id: str
     day_date: str
+    post_number: Optional[int] = None
     platforms: list[str]
     caption: str
     image_url: str
     scheduled_time: str
-    status: str  # pending | posted | failed | cancelled
+    status: str  # pending | posted | partial | failed | cancelled
     results: list[PlatformPublishResult] = []
 
 

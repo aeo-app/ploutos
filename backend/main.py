@@ -5,12 +5,13 @@ AWS Bedrock + Cognito + DynamoDB
 import os
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-load_dotenv() 
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 print("CURRENT DIR:", os.getcwd())
 

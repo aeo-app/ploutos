@@ -33,7 +33,8 @@ def process_due_scheduled_posts() -> int:
                 post["user_id"], post["platforms"], post["image_url"], post["caption"],
                 cta_url=post.get("cta_url") or None,
             )
-            overall_status = "posted" if all(r["success"] for r in results) else "failed"
+            successes = sum(1 for r in results if r["success"])
+            overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
             update_scheduled_post_status(schedule_id, overall_status, results=results)
         except Exception as e:
             logger.error(f"[scheduler] unexpected error processing {schedule_id}: {e}", exc_info=True)

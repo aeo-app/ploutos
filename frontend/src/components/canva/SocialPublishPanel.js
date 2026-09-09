@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useApp } from '../../context/AppContext';
+import { rememberPageBeforeOAuthRedirect } from '../../utils/oauthReturn';
 import s from './SocialPublishPanel.module.css';
 
 const PLATFORM_META = {
@@ -21,10 +23,10 @@ const SCHEDULABLE_PLATFORMS = new Set(['facebook', 'instagram']);
  * that customer's user_id) — see RelocationCalendarPage.js and
  * AdminContentPage.js for how each wires this up.
  */
-export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
+export function SocialPublishPanel({ api, dayDate, postNumber, posterId, defaultCaption }) {
+  const { state } = useApp();
   const [statusList, setStatusList] = useState(null);
-  const [sendingInvite, setSendingInvite] = useState(null);
-  const [inviteLinks, setInviteLinks] = useState({}); // connectGroup -> {url, copied}
+  const [connecting, setConnecting] = useState(null);
 
   const [imageSource, setImageSource] = useState(posterId ? 'poster' : 'upload'); // 'poster' | 'upload'
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -49,37 +51,17 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
     // eslint-disable-next-line
   }, []);
 
-  const refreshStatus = () => {
-    api.status()
-      .then(d => setStatusList(d?.platforms || []))
-      .catch(err => console.warn('[SocialPublishPanel] status refresh failed:', err?.message || err));
-  };
-
   const handleConnect = async (connectGroup) => {
-    setSendingInvite(connectGroup);
+    setConnecting(connectGroup);
     setError(null);
     try {
-      if (connectGroup === 'meta' && api.connect) {
-        const { authorize_url } = await api.connect('meta');
-        window.location.href = authorize_url;
-        return;
-      }
-      const { invite_url } = await api.createInvite({ connect_group: connectGroup });
-      setInviteLinks(prev => ({ ...prev, [connectGroup]: { url: invite_url, copied: false } }));
+      const { authorize_url } = await api.connect(connectGroup);
+      rememberPageBeforeOAuthRedirect(state.page);
+      window.location.href = authorize_url;
     } catch (e) {
       setError(e.message || `Could not start the ${connectGroup} connection.`);
-    } finally {
-      setSendingInvite(null);
+      setConnecting(null);
     }
-  };
-
-  const handleCopyInvite = (connectGroup) => {
-    const link = inviteLinks[connectGroup];
-    if (!link) return;
-    navigator.clipboard?.writeText(link.url).then(() => {
-      setInviteLinks(prev => ({ ...prev, [connectGroup]: { ...prev[connectGroup], copied: true } }));
-      setTimeout(() => setInviteLinks(prev => ({ ...prev, [connectGroup]: { ...prev[connectGroup], copied: false } })), 2000);
-    });
   };
 
   const handleFileChange = async (e) => {
@@ -97,6 +79,43 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
       setUploadedFile(null);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const [removingImage, setRemovingImage] = useState(false);
+  const handleRemoveImage = async () => {
+    if (!uploadedUrl || !api.deleteUploadedImage) {
+      // Nothing to actually delete server-side (or this adapter can't) —
+      // still clear it from THIS form so the user isn't stuck with a
+      // preview they don't want, even if the underlying file lingers.
+      setUploadedUrl(null);
+      setUploadedFile(null);
+      return;
+    }
+    setRemovingImage(true);
+    setError(null);
+    try {
+      await api.deleteUploadedImage(uploadedUrl);
+      setUploadedUrl(null);
+      setUploadedFile(null);
+    } catch (err) {
+      // A 409 here means it's already used by a published post — ask
+      // before forcing rather than silently overriding the safety check.
+      if (err?.message?.toLowerCase().includes('successfully published')) {
+        if (window.confirm(`${err.message}\n\nDelete it anyway?`)) {
+          try {
+            await api.deleteUploadedImage(uploadedUrl, true);
+            setUploadedUrl(null);
+            setUploadedFile(null);
+          } catch (err2) {
+            setError(err2.message || 'Could not delete that image.');
+          }
+        }
+      } else {
+        setError(err.message || 'Could not delete that image.');
+      }
+    } finally {
+      setRemovingImage(false);
     }
   };
 
@@ -126,6 +145,7 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
 
   const selectedPlatforms = Object.entries(selected).filter(([, v]) => v).map(([k]) => k);
   const isConnected = (platform) => statusList?.find(p => p?.platform === platform)?.connected;
+  const needsReconnect = (platform) => statusList?.find(p => p?.platform === platform)?.needs_reconnect;
   const uploadState = uploading ? 'Uploading image' : uploadedUrl ? 'Ready to post' : 'No upload selected';
 
   const buildImageSourcePayload = () => {
@@ -156,13 +176,13 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
       if (mode === 'now') {
         const data = await api.publish({
           ...sourcePayload, caption: caption.trim(), platforms: selectedPlatforms,
-          cta_url: ctaUrl.trim() || undefined,
+          cta_url: ctaUrl.trim() || undefined, day_date: dayDate, post_number: postNumber,
         });
         setResults(data?.results || []);
       } else {
         const iso = new Date(scheduledTime).toISOString();
         const data = await api.schedule({
-          ...sourcePayload, day_date: dayDate, caption: caption.trim(), platforms: selectedPlatforms,
+          ...sourcePayload, day_date: dayDate, post_number: postNumber, caption: caption.trim(), platforms: selectedPlatforms,
           scheduled_time: iso, cta_url: ctaUrl.trim() || undefined,
         });
         setScheduleConfirmation(data);
@@ -184,37 +204,60 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
         <div className={s.platformGrid}>
           {Object.entries(PLATFORM_META).map(([platform, meta]) => {
             const connected = isConnected(platform);
+            const needsReconn = needsReconnect(platform);
             const disabledForMode = mode === 'schedule' && !SCHEDULABLE_PLATFORMS.has(platform);
-            const invite = inviteLinks[meta.connectGroup];
             return (
               <div key={platform} className={s.platformRow}>
                 <label className={s.platformLabel}>
                   <input
                     type="checkbox"
-                    disabled={!connected || disabledForMode}
+                    disabled={!connected || needsReconn || disabledForMode}
                     checked={!!selected[platform]}
                     onChange={() => togglePlatform(platform)}
                   />
                   <span>{meta.icon} {meta.label}</span>
                   {disabledForMode && <span className={s.notSchedulable}>(not schedulable)</span>}
                 </label>
-                {connected ? (
-                  <span className={s.connectedBadge}>
-                    Connected{statusList.find(p => p?.platform === platform)?.account_label
-                      ? `: ${statusList.find(p => p?.platform === platform).account_label}`
-                      : ''}
+                {needsReconn ? (
+                  api.connect ? (
+                    <button
+                      type="button" className={s.reconnectBtn}
+                      disabled={connecting === meta.connectGroup}
+                      onClick={() => handleConnect(meta.connectGroup)}
+                      title="This connection has expired or been revoked — reconnect to keep posting here."
+                    >
+                      {connecting === meta.connectGroup ? 'Reconnecting…' : '⚠ Reconnect needed'}
+                    </button>
+                  ) : (
+                    <span className={s.reconnectNeededText} title="This connection has expired or been revoked — the customer needs to reconnect it themselves.">
+                      ⚠ Needs reconnection
+                    </span>
+                  )
+                ) : connected ? (
+                  <span className={s.connectedRow}>
+                    <span className={s.connectedBadge}>
+                      Connected{statusList.find(p => p?.platform === platform)?.account_label
+                        ? `: ${statusList.find(p => p?.platform === platform).account_label}`
+                        : ''}
+                    </span>
+                    {api.connect && (
+                      <button
+                        type="button" className={s.changeAccountBtn}
+                        disabled={connecting === meta.connectGroup}
+                        onClick={() => handleConnect(meta.connectGroup)}
+                        title="Reconnect or switch to a different page/account"
+                      >
+                        {connecting === meta.connectGroup ? '…' : 'Change'}
+                      </button>
+                    )}
                   </span>
-                ) : api.createInvite ? (
+                ) : api.connect ? (
                   <button
                     type="button" className={s.connectBtn}
-                    disabled={sendingInvite === meta.connectGroup}
+                    disabled={connecting === meta.connectGroup}
                     onClick={() => handleConnect(meta.connectGroup)}
                   >
-                    {sendingInvite === meta.connectGroup
-                      ? 'Connecting…'
-                      : invite
-                        ? 'New invite link'
-                        : (meta.connectGroup === 'meta' ? 'Connect account' : 'Send invite to page admin')}
+                    {connecting === meta.connectGroup ? 'Connecting…' : 'Connect account'}
                   </button>
                 ) : (
                   <span className={s.notConnectedText}>Not connected by customer</span>
@@ -224,28 +267,6 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
           })}
         </div>
       )}
-
-      {Object.entries(inviteLinks).map(([connectGroup, link]) => {
-        const groupPlatforms = Object.entries(PLATFORM_META).filter(([, m]) => m.connectGroup === connectGroup).map(([p]) => p);
-        if (groupPlatforms.some(p => isConnected(p))) return null; // now connected - link no longer relevant
-        return (
-        <div key={connectGroup} className={s.inviteLinkRow}>
-          <div className={s.inviteLinkHint}>
-            Send this link to whoever administers your {connectGroup === 'meta' ? 'Facebook Page' : connectGroup === 'linkedin' ? 'LinkedIn profile' : 'Google Business location'} —
-            they'll authorize directly with the platform and pick the exact page to connect. Nothing connects until they do.
-          </div>
-          <div className={s.inviteLinkBox}>
-            <input type="text" readOnly value={link.url} className={s.inviteLinkInput} onFocus={e => e.target.select()} />
-            <button type="button" className={s.inviteCopyBtn} onClick={() => handleCopyInvite(connectGroup)}>
-              {link.copied ? '✓ Copied' : 'Copy link'}
-            </button>
-            <button type="button" className={s.inviteCopyBtn} onClick={refreshStatus} title="Check if the admin has approved it yet">
-              ↻ Check status
-            </button>
-          </div>
-        </div>
-        );
-      })}
 
       <div className={s.sectionHeading}>
         <div>
@@ -273,6 +294,9 @@ export function SocialPublishPanel({ api, dayDate, posterId, defaultCaption }) {
             <div className={s.uploadedAsset}>
               <img className={s.uploadPreview} src={uploadedUrl} alt="Uploaded post preview" />
               <div><strong>Uploaded image</strong><span>Ready for posting</span></div>
+              <button type="button" className={s.removeImageBtn} disabled={removingImage} onClick={handleRemoveImage}>
+                {removingImage ? 'Removing…' : '✕ Remove'}
+              </button>
             </div>
           )}
         </div>

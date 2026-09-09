@@ -51,7 +51,10 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
 
   const [showCreateCalendar, setShowCreateCalendar] = useState(false);
   const [creatingCalendar, setCreatingCalendar] = useState(false);
-  const [newCalCountry, setNewCalCountry] = useState('');
+  const [newCalIndustry, setNewCalIndustry] = useState('');
+  const [newCalBusinessDescription, setNewCalBusinessDescription] = useState('');
+  const [newCalTargetAudience, setNewCalTargetAudience] = useState('');
+  const [newCalMarket, setNewCalMarket] = useState('');
   const [newCalStartDate, setNewCalStartDate] = useState('');
   const [newCalEndDate, setNewCalEndDate] = useState('');
   const [newCalContentSuggestions, setNewCalContentSuggestions] = useState('');
@@ -179,20 +182,25 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
   };
 
   const createCalendar = async () => {
-    if (!newCalCountry.trim()) { toast({ type: 'error', message: 'Enter a destination country first.' }); return; }
+    if (!newCalIndustry.trim() || !newCalBusinessDescription.trim() || !newCalTargetAudience.trim() || !newCalMarket.trim()) {
+      toast({ type: 'error', message: 'Fill in industry, business description, target audience, and market first.' });
+      return;
+    }
     if (!newCalStartDate || !newCalEndDate) { toast({ type: 'error', message: 'Pick a start and end date first.' }); return; }
     if (!selectedUser?.user_id) return;
     setCreatingCalendar(true);
     try {
       const created = await withTokenExpiry(
         adminApi.createCalendarForUser(selectedUser.user_id, {
-          country: newCalCountry.trim(), start_date: newCalStartDate, end_date: newCalEndDate,
+          industry: newCalIndustry.trim(), business_description: newCalBusinessDescription.trim(),
+          target_audience: newCalTargetAudience.trim(), market: newCalMarket.trim(),
+          start_date: newCalStartDate, end_date: newCalEndDate,
           content_suggestions: newCalContentSuggestions.trim(),
         }),
         authCtx
       );
       setItems(prev => [
-        { analysis_id: created?.analysis_id, user_id: selectedUser.user_id, country: created?.country, created_at: created?.created_at, status: created?.status },
+        { analysis_id: created?.analysis_id, user_id: selectedUser.user_id, market: created?.market, created_at: created?.created_at, status: created?.status },
         ...(prev || []),
       ]);
       setSelected(created);
@@ -238,6 +246,7 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
       publish: (payload) => adminApi.socialPublish(userId, payload),
       schedule: (payload) => adminApi.socialSchedule(userId, payload),
       listScheduled: () => adminApi.socialListScheduled(userId),
+      retryScheduled: (scheduleId) => adminApi.socialRetryScheduled(userId, scheduleId),
       cancelScheduled: (scheduleId) => adminApi.socialCancelScheduled(userId, scheduleId),
       // Deliberately no `connect` — an admin can't OAuth-authorize Facebook/
       // Instagram on a customer's behalf, that has to be the actual account
@@ -336,8 +345,23 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                 <div className={s.createBlogPanel}>
                   <input
                     className={s.reviseSelect} style={{ width: '100%', marginBottom: 8 }}
-                    placeholder="Destination country (required) — e.g. 'Canada'"
-                    value={newCalCountry} onChange={e => setNewCalCountry(e.target.value)}
+                    placeholder="Industry (required) — e.g. 'Logistics', 'Real Estate', 'Bakery & Café'"
+                    value={newCalIndustry} onChange={e => setNewCalIndustry(e.target.value)}
+                  />
+                  <textarea
+                    className={s.reviseTextarea} style={{ marginBottom: 8 }}
+                    placeholder="What does this company actually do? (required) — products, services, what makes it distinct"
+                    value={newCalBusinessDescription} onChange={e => setNewCalBusinessDescription(e.target.value)}
+                  />
+                  <input
+                    className={s.reviseSelect} style={{ width: '100%', marginBottom: 8 }}
+                    placeholder="Target audience (required) — e.g. 'Local families and event planners'"
+                    value={newCalTargetAudience} onChange={e => setNewCalTargetAudience(e.target.value)}
+                  />
+                  <input
+                    className={s.reviseSelect} style={{ width: '100%', marginBottom: 8 }}
+                    placeholder="Market (required) — e.g. 'Austin, Texas' or 'Singapore'"
+                    value={newCalMarket} onChange={e => setNewCalMarket(e.target.value)}
                   />
                   <div className={s.reviseTargetRow}>
                     <input
@@ -373,7 +397,7 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                       className={`${s.calendarRow} ${selected?.analysis_id === it?.analysis_id ? s.calendarRowActive : ''}`}
                       onClick={() => selectItem(it)}
                     >
-                      <span>{contentType === 'blogs' ? (it?.company_name || '—') : (it?.country || '—')}</span>
+                      <span>{contentType === 'blogs' ? (it?.company_name || '—') : (it?.market || '—')}</span>
                       <span className={s.calendarMeta}>{it?.created_at?.slice(0, 10) || '—'}</span>
                     </button>
                   ))}
@@ -395,7 +419,7 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
                   </div>
                 </div>
 
-                {view === 'formatted' && contentType === 'calendars' && selected?.result && <RelocationCalendarResultView result={selected.result} />}
+                {view === 'formatted' && contentType === 'calendars' && selected?.result && <RelocationCalendarResultView result={selected.result} socialApi={adminSocialApi} />}
 
                 {view === 'formatted' && contentType === 'blogs' && blogPost && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

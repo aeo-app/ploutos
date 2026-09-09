@@ -89,7 +89,19 @@ _creds_expiry = 0
 def _get_table():
     global _dynamodb, _table, _creds_expiry
 
-    if _table is None:
+    # Refresh if never connected, OR if the assumed-role credentials are at
+    # or near expiry — _creds_expiry was previously tracked below but never
+    # actually read anywhere, so this cached connection (and its STS
+    # session) never refreshed once created, no matter how long the process
+    # kept running. Assumed-role sessions are commonly ~1 hour; any backend
+    # process alive longer than that would start failing every DB call with
+    # "The provided token has expired" once the cached credentials aged out.
+    # 60s buffer avoids a request starting right as credentials expire
+    # mid-flight. _creds_expiry stays 0/falsy for the local-endpoint branch
+    # below (no STS, no expiry concept), so this never spuriously triggers
+    # for local dev.
+    needs_refresh = _table is None or (_creds_expiry and time() > _creds_expiry - 60)
+    if needs_refresh:
 
         kwargs = dict(region_name=AWS_REGION)
 
@@ -686,6 +698,10 @@ def save_social_connection(
         "expires_at": expires_at,
         "extra": extra or {},
         "connected_at": _now_iso(),
+        # Explicitly reset on every (re)connect — this uses put_item (a full
+        # overwrite), so a successful reconnect naturally clears whatever
+        # needs_reconnect state existed before, without a separate update call.
+        "needs_reconnect": False,
     }
     try:
         table.put_item(Item=_to_dynamo(item))
@@ -704,6 +720,29 @@ def get_social_connection(user_id: str, platform: str) -> Optional[dict]:
     except ClientError as e:
         logger.error(f"[dynamo] get_social_connection failed: {e.response['Error']}")
         raise
+
+
+def mark_connection_needs_reconnect(user_id: str, platform: str) -> None:
+    """Flags an existing connection as needing reconnection — called when a
+    publish/schedule attempt fails with an auth error specifically (expired,
+    revoked, or invalid token), not any other kind of failure (rate limits,
+    content policy violations, network errors). A partial update, not an
+    overwrite — the stored token stays as-is (harmless, since it's already
+    unusable) rather than being deleted, so get_social_connection still
+    returns a record the frontend can show as "needs reconnect" rather than
+    "never connected"."""
+    table = _get_table()
+    try:
+        table.update_item(
+            Key={"PK": _pk(user_id), "SK": _social_connection_sk(platform)},
+            UpdateExpression="SET needs_reconnect = :true",
+            ExpressionAttributeValues={":true": True},
+        )
+        logger.warning(f"[dynamo] {platform} connection for user={user_id} flagged as needs_reconnect")
+    except ClientError as e:
+        # Not fatal — the publish failure itself is already being reported
+        # to the caller regardless; this is a best-effort status flag.
+        logger.error(f"[dynamo] mark_connection_needs_reconnect failed: {e.response['Error']}")
 
 
 def list_social_connections(user_id: str) -> list[dict]:
@@ -754,7 +793,7 @@ def _scheduled_post_sk(scheduled_time_iso: str, schedule_id: str) -> str:
 def save_scheduled_post(
     *, schedule_id: str, user_id: str, day_date: str, platforms: list[str],
     caption: str, image_url: str, cta_url: str = "", scheduled_time_iso: str,
-    status: str = "pending",
+    status: str = "pending", results: Optional[list] = None, post_number: Optional[int] = None,
 ) -> None:
     table = _get_table()
     item = {
@@ -764,13 +803,14 @@ def save_scheduled_post(
         "schedule_id": schedule_id,
         "user_id": user_id,
         "day_date": day_date,
+        "post_number": post_number,
         "platforms": platforms,
         "caption": caption,
         "image_url": image_url,
         "cta_url": cta_url,
         "scheduled_time": scheduled_time_iso,
-        "status": status,  # pending | posted | failed | cancelled
-        "results": [],
+        "status": status,  # pending | posted | partial | failed | cancelled
+        "results": results or [],
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }

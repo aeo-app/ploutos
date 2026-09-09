@@ -1,0 +1,44 @@
+.wrap {
+  margin: 10px 0 14px; padding: 12px; border-radius: var(--r-md); background: var(--c-slate-50);
+  border: 1px solid var(--c-slate-200);
+}
+.draftBadge { font-size: 12px; font-weight: 600; color: var(--c-slate-400); }
+
+.mainRow { display: flex; gap: 12px; align-items: flex-start; }
+.thumb { width: 56px; height: 56px; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--c-slate-200); flex-shrink: 0; }
+.info { flex: 1; min-width: 0; }
+
+.statusLine { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.statusBadge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.statusScheduled { background: var(--c-warning-bg, #FFFBEB); color: var(--c-warning-text, #92400E); }
+.statusPosted { background: var(--c-success-bg, #ECFDF5); color: var(--c-success); }
+.statusPartial { background: var(--c-warning-bg, #FFFBEB); color: var(--c-warning-text, #92400E); }
+.statusFailed { background: var(--c-danger-bg, #FEF2F2); color: var(--c-danger); }
+.statusCancelled { background: var(--c-slate-100); color: var(--c-slate-500); }
+.timeText { font-size: 11px; color: var(--c-slate-400); white-space: nowrap; }
+
+.platformRow { display: flex; flex-wrap: wrap; gap: 5px; }
+.platformChip { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.chip_pending { background: var(--c-slate-100); color: var(--c-slate-500); }
+.chip_success { background: var(--c-success-bg, #ECFDF5); color: var(--c-success); }
+.chip_fail { background: var(--c-danger-bg, #FEF2F2); color: var(--c-danger); }
+
+.cancelLink {
+  border: none; background: none; color: var(--c-slate-400); font-size: 11px; font-weight: 600;
+  text-decoration: underline; cursor: pointer; padding: 0; margin-top: 6px;
+}
+.cancelLink:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.actionsRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--c-slate-200); }
+.reconnectBtn {
+  border: 1.5px solid var(--c-warning); background: var(--c-warning-bg, #FFFBEB); color: var(--c-warning-text, #92400E);
+  font-weight: 700; font-size: 11px; padding: 5px 11px; border-radius: var(--r-sm); cursor: pointer;
+}
+.reconnectBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.reconnectNeededText { font-size: 11px; font-weight: 700; color: var(--c-warning-text, #92400E); }
+.retryBtn {
+  border: 1.5px solid var(--c-indigo-300); background: var(--c-white); color: var(--c-indigo-700);
+  font-weight: 700; font-size: 11px; padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer;
+}
+.retryBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.errorText { font-size: 11px; color: var(--c-danger); margin-top: 8px; }

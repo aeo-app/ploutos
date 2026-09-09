@@ -11,6 +11,7 @@ import { LockedTeaser } from '../components/payment/LockedTeaser';
 import { historyApi } from '../api/historyApi';
 import { CanvaPosterPanel } from '../components/canva/CanvaPosterPanel';
 import { SocialPublishPanel } from '../components/canva/SocialPublishPanel';
+import { PostStatusSummary } from '../components/canva/PostStatusSummary';
 import { ScheduledPostsList } from '../components/canva/ScheduledPostsList';
 import { socialPublishApi } from '../api/socialPublishApi';
 import s from './RelocationCalendarPage.module.css';
@@ -26,11 +27,20 @@ const TONE_VARIANT = { emotional: 'danger', professional: 'info', educational: '
 const CTA_VARIANT = { soft: 'default', urgent: 'danger', informative: 'info' };
 
 /* ── One post's platform-tabbed captions ─────────────────────────────── */
-function PostCard({ post, dayDate }) {
+function PostCard({ post, dayDate, historyItems, socialApi }) {
   const [platform, setPlatform] = useState('instagram');
   const caption = post.captions?.[platform] || '';
   const [posterId, setPosterId] = useState(null);
   const [actionTab, setActionTab] = useState('create'); // 'create' | 'publish'
+
+  // The most recent history record for THIS specific post (day_date +
+  // post_number) — there can be more than one if it was retried/rescheduled,
+  // so take the latest by scheduled_time rather than assuming there's only one.
+  const matching = (historyItems || [])
+    .filter(i => i?.day_date === dayDate && i?.post_number === post?.post_number)
+    .sort((a, b) => (b?.scheduled_time || '').localeCompare(a?.scheduled_time || ''));
+  const [statusItem, setStatusItem] = useState(matching[0] || null);
+  useEffect(() => { setStatusItem(matching[0] || null); }, [historyItems]); // eslint-disable-line
 
   return (
     <div className={s?.postCard}>
@@ -42,6 +52,8 @@ function PostCard({ post, dayDate }) {
           <Badge variant={CTA_VARIANT[post?.cta_style] || 'default'}>{post?.cta_style} CTA</Badge>
         </div>
       </div>
+
+      <PostStatusSummary item={statusItem} api={socialApi} onChanged={setStatusItem} />
 
       {post?.is_simulated_story && (
         <div className={s?.simulatedNote}>
@@ -122,8 +134,9 @@ function PostCard({ post, dayDate }) {
 
       <div style={{ display: actionTab === 'publish' ? 'block' : 'none' }}>
         <SocialPublishPanel
-          api={socialPublishApi}
+          api={socialApi || socialPublishApi}
           dayDate={dayDate}
+          postNumber={post.post_number}
           posterId={posterId}
           defaultCaption={caption || post.cta}
         />
@@ -133,7 +146,7 @@ function PostCard({ post, dayDate }) {
 }
 
 /* ── One day's card (collapsible) ────────────────────────────────────── */
-export function DayCard({ day, index, defaultOpen, onUnlock }) {
+export function DayCard({ day, index, defaultOpen, onUnlock, historyItems, socialApi }) {
   const [open, setOpen] = useState(!!defaultOpen);
   const schedule = day.schedule; // DayScheduleSlot wraps the real DailySchedule here — null if locked
   const rt = schedule?.recommended_times;
@@ -168,7 +181,9 @@ export function DayCard({ day, index, defaultOpen, onUnlock }) {
               <span className={s?.dayTimeChip}>GBP: {rt?.google_business}</span>
             </div>
             <div className={s?.dayBody}>
-              {schedule?.posts.map((post, i) => <PostCard key={i} post={post} dayDate={day?.date} />)}
+              {schedule?.posts.map((post, i) => (
+                <PostCard key={i} post={post} dayDate={day?.date} historyItems={historyItems} socialApi={socialApi} />
+              ))}
             </div>
           </>
         )}
@@ -181,7 +196,17 @@ const toISODate = (d) => d.toISOString().slice(0, 10);
 
 /* ── Static result view — renders a saved RelocationSocialResponse (e.g. from
    History) exactly like the live streaming page does. ──────────────────── */
-export function RelocationCalendarResultView({ result }) {
+export function RelocationCalendarResultView({ result, socialApi }) {
+  const api = socialApi || socialPublishApi;
+  const [historyItems, setHistoryItems] = useState([]);
+
+  useEffect(() => {
+    api.listScheduled()
+      .then(d => setHistoryItems(d?.items || []))
+      .catch(err => console.warn('[RelocationCalendarResultView] could not load post history:', err?.message || err));
+    // eslint-disable-next-line
+  }, []);
+
   if (!result) return null;
   const days = result.days || [];
 
@@ -204,7 +229,7 @@ export function RelocationCalendarResultView({ result }) {
       )}
 
       {days.map((day, i) => (
-        <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => {}} />
+        <DayCard key={day.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => {}} historyItems={historyItems} socialApi={api} />
       ))}
     </div>
   );
@@ -214,8 +239,18 @@ export function RelocationCalendarResultView({ result }) {
 export function RelocationCalendarPage() {
   const { state, setResultKey, setLoadingKey, toast } = useApp();
   const { goScreen, logout } = useAuth();
+  const [historyItems, setHistoryItems] = useState([]);
 
-  const [country, setCountry] = useState('');
+  useEffect(() => {
+    socialPublishApi.listScheduled()
+      .then(d => setHistoryItems(d?.items || []))
+      .catch(err => console.warn('[RelocationCalendarPage] could not load post history:', err?.message || err));
+  }, []);
+
+  const [industry, setIndustry] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [market, setMarket] = useState('');
   const [contentSuggestions, setContentSuggestions] = useState('');
   const [company, setCompany] = useState({
     name: state.request.company_name || '',
@@ -237,7 +272,10 @@ export function RelocationCalendarPage() {
       .then(full => {
         const savedReq = full?.request;
         if (savedReq) {
-          if (savedReq.country) setCountry(savedReq.country);
+          if (savedReq.industry) setIndustry(savedReq.industry);
+          if (savedReq.business_description) setBusinessDescription(savedReq.business_description);
+          if (savedReq.target_audience) setTargetAudience(savedReq.target_audience);
+          if (savedReq.market) setMarket(savedReq.market);
           if (savedReq.company) {
             setCompany(c => ({ ...c, ...savedReq.company }));
           }
@@ -318,7 +356,7 @@ export function RelocationCalendarPage() {
   const rangeTooLong = rangeDays > 62;
 
   const run = async () => {
-    if (!country.trim() || !company.name.trim() || dateRangeInvalid || rangeTooLong) return;
+    if (!industry.trim() || !businessDescription.trim() || !targetAudience.trim() || !market.trim() || !company.name.trim() || dateRangeInvalid || rangeTooLong) return;
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -333,7 +371,10 @@ export function RelocationCalendarPage() {
     setLoadingKey('relocationCalendar', true);
 
     const req = {
-      country: country?.trim(),
+      industry: industry?.trim(),
+      business_description: businessDescription?.trim(),
+      target_audience: targetAudience?.trim(),
+      market: market?.trim(),
       company: {
         name: company?.name?.trim(),
         phone: company?.phone?.trim() || null,
@@ -379,10 +420,10 @@ export function RelocationCalendarPage() {
 
       <Card style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
         <SectionHeader
-          title="Relocation Social Media Calendar"
+          title="Social Media Calendar"
           subtitle={formExpanded
-            ? "Any country, any date range — platform-ready captions for Instagram, Facebook, LinkedIn & Google Business, with a randomised, non-repetitive posting schedule."
-            : `${company?.name || 'Your'} calendar for ${country || 'your destination'}, ${periodLabel || `${startDate} → ${endDate}`}`}
+            ? "Any business, any industry — platform-ready captions for Instagram, Facebook, LinkedIn & Google Business, grounded in what your company actually does, with a randomised, non-repetitive posting schedule."
+            : `${company?.name || 'Your'} calendar — ${industry || 'your industry'}, ${periodLabel || `${startDate} → ${endDate}`}`}
           right={
             <button type="button" className={s?.formToggleBtn} onClick={() => setFormExpanded(v => !v)}>
               {formExpanded ? 'Hide form' : '✎ New calendar / edit settings'}
@@ -394,8 +435,8 @@ export function RelocationCalendarPage() {
           <>
         <div className={s?.formRow}>
           <div className={s?.field}>
-            <span className={s?.fieldLabel}>Country*</span>
-            <input className={s?.input} value={country} onChange={e => setCountry(e.target.value)} placeholder="e.g. Canada" />
+            <span className={s?.fieldLabel}>Industry*</span>
+            <input className={s?.input} value={industry} onChange={e => setIndustry(e.target.value)} placeholder="e.g. Bakery & Café, Logistics, Real Estate" />
           </div>
           <div className={s?.field}>
             <span className={s?.fieldLabel}>Company name*</span>
@@ -409,6 +450,26 @@ export function RelocationCalendarPage() {
             <span className={s?.fieldLabel}>End date*</span>
             <input className={s?.input} style={{ minWidth: 160 }} type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
           </div>
+        </div>
+
+        <div className={s?.formRow}>
+          <div className={s?.field}>
+            <span className={s?.fieldLabel}>Market*</span>
+            <input className={s?.input} value={market} onChange={e => setMarket(e.target.value)} placeholder="e.g. Austin, Texas or Singapore" />
+          </div>
+          <div className={s?.field} style={{ flex: 2 }}>
+            <span className={s?.fieldLabel}>Target audience*</span>
+            <input className={s?.input} value={targetAudience} onChange={e => setTargetAudience(e.target.value)} placeholder="e.g. Local families, young professionals, and event planners" />
+          </div>
+        </div>
+
+        <div className={s?.field} style={{ marginBottom: 12 }}>
+          <span className={s?.fieldLabel}>What does this company actually do?*</span>
+          <textarea
+            className={s?.input} style={{ minHeight: 70, resize: 'vertical' }} value={businessDescription}
+            onChange={e => setBusinessDescription(e.target.value)}
+            placeholder="e.g. A boutique bakery specializing in artisan sourdough, custom celebration cakes, and daily-fresh pastries, with a strong focus on locally-sourced ingredients."
+          />
         </div>
 
         <div className={s?.formRow}>
@@ -442,7 +503,7 @@ export function RelocationCalendarPage() {
         {!dateRangeInvalid && !rangeTooLong && rangeDays > 0 && <div style={{ fontSize: 13, color: 'var(--c-slate-400)' }}>{rangeDays} day{rangeDays !== 1 ? 's' : ''} × 2 posts = {rangeDays * 2} posts</div>}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Button onClick={run} loading={loading} disabled={!country.trim() || !company.name.trim() || dateRangeInvalid || rangeTooLong || loading} size="lg">
+          <Button onClick={run} loading={loading} disabled={!industry.trim() || !businessDescription.trim() || !targetAudience.trim() || !market.trim() || !company.name.trim() || dateRangeInvalid || rangeTooLong || loading} size="lg">
             {loading ? 'Generating…' : '📅 Generate Content Calendar'}
           </Button>
           {loading && <Button variant="ghost" onClick={cancel}>Cancel</Button>}
@@ -493,7 +554,7 @@ export function RelocationCalendarPage() {
           </AnimatePresence>
 
           {days?.map((day, i) => (
-            <DayCard key={day?.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} />
+            <DayCard key={day?.date} day={day} index={i} defaultOpen={i === 0} onUnlock={() => setShowUnlock(true)} historyItems={historyItems} socialApi={socialPublishApi} />
           ))}
         </motion.div>
       )}
@@ -512,7 +573,7 @@ export function RelocationCalendarPage() {
         <Empty
           icon="📅"
           title="No calendar generated yet"
-          body="Enter a destination country and a date range above and generate relocation content — streamed in day by day."
+          body="Fill in your industry, business description, target audience, and market above, then generate a calendar tailored to your actual business — streamed in day by day."
         />
       )}
 

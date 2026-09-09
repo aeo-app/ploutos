@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -52,12 +53,20 @@ ROLE_ARN = os.getenv("ROLE_ARN")  # optional, for cross-account access
 # analyses table's connection at all. ───────────────────────────────────────
 _dynamodb = None
 _table = None
+_creds_expiry = 0
 
 
 def _get_payments_table():
-    global _dynamodb, _table
+    global _dynamodb, _table, _creds_expiry
 
-    if _table is None:
+    # See db.dynamo._get_table()'s identical fix — a cached client whose
+    # assumed-role credentials expire (commonly ~1 hour) and never refresh
+    # fails every subsequent call with "The provided token has expired",
+    # regardless of how long this process keeps running. This table backs
+    # every payment/entitlement check in the app, so this bug alone could
+    # make every user appear unpaid/locked out once credentials aged out.
+    needs_refresh = _table is None or (_creds_expiry and time.time() > _creds_expiry - 60)
+    if needs_refresh:
         kwargs = dict(region_name=AWS_REGION)
 
         endpoint = os.getenv("DYNAMODB_ENDPOINT_URL")
@@ -73,6 +82,7 @@ def _get_payments_table():
             )
             response = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="dynamodb-payments-session")
             creds = response["Credentials"]
+            _creds_expiry = creds["Expiration"].timestamp()
             _dynamodb = boto3.resource(
                 "dynamodb",
                 region_name=AWS_REGION,

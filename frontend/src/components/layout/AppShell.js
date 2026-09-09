@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { TopBar }  from './TopBar';
 import { useApp } from '../../context/AppContext';
 import { UnlockModal } from '../payment/UnlockModal';
+import { PagePickerModal } from '../canva/PagePickerModal';
 import { historyApi } from '../../api/historyApi';
 import { consumeRememberedPage } from '../../utils/oauthReturn';
 import s from './AppShell.module.css';
@@ -26,7 +27,27 @@ const ANALYSIS_TYPE_TO_RESULT_KEY = {
 
 export function AppShell({ children, profile, onEnterAdminView }) {
   const [open, setOpen] = useState(false);
+  const [pagePickerToken, setPagePickerToken] = useState(null);
+  const [disconnectedPlatforms, setDisconnectedPlatforms] = useState([]);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const { state, setRequest, setResultKey, clearPaymentRequired, toast, setAdmin, setPage } = useApp();
+
+  // Checked once on load — a SCHEDULED post can fail overnight when the
+  // background scheduler runs, well after the user was last looking at
+  // the calendar page, so this can't rely on them happening to open
+  // SocialPublishPanel to notice. A dismissible banner rather than a
+  // toast, since toasts auto-disappear and this needs to stay visible
+  // until actually addressed.
+  useEffect(() => {
+    import('../../api/socialPublishApi').then(({ socialPublishApi }) => {
+      socialPublishApi.status()
+        .then(d => {
+          const lost = (d?.platforms || []).filter(p => p?.needs_reconnect);
+          setDisconnectedPlatforms(lost);
+        })
+        .catch(() => {}); // non-critical — silently skip if the status check itself fails
+    });
+  }, []);
 
   useEffect(() => {
     setAdmin(!!profile?.is_admin);
@@ -71,6 +92,9 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     if (!result) return;
     if (result === 'connected') {
       toast({ type: 'success', message: '✓ Social account connected.' });
+    } else if (result === 'pages_ready') {
+      const token = params.get('invite_token');
+      if (token) setPagePickerToken(token);
     } else if (result === 'error') {
       const reason = params.get('reason');
       toast({ type: 'error', message: reason ? `Could not connect: ${reason}` : 'Could not connect that social account. Please try again.' });
@@ -79,6 +103,7 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     if (returnPage) setPage(returnPage);
     params.delete('social_publish');
     params.delete('reason');
+    params.delete('invite_token');
     const newSearch = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
     // eslint-disable-next-line
@@ -159,6 +184,23 @@ export function AppShell({ children, profile, onEnterAdminView }) {
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className={s.main}>
         <TopBar onMenu={() => setOpen(v => !v)} onEnterAdminView={onEnterAdminView} />
+        {disconnectedPlatforms.length > 0 && !bannerDismissed && (
+          <div className={s.reconnectBanner}>
+            <span>
+              ⚠ {disconnectedPlatforms.map(p => p.platform).join(', ')} connection{disconnectedPlatforms.length > 1 ? 's have' : ' has'} expired
+              or been revoked — posts to {disconnectedPlatforms.length > 1 ? 'these platforms' : 'this platform'} will fail until you reconnect.
+            </span>
+            <div className={s.reconnectBannerActions}>
+              <button
+                type="button" className={s.reconnectBannerLink}
+                onClick={() => { setPage('relocationCalendar'); setBannerDismissed(true); }}
+              >
+                Go reconnect
+              </button>
+              <button type="button" className={s.reconnectBannerClose} onClick={() => setBannerDismissed(true)} aria-label="Dismiss">✕</button>
+            </div>
+          </div>
+        )}
         <main className={s.content}>{children}</main>
       </div>
 
@@ -170,6 +212,19 @@ export function AppShell({ children, profile, onEnterAdminView }) {
           onUnlocked={() => {
             clearPaymentRequired();
             toast({ type: 'success', message: '✓ Unlocked — click the button again to run it.' });
+          }}
+        />
+      )}
+
+      {pagePickerToken && (
+        <PagePickerModal
+          inviteToken={pagePickerToken}
+          onDone={(result) => {
+            setPagePickerToken(null);
+            if (result?.success) {
+              toast({ type: 'success', message: `✓ Connected — ${result.label}` });
+              window.location.reload();
+            }
           }}
         />
       )}

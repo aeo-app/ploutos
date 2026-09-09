@@ -34,6 +34,7 @@ import hashlib
 import hmac
 import logging
 import os
+import time
 from typing import Any, Optional
 
 import boto3
@@ -59,12 +60,21 @@ ROLE_ARN = os.getenv("ROLE_ARN")  # optional, for cross-account access
 
 # ── Singleton client ───────────────────────────────────────────────────────────
 _idp: Any = None
+_creds_expiry = 0
 
 
 def _get_client():
-    global _idp
+    global _idp, _creds_expiry
 
-    if _idp is None:
+    # See db.dynamo._get_table()'s identical fix — a cached client whose
+    # assumed-role credentials expire (commonly ~1 hour) and never refresh
+    # fails every subsequent call with "The provided token has expired",
+    # regardless of how long this process keeps running. This client
+    # backs EVERY login/signup/token-refresh call in the app, so this bug
+    # alone could make every single auth attempt fail once credentials
+    # aged out on a long-running deployment.
+    needs_refresh = _idp is None or (_creds_expiry and time.time() > _creds_expiry - 60)
+    if needs_refresh:
         # 1. Create STS client (uses Account A credentials automatically)
         sts = boto3.client(
             "sts",
@@ -77,7 +87,7 @@ def _get_client():
         response = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="cognito-session")
 
         creds = response["Credentials"]
-        
+        _creds_expiry = creds["Expiration"].timestamp()
 
         # 3. Create Cognito client using temporary credentials
         _idp = boto3.client(
