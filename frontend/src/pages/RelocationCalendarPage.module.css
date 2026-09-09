@@ -1,0 +1,73 @@
+.page { max-width: 1300px; }
+
+.formRow { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.fieldLabel { font-size: 12px; font-weight: 600; color: var(--c-slate-500); }
+.input {
+  border: 1.5px solid var(--c-slate-200); border-radius: var(--r-lg);
+  padding: 10px 14px; font-family: var(--font-body); font-size: 14px;
+  color: var(--c-slate-800); outline: none; transition: border-color var(--t-fast);
+  min-width: 200px;
+}
+.input:focus { border-color: var(--c-indigo-400); }
+.select { border: 1.5px solid var(--c-slate-200); border-radius: var(--r-lg); padding: 10px 14px; font-size: 14px; background: var(--c-white); cursor: pointer; }
+
+.progressSummary { display: flex; align-items: center; gap: 14px; padding: 14px 18px; }
+.progressCount { font-family: var(--font-mono); font-size: 13px; color: var(--c-slate-500); }
+.progressBarWrap { flex: 1; height: 6px; border-radius: 4px; background: var(--c-slate-100); overflow: hidden; }
+.progressBarFill { height: 100%; background: var(--c-indigo-500); transition: width 0.3s ease; }
+
+.dayCard { border: 1px solid var(--c-slate-200); border-radius: var(--r-lg); overflow: hidden; background: var(--c-white); }
+.dayHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 18px; cursor: pointer; user-select: none;
+}
+.dayHead:hover { background: var(--c-slate-50); }
+.dayTitle { display: flex; align-items: center; gap: 10px; }
+.dayDate { font-family: var(--font-display); font-size: 14.5px; font-weight: 700; color: var(--c-slate-800); }
+.dayWeekday { font-size: 12px; color: var(--c-slate-400); }
+.dayToggle { font-size: 12px; color: var(--c-slate-400); }
+.dayTimesRow { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 18px 14px; font-size: 11.5px; color: var(--c-slate-500); font-family: var(--font-mono); }
+.dayTimeChip { background: var(--c-slate-50); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 3px 8px; }
+.dayBody { padding: 0 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+.postCard { background: var(--c-slate-50); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.postHead { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.postBadges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.platformTabs { display: flex; gap: 4px; background: var(--c-white); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 3px; width: fit-content; }
+.platformTab { border: none; background: none; padding: 6px 12px; font-size: 12px; font-weight: 600; color: var(--c-slate-500); border-radius: var(--r-sm, 6px); cursor: pointer; transition: all var(--t-fast); }
+.platformTabActive { background: var(--c-indigo-600); color: white; }
+
+.actionTabBar { display: flex; gap: 6px; margin-top: 14px; border-bottom: 1.5px solid var(--c-slate-200); }
+.actionTab {
+  border: none; background: none; padding: 9px 4px; margin-bottom: -1.5px; font-size: 12.5px; font-weight: 700;
+  color: var(--c-slate-400); cursor: pointer; border-bottom: 2.5px solid transparent; transition: all var(--t-fast);
+}
+.actionTab + .actionTab { margin-left: 12px; }
+.actionTabActive { color: var(--c-indigo-600); border-bottom-color: var(--c-indigo-600); }
+.captionBox { background: var(--c-white); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 12px 14px; font-size: 13px; color: var(--c-slate-700); white-space: pre-wrap; line-height: 1.9; position: relative; }
+.captionCopyBtn { position: absolute; top: 8px; right: 8px; }
+
+.visualBox { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--c-slate-600); background: var(--c-white); border: 1px dashed var(--c-slate-300); border-radius: var(--r-md); padding: 10px 12px; }
+.ctaRow { display: flex; align-items: center; gap: 10px; }
+.ctaPill { background: var(--c-indigo-600); color: white; padding: 6px 12px; border-radius: 20px; font-size: 12.5px; font-weight: 600; }
+.hashtagRow { display: flex; flex-wrap: wrap; gap: 6px; }
+.hashtag { font-family: var(--font-mono); font-size: 11.5px; color: var(--c-indigo-600); }
+
+.carouselList { display: flex; flex-direction: column; gap: 6px; }
+.carouselSlide { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--c-slate-600); }
+.slideNum { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--c-white); background: var(--c-slate-400); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+.slideNumHook { background: var(--c-indigo-500); }
+.slideNumCta { background: var(--c-success); }
+
+.simulatedNote { font-size: 11.5px; color: var(--c-warning); font-style: italic; }
+
+@media (max-width: 640px) {
+  .formRow { flex-direction: column; align-items: stretch; }
+  .input, .select { min-width: 0; width: 100%; }
+}
+.formToggleBtn {
+  border: 1.5px solid var(--c-indigo-300); background: var(--c-white); color: var(--c-indigo-700);
+  font-weight: 700; font-size: 12.5px; padding: 7px 14px; border-radius: var(--r-md); cursor: pointer; white-space: nowrap;
+}

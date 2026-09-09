@@ -1,0 +1,400 @@
+"""
+seo_router.py — SEO analysis endpoints (Bedrock + DynamoDB + Cognito auth)
+===========================================================================
+- AI via AWS Bedrock (bedrock_service.py)
+- Persistence via DynamoDB (db/dynamo.py)
+- user_id extracted from Cognito access token (core/security.py)
+"""
+from __future__ import annotations
+
+import json
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from typing import Optional
+
+from core.security import get_current_user_id
+from db import (
+    check_and_lock_domain,
+    delete_analysis,
+    DomainMismatchError,
+    get_analysis,
+    get_user_stats,
+    is_user_paid,
+    list_analyses,
+    save_analysis,
+)
+from models.db_models import (
+    AnalysisMeta,
+    AnalysisRecord,
+    DeleteResponse,
+    ListAnalysesResponse,
+    UserStatsResponse,
+)
+from models.seo_models import AnalyseRequest, ContentStrategyRequest
+from services.bedrock_service import (
+    generate_competitor_analysis,
+    generate_company_profile,
+    generate_content_strategy,
+    generate_da_strategy,
+    generate_full_report,
+    generate_keyword_volume,
+    stream_content_strategy_events,
+    TokenUsageTracker,
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["SEO Intelligence"])
+
+
+# ── Helper ────────────────────────────────────────────────────────────────────
+def _save(*, user_id: str, analysis_type: str, req: AnalyseRequest, result_model, token_usage: dict | None = None) -> str:
+    """Serialise and persist — never blocks response on failure."""
+    try:
+        result_dict = json.loads(result_model.model_dump_json())
+        aid = save_analysis(
+            user_id=user_id,
+            analysis_type=analysis_type,
+            company_name=req.company_name,
+            url=req.url,
+            market=req.market,
+            industry=req.industry,
+            result=result_dict,
+            request_data=req.model_dump(),
+            status="success",
+            token_usage=token_usage,
+        )
+        logger.info(f"[seo] saved {analysis_type} aid={aid} user={user_id} tokens={token_usage}")
+        return aid
+    except Exception as e:
+        logger.error(f"[seo] DynamoDB save failed ({analysis_type}): {e}", exc_info=True)
+        return "save-failed"
+
+
+def _response(result_model, analysis_id: str, user_id: str, token_usage: dict | None = None) -> dict:
+    data = json.loads(result_model.model_dump_json())
+    data["_meta"] = {"analysis_id": analysis_id, "user_id": user_id, "token_usage": token_usage}
+    return data
+
+
+def _enforce_domain(user_id: str, req: AnalyseRequest) -> None:
+    """
+    One-to-one user<->domain mapping: the first domain a user analyzes
+    becomes permanently theirs. Called at the top of every analysis
+    endpoint, before any Bedrock work happens.
+    """
+    try:
+        check_and_lock_domain(user_id, req.url, req.company_name)
+    except DomainMismatchError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
+# ── Analysis endpoints ────────────────────────────────────────────────────────
+
+@router.post("/api/v1/seo/competitors", summary="Competitor analysis (Bedrock + web search)")
+async def competitor_analysis(
+    req: AnalyseRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Grounded competitor analysis. Saved to DynamoDB under user_id from JWT."""
+    _enforce_domain(user_id, req)
+    try:
+        tracker = TokenUsageTracker()
+        result = generate_competitor_analysis(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        token_usage = tracker.as_dict()
+    except Exception as e:
+        logger.error(f"competitor_analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    aid = _save(user_id=user_id, analysis_type="competitors", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
+
+
+@router.post("/api/v1/seo/keywords", summary="Keyword volume (Bedrock + web search)")
+async def keyword_volume(
+    req: AnalyseRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Grounded keyword volume research. Saved to DynamoDB."""
+    _enforce_domain(user_id, req)
+    try:
+        tracker = TokenUsageTracker()
+        result = generate_keyword_volume(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        token_usage = tracker.as_dict()
+    except Exception as e:
+        logger.error(f"keyword_volume failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    aid = _save(user_id=user_id, analysis_type="keywords", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
+
+
+@router.post("/api/v1/seo/profile", summary="Company profile (Bedrock + web search)")
+async def company_profile(
+    req: AnalyseRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Company profile from real scraped content. Saved to DynamoDB."""
+    _enforce_domain(user_id, req)
+    try:
+        tracker = TokenUsageTracker()
+        result = generate_company_profile(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        token_usage = tracker.as_dict()
+    except Exception as e:
+        logger.error(f"company_profile failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    aid = _save(user_id=user_id, analysis_type="profile", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
+
+
+@router.post("/api/v1/seo/domain-authority", summary="DA strategy (Bedrock + web search)")
+async def domain_authority(
+    req: AnalyseRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """DA strategy from real backlink data. Saved to DynamoDB."""
+    _enforce_domain(user_id, req)
+    try:
+        tracker = TokenUsageTracker()
+        result = generate_da_strategy(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        token_usage = tracker.as_dict()
+    except Exception as e:
+        logger.error(f"domain_authority failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    aid = _save(user_id=user_id, analysis_type="domain_authority", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
+
+
+@router.post("/api/v1/seo/full-report", summary="Full SEO report — all 4 analyses (Bedrock)")
+async def full_report(
+    req: AnalyseRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """All 4 analyses (~8 Bedrock calls). Saved to DynamoDB as one record."""
+    _enforce_domain(user_id, req)
+    try:
+        tracker = TokenUsageTracker()
+        result = generate_full_report(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        token_usage = tracker.as_dict()
+    except Exception as e:
+        logger.error(f"full_report failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    aid = _save(user_id=user_id, analysis_type="full_report", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
+
+
+@router.post(
+    "/api/v1/seo/content-strategy",
+    summary="Keyword → competitor → content strategy generator (Bedrock)",
+)
+async def content_strategy(
+    req: ContentStrategyRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Acts as a senior SEO competitor intelligence + content marketing expert.
+
+    Takes up to 5 primary keywords (plus optional extra keywords the user adds
+    from Keyword Intelligence). For each keyword:
+      1. Identifies 5 realistic top-ranking competitors.
+      2. Analyses their content strategy and on-page SEO factors (keyword
+         usage, headings, meta structure, internal linking, schema markup).
+      3-5. Backlink deep-dive: reverse-engineers HOW competitors like these
+         typically earn backlinks, then returns a replication plan — real,
+         named, currently-operating platforms/categories (directories, PR
+         wires, guest-post niches, forums) with step-by-step acquisition
+         instructions, tiered by authority.
+      6. (folded into step 2) content/SEO structure breakdown.
+      7. Generates an original, SEO-optimised content piece — matching or
+         improving on the top competitor's style — with strong engagement
+         and conversion elements.
+
+    IMPORTANT — this system has no live SERP or backlink-index API (no
+    Ahrefs/Semrush/Moz/Majestic connector). It does NOT return a competitor's
+    actual backlink URLs — those would be fabricated and could mislead real
+    outreach or client reporting. Every response includes a
+    `methodology_disclaimer` field making this explicit; competitor names,
+    ranking order, and platform recommendations are realistic AI estimates
+    for strategic planning, not a live crawl.
+
+    No payment required to CALL this endpoint — but unpaid users only get
+    ONE keyword fully generated (real Bedrock cost); every other requested
+    keyword comes back `locked: true` with no Bedrock calls made for it at
+    all (see KeywordReportSlot). Paid users get every keyword unlocked.
+
+    Also returns a cross-keyword executive summary (computed only from
+    unlocked keywords). Saved to DynamoDB.
+    """
+    _enforce_domain(user_id, req)
+    try:
+        tracker = TokenUsageTracker()
+        result = generate_content_strategy(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        token_usage = tracker.as_dict()
+    except Exception as e:
+        logger.error(f"content_strategy failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    aid = _save(user_id=user_id, analysis_type="content_strategy", req=req, result_model=result, token_usage=token_usage)
+    return _response(result, aid, user_id, token_usage=token_usage)
+
+
+@router.post(
+    "/api/v1/seo/content-strategy/stream",
+    summary="Content strategy generator — streamed via Server-Sent Events",
+)
+async def content_strategy_stream(
+    req: ContentStrategyRequest,
+    request: Request,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Same analysis as POST /api/v1/seo/content-strategy, but streamed as
+    Server-Sent Events instead of one blocking JSON response:
+
+      event: start             — {"keywords": [...], "total": N}
+      event: analysis          — per-keyword competitor/content/SEO analysis,
+                                  as soon as it's ready (unlocked keywords only)
+      event: backlink_deep_dive — real, named platform categories + step-by-step
+                                  acquisition plan for that keyword (not
+                                  fabricated backlink URLs — see
+                                  methodology_disclaimer in the final result)
+      event: content_delta     — real token-by-token deltas as the article
+                                  for that keyword is generated
+      event: keyword_report    — the fully assembled report for one keyword
+                                  (unlocked) or a locked placeholder slot
+      event: keyword_error     — a keyword failed; the rest keep going
+      event: executive_summary — cross-keyword synthesis over unlocked
+                                  keywords only, once they're all done
+      event: done              — {"failed_keywords": {...}, "result": {...}}
+                                  — the final saved response
+
+    Keywords are processed CONCURRENTLY (bounded), so results for the first
+    keyword typically arrive within seconds instead of after the entire
+    multi-keyword report finishes. The connection closes automatically if
+    the client disconnects (remaining Bedrock calls are cancelled).
+
+    No payment required to CALL this endpoint — unpaid users get one real
+    unlocked keyword and locked placeholders for the rest (no Bedrock cost
+    for locked ones) — see KeywordReportSlot.
+    """
+    _enforce_domain(user_id, req)
+
+    async def event_source():
+        tracker = TokenUsageTracker()
+        try:
+            async for event, data in stream_content_strategy_events(
+                req, request.is_disconnected, usage_tracker=tracker, is_paid=is_user_paid(user_id)
+            ):
+                yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
+                if event == "done":
+                    token_usage = data.get("token_usage") or tracker.as_dict()
+                    try:
+                        aid = save_analysis(
+                            user_id=user_id,
+                            analysis_type="content_strategy",
+                            company_name=req.company_name,
+                            url=req.url,
+                            market=req.market,
+                            industry=req.industry,
+                            result=data["result"],
+                            request_data=req.model_dump(),
+                            status="partial" if data.get("failed_keywords") else "success",
+                            token_usage=token_usage,
+                        )
+                        yield f"event: saved\ndata: {json.dumps({'analysis_id': aid, 'token_usage': token_usage})}\n\n"
+                    except Exception as e:
+                        logger.error(f"[seo] DynamoDB save failed (content_strategy stream): {e}", exc_info=True)
+                        yield f"event: saved\ndata: {json.dumps({'analysis_id': 'save-failed'})}\n\n"
+        except Exception as e:
+            logger.error(f"content_strategy_stream failed: {e}", exc_info=True)
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable proxy buffering (e.g. nginx)
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# ── History endpoints ─────────────────────────────────────────────────────────
+
+@router.get(
+    "/api/v1/history",
+    response_model=ListAnalysesResponse,
+    summary="List your analyses (paginated)",
+)
+async def list_my_analyses(
+    analysis_type: Optional[str] = Query(None, description="Filter by type"),
+    limit: int = Query(20, ge=1, le=100),
+    last_key: Optional[str] = Query(None, description="Pagination cursor JSON"),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Returns metadata-only list for the authenticated user. No full payloads."""
+    last_evaluated_key = None
+    if last_key:
+        try:
+            last_evaluated_key = json.loads(last_key)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="last_key must be valid JSON")
+    try:
+        page = list_analyses(user_id, analysis_type=analysis_type, limit=limit,
+                             last_evaluated_key=last_evaluated_key)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return ListAnalysesResponse(
+        user_id=user_id,
+        items=[AnalysisMeta(**i) for i in page["items"]],
+        count=page["count"],
+        last_evaluated_key=page["last_evaluated_key"],
+    )
+
+
+@router.get(
+    "/api/v1/history/stats",
+    response_model=UserStatsResponse,
+    summary="Your analysis counts by type",
+)
+async def my_stats(user_id: str = Depends(get_current_user_id)):
+    try:
+        return UserStatsResponse(**get_user_stats(user_id))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get(
+    "/api/v1/history/{analysis_id}",
+    response_model=AnalysisRecord,
+    summary="Get a single analysis (full payload)",
+)
+async def get_one(
+    analysis_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        item = get_analysis(user_id, analysis_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+    return AnalysisRecord(**item)
+
+
+@router.delete(
+    "/api/v1/history/{analysis_id}",
+    response_model=DeleteResponse,
+    summary="Delete one of your analyses",
+)
+async def delete_one(
+    analysis_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        deleted = delete_analysis(user_id, analysis_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Analysis {analysis_id} not found")
+    return DeleteResponse(deleted=True, analysis_id=analysis_id,
+                          message=f"Analysis {analysis_id} deleted")

@@ -1,0 +1,381 @@
+"""
+seo_models.py — Restored to v1 schema
+======================================
+All fields fully populated — no Optional nulls for numeric/string metrics.
+Matches the original apac_seo_api.zip response format exactly.
+Bedrock prompts are engineered to always produce complete, useful estimates.
+"""
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Optional
+
+# Hard cap on total keywords (primary + additional) analysed per content-strategy
+# request — keeps latency/cost bounded (each keyword costs ~1 Bedrock call).
+MAX_TOTAL_KEYWORDS = 8
+
+
+# ── Competitor Overview ────────────────────────────────────────────────────────
+
+class CompetitorOverview(BaseModel):
+    rank: int
+    company: str
+    hq: str
+    focus: str
+    scale: str
+    accreditation: str
+    locked: bool = False  # True for zero-cost placeholder rows shown to unpaid users
+
+
+# ── SEO Visibility ─────────────────────────────────────────────────────────────
+
+class SEOVisibility(BaseModel):
+    company: str
+    seo_visibility_score: int = Field(..., ge=0, le=100)
+    organic_traffic_estimate: str
+    domain_authority_estimate: int
+    has_blog: bool
+    google_rating: float
+    locked: bool = False
+
+
+# ── Keyword Ranking ────────────────────────────────────────────────────────────
+
+class KeywordRanking(BaseModel):
+    keyword: str
+    monthly_searches_estimate: str
+    apac_rank: str
+    crown_rank: str
+    allied_rank: str
+    asiatic_rank: str
+    locked: bool = False
+
+
+# ── Competitor Score ───────────────────────────────────────────────────────────
+
+class CompetitorScore(BaseModel):
+    rank: int
+    company: str
+    score: int = Field(..., ge=0, le=100)
+    key_strengths: str
+    key_weaknesses: str
+    locked: bool = False
+
+
+# ── SEO Insight ────────────────────────────────────────────────────────────────
+
+class SEOInsight(BaseModel):
+    insight: str
+    detail: str
+    locked: bool = False
+
+
+# ── Full Competitor Analysis Response ─────────────────────────────────────────
+
+class CompetitorAnalysisResponse(BaseModel):
+    company: str
+    url: str
+    competitor_overview: list[CompetitorOverview]
+    seo_visibility: list[SEOVisibility]
+    keyword_rankings: list[KeywordRanking]
+    competitor_scores: list[CompetitorScore]
+    key_takeaways: list[SEOInsight]
+
+
+# ── Keyword Volume ─────────────────────────────────────────────────────────────
+
+class KeywordVolumeEntry(BaseModel):
+    rank: int
+    keyword: str
+    monthly_volume_estimate: str
+    competition: str
+    intent: str
+    apac_estimated_position: str
+    locked: bool = False
+
+
+class KeywordVolumeResponse(BaseModel):
+    company: str
+    market: str
+    high_volume_head_terms: list[KeywordVolumeEntry]
+    mid_volume_service_terms: list[KeywordVolumeEntry]
+    long_tail_high_intent: list[KeywordVolumeEntry]
+    strategic_priority_summary: list[SEOInsight]
+
+
+# ── Company Profile ────────────────────────────────────────────────────────────
+
+class CompanyProfile(BaseModel):
+    company_name: str
+    url: str
+    tagline: str
+    linkedin_overview: str
+    google_business_description: str
+    linkedin_specialties: list[str]
+    google_business_categories: list[str]
+    # Names of fields that are placeholder-only for unpaid users (e.g.
+    # ["linkedin_overview", "google_business_description"]) — those specific
+    # fields hold static filler text, not Bedrock output, and Bedrock was
+    # never asked to generate them for this request. Empty for paid users.
+    locked_fields: list[str] = []
+
+
+# ── Domain Authority Strategy ──────────────────────────────────────────────────
+
+class DomainAuthorityGap(BaseModel):
+    metric: str
+    current: str
+    six_month_target: str
+    twelve_month_target: str
+    benchmark: str
+    locked: bool = False
+
+
+class BacklinkOpportunity(BaseModel):
+    pillar: str
+    action: str
+    platform_or_target: str
+    estimated_da: str
+    difficulty: str
+    estimated_monthly_links: Optional[str] = None
+    locked: bool = False
+
+
+class DomainAuthorityResponse(BaseModel):
+    company: str
+    current_da: int
+    target_da_6m: int
+    target_da_12m: int
+    gap_analysis: list[DomainAuthorityGap]
+    backlink_opportunities: list[BacklinkOpportunity]
+    top_5_priority_actions: list[SEOInsight]
+
+
+# ── Full SEO Report (all-in-one) ───────────────────────────────────────────────
+
+class FullSEOReport(BaseModel):
+    competitor_analysis: CompetitorAnalysisResponse
+    keyword_volume: KeywordVolumeResponse
+    company_profile: CompanyProfile
+    domain_authority_strategy: DomainAuthorityResponse
+
+
+# ── Keyword → Competitor → Content Strategy Generator ──────────────────────────
+# "For each primary/additional keyword: find top-ranking competitors, analyse
+#  their backlinks / content strategy / on-page SEO, explain how they rank,
+#  then generate an original, SEO-optimised, conversion-ready content piece."
+
+class KeywordCompetitor(BaseModel):
+    rank: int
+    company: str
+    url: str
+    why_ranking: str
+
+
+class ContentStrategyAnalysis(BaseModel):
+    dominant_content_types: str
+    typical_tone: str
+    typical_structure: str
+    publishing_cadence_estimate: str
+
+
+class SEOFactorAnalysis(BaseModel):
+    keyword_usage_pattern: str
+    heading_structure_pattern: str
+    meta_title_pattern: str
+    meta_description_pattern: str
+    url_structure_pattern: str
+    internal_linking_pattern: str
+    schema_markup_recommendation: str
+    estimated_word_count_range: str
+
+
+class RankingExplanation(BaseModel):
+    backlink_strategy_summary: str
+    content_quality_summary: str
+
+
+# ── Backlink deep-dive & replication plan (Steps 3-5) ──────────────────────────
+# IMPORTANT: this system has no live SERP or backlink-index API (no Ahrefs /
+# Semrush / Moz / Majestic connector). It CANNOT know a competitor's actual
+# backlink URLs. Asking an LLM for "real backlink URLs" produces invented,
+# unverifiable links presented as fact — actively misleading for outreach or
+# client reporting. Instead, this models REAL, named, stable platforms/categories
+# (directories, PR wires, guest-post niches, forums that genuinely exist) with
+# concrete acquisition steps — honest, and just as actionable for outreach.
+
+class PlatformLink(BaseModel):
+    name: str
+    url: str
+    # `url` is the platform's own real, stable homepage/signup/submission URL
+    # (e.g. https://www.g2.com) — NOT a claim that any specific competitor
+    # has an existing backlink there. That distinction is what keeps this
+    # honest without a live backlink-index API (see module docstring above).
+
+
+class BacklinkAcquisitionCategory(BaseModel):
+    category: str                          # e.g. "Industry directories"
+    authority_tier: str                    # "high" | "medium" | "foundational"
+    real_platforms: list[PlatformLink]      # 3-5 real, named, stable sites/platforms + their real URL
+    backlink_type: str                     # e.g. "directory listing", "guest post", "PR mention"
+    typical_anchor_text_pattern: str       # a pattern/example, not a fabricated specific instance
+    why_it_helps_this_keyword: str
+    acquisition_steps: list[str]           # 3-5 concrete, ordered steps to earn this type of link
+
+
+class RepeatedPlatform(BaseModel):
+    """Computed deterministically in Python by counting how many of the
+    request's keywords recommend the same platform — NOT generated by the
+    model. This is what Step 5 ("repeated/high-value backlink sites") means
+    honestly: which real, named platforms are worth prioritising first because
+    they're broadly relevant across this whole keyword set, not a claim about
+    a specific competitor reusing them."""
+    name: str
+    url: str
+    appears_for_keywords: list[str]
+    highest_authority_tier: str
+
+
+class ReplicationPlan(BaseModel):
+    guest_post_opportunities: list[str]    # real, named sites/niches worth pitching
+    directory_submissions: list[str]       # real, named directories
+    pr_article_platforms: list[str]        # real, named PR / article distribution platforms
+    forums_communities: list[str]          # real, named forums / communities
+    step_by_step_plan: list[str]           # ordered, concrete action steps (e.g. "Week 1: ...")
+
+
+class BacklinkDeepDive(BaseModel):
+    backlink_opportunities: list[BacklinkAcquisitionCategory]
+    high_authority_highlights: list[str]        # which categories/platforms above matter most, and why
+    how_they_likely_earned_backlinks: str        # reverse-engineered narrative (Step 4)
+    repeated_platforms_pattern: str              # patterns in which platforms/content types repeat (Step 4)
+    replication_plan: ReplicationPlan            # Step 5
+
+
+class ContentHeading(BaseModel):
+    level: str   # "H1" | "H2" | "H3"
+    text: str
+
+
+class GeneratedContentPiece(BaseModel):
+    content_type: str
+    title: str
+    meta_title: str
+    meta_description: str
+    url_slug: str
+    headings: list[ContentHeading]
+    body: str
+    word_count: int
+    tone: str
+    primary_cta: str
+    engagement_elements: list[str]
+    seo_optimization_notes: list[str]
+
+
+class KeywordContentReport(BaseModel):
+    keyword: str
+    top_competitors: list[KeywordCompetitor]
+    content_strategy_analysis: ContentStrategyAnalysis
+    seo_factor_analysis: SEOFactorAnalysis
+    ranking_explanation: RankingExplanation
+    backlink_deep_dive: BacklinkDeepDive
+    generated_content: GeneratedContentPiece
+
+
+# Shown prominently by any client rendering this response — this analysis is
+# AI-generated pattern knowledge, not a live SERP crawl or backlink-index pull.
+METHODOLOGY_DISCLAIMER = (
+    "This analysis is generated by AI using expert knowledge of typical industry, "
+    "market, and SEO patterns. It is NOT a live Google search or a real-time "
+    "backlink-index pull (e.g. Ahrefs/Semrush/Moz/Majestic) — this system has no "
+    "such connector. Competitor names, ranking order, and platform recommendations "
+    "are realistic expert estimates for strategic planning. Verify specific URLs, "
+    "live rankings, and actual backlink data with a dedicated SERP/backlink tool "
+    "before outreach or client reporting."
+)
+
+
+class KeywordReportSlot(BaseModel):
+    """
+    One keyword's slot in the response. Unpaid users get exactly ONE real,
+    fully-generated `report` (token cost incurred) — every other keyword
+    they asked for comes back `locked=True` with no `report` at all (zero
+    Bedrock cost: no analysis, backlink, or content calls were made for it).
+    Paid users get every keyword unlocked. See
+    services.bedrock_service.generate_content_strategy for where this is
+    decided — never trust a client to say "I'm paid," always check
+    db.payments_dynamo.is_user_paid server-side.
+    """
+    keyword: str
+    locked: bool
+    report: Optional[KeywordContentReport] = None
+    preview_text: Optional[str] = None  # shown only when locked — a teaser line, not real content
+
+
+class ContentStrategyResponse(BaseModel):
+    company: str
+    url: str
+    market: str
+    industry: str
+    methodology_disclaimer: str = METHODOLOGY_DISCLAIMER
+    keywords_analyzed: list[str]
+    keyword_reports: list[KeywordReportSlot]
+    executive_summary: list[SEOInsight]   # computed only from unlocked reports
+    # Both computed deterministically in Python from the UNLOCKED keyword_reports
+    # only — not separate model calls. See _compute_backlink_directory in
+    # bedrock_service.py.
+    backlink_target_directory: list[PlatformLink] = []       # flat, deduped "websites to target"
+    repeated_high_value_platforms: list[RepeatedPlatform] = []  # appear across 2+ keywords
+
+
+# ── Request body ───────────────────────────────────────────────────────────────
+
+class AnalyseRequest(BaseModel):
+    company_name: str = Field(..., example="APAC Relocation")
+    url: str = Field(..., example="https://www.apacrelocation.com")
+    market: str = Field(default="Singapore", example="Singapore")
+    industry: str = Field(default="International Relocation / Moving Services")
+
+
+class ContentStrategyRequest(AnalyseRequest):
+    """Request body for POST /api/v1/seo/content-strategy."""
+
+    primary_keywords: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=5,
+        example=["international movers Singapore", "corporate relocation Singapore"],
+        description="Up to 5 primary keywords to build the content strategy around.",
+    )
+    additional_keywords: list[str] = Field(
+        default_factory=list,
+        example=["moving to Singapore checklist"],
+        description=(
+            "Optional extra keywords the user adds from Keyword Intelligence "
+            "(e.g. suggestions surfaced by POST /api/v1/seo/keywords)."
+        ),
+    )
+
+    @field_validator("primary_keywords", "additional_keywords")
+    @classmethod
+    def _clean_keywords(cls, value: list[str]) -> list[str]:
+        cleaned, seen = [], set()
+        for kw in value:
+            kw = kw.strip()
+            if kw and kw.lower() not in seen:
+                seen.add(kw.lower())
+                cleaned.append(kw)
+        return cleaned
+
+    @model_validator(mode="after")
+    def _dedupe_across_lists_and_cap(self) -> "ContentStrategyRequest":
+        if not self.primary_keywords:
+            raise ValueError("At least 1 primary keyword is required (max 5).")
+        primary_lower = {kw.lower() for kw in self.primary_keywords}
+        self.additional_keywords = [
+            kw for kw in self.additional_keywords if kw.lower() not in primary_lower
+        ]
+        total = len(self.primary_keywords) + len(self.additional_keywords)
+        if total > MAX_TOTAL_KEYWORDS:
+            # Keep all primary keywords, trim additional ones to fit the cap.
+            keep_additional = max(0, MAX_TOTAL_KEYWORDS - len(self.primary_keywords))
+            self.additional_keywords = self.additional_keywords[:keep_additional]
+        return self

@@ -1,0 +1,37 @@
+.shell { min-height: 100vh; background: var(--c-slate-50); }
+
+.header {
+  background: var(--c-slate-900); color: white; padding: 0 24px;
+  display: flex; align-items: center; justify-content: space-between; height: 64px;
+  position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+}
+.headerLeft { display: flex; align-items: center; gap: 24px; }
+.brand { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-weight: 800; font-size: 15px; }
+.brandBadge {
+  font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+  background: var(--c-warning); color: var(--c-slate-900); padding: 3px 8px; border-radius: 20px;
+}
+
+.nav { display: flex; gap: 4px; }
+.navItem {
+  background: none; border: none; color: var(--c-slate-300); font-size: 13px; font-weight: 600;
+  padding: 8px 14px; border-radius: var(--r-md); cursor: pointer; transition: all var(--t-fast);
+}
+.navItem:hover { background: rgba(255,255,255,0.08); color: white; }
+.navItemActive { background: var(--c-indigo-600); color: white; }
+
+.headerRight { display: flex; align-items: center; gap: 12px; }
+.exitBtn {
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: white;
+  font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: var(--r-md); cursor: pointer;
+}
+.exitBtn:hover { background: rgba(255,255,255,0.18); }
+.signOutBtn { background: none; border: none; color: var(--c-slate-400); font-size: 12.5px; cursor: pointer; }
+.signOutBtn:hover { color: white; }
+
+.content { padding: 32px; max-width: 1400px; margin: 0 auto; }
+
+@media (max-width: 768px) {
+  .nav { display: none; }
+  .content { padding: 16px; }
+}

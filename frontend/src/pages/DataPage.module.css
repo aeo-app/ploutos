@@ -1,0 +1,96 @@
+.page { max-width: 1100px; }
+.skeletons { display: flex; flex-direction: column; gap: 16px; }
+.sections  { display: flex; flex-direction: column; gap: 20px; }
+.cardHead  { padding: 20px 20px 0; }
+
+/* Competitor score list */
+.scoreList { display: flex; flex-direction: column; gap: 12px; }
+.scoreItem {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 14px 16px;
+  background: var(--c-slate-50);
+  border: 1px solid var(--c-slate-200);
+  border-radius: var(--r-lg);
+}
+.scoreRank {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--c-indigo-100);
+  color: var(--c-indigo-700);
+  font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+  display: flex; align-items: center; justify-content: center;
+}
+.scoreInfo  { flex: 1; min-width: 0; }
+.scoreName  { font-weight: 700; color: var(--c-slate-800); margin-bottom: 4px; font-size: 14px; }
+.scoreDetails { display: flex; flex-wrap: wrap; gap: 8px; }
+.strength, .weakness { font-size: 12px; color: var(--c-slate-500); display: flex; align-items: center; gap: 4px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.scoreRight { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.scoreNum { font-family: var(--font-display); font-size: 22px; font-weight: 800; }
+
+/* Insights */
+.insights { display: flex; flex-direction: column; gap: 10px; }
+
+/* Keyword tabs */
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.tab {
+  padding: 7px 16px; border-radius: 20px;
+  font-size: 13px; font-weight: 500;
+  background: var(--c-white);
+  border: 1.5px solid var(--c-slate-200);
+  color: var(--c-slate-600); cursor: pointer;
+  transition: all var(--t-fast); font-family: var(--font-body);
+}
+.tab:hover { border-color: var(--c-indigo-300); color: var(--c-indigo-600); }
+.tabActive {
+  background: var(--c-indigo-50) !important;
+  border-color: var(--c-indigo-400) !important;
+  color: var(--c-indigo-700) !important;
+  font-weight: 600 !important;
+}
+
+/* DA gauge */
+.daGaugeRow { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 20px; }
+.daMilestone { padding: 18px; text-align: center; }
+.daMilestoneVal { font-family: var(--font-display); font-size: 36px; font-weight: 800; line-height: 1; margin-bottom: 4px; }
+.daMilestoneLbl { font-size: 12px; color: var(--c-slate-500); }
+.daBar { position: relative; height: 14px; background: var(--c-slate-100); border-radius: 7px; overflow: visible; margin: 8px 0 32px; }
+.daBarFill { height: 100%; border-radius: 7px; }
+.daMarker { position: absolute; top: -4px; width: 4px; height: 22px; border-radius: 2px; transform: translateX(-50%); }
+.daMarkerLabel { position: absolute; top: 26px; font-size: 10px; font-weight: 700; white-space: nowrap; transform: translateX(-50%); }
+
+/* Backlink pillar cards */
+.pillarGrid { display: flex; flex-direction: column; gap: 20px; }
+
+/* Profile blocks */
+.profileBlocks { display: flex; flex-direction: column; gap: 20px; }
+.profileBlock { }
+.profileBlockHead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.profileBlockTitle { font-family: var(--font-display); font-size: 15px; font-weight: 700; color: var(--c-slate-800); flex: 1; }
+.profileText {
+  background: var(--c-slate-50); border: 1px solid var(--c-slate-200);
+  border-radius: var(--r-md); padding: 16px;
+  font-size: 14px; color: var(--c-slate-700); line-height: 1.8;
+  white-space: pre-wrap; font-family: var(--font-body);
+}
+.showMore { background: none; border: none; color: var(--c-indigo-600); font-size: 13px; font-weight: 500; cursor: pointer; margin-top: 6px; font-family: var(--font-body); }
+
+/* Report section nav */
+.reportNav { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px; background: var(--c-slate-100); border-radius: var(--r-xl); margin-bottom: 24px; }
+.reportNavBtn { padding: 8px 18px; border-radius: var(--r-lg); font-size: 13px; font-weight: 500; background: transparent; border: none; color: var(--c-slate-600); cursor: pointer; font-family: var(--font-body); transition: all var(--t-fast); }
+.reportNavBtn:hover { background: var(--c-white); }
+.reportNavActive { background: var(--c-white) !important; color: var(--c-indigo-700) !important; font-weight: 700 !important; box-shadow: var(--shadow-sm); }
+
+/* Loading bar for full report */
+.loadingWrap { text-align: center; padding: 60px 24px; }
+.loadingSpinner { width: 52px; height: 52px; border: 3px solid var(--c-indigo-100); border-top-color: var(--c-indigo-600); border-radius: 50%; animation: spin 0.9s linear infinite; margin: 0 auto 20px; }
+.loadingTitle { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--c-slate-800); margin-bottom: 8px; }
+.loadingSteps { font-size: 14px; color: var(--c-slate-500); margin-bottom: 20px; }
+.loadingProgressTrack { height: 4px; background: var(--c-indigo-100); border-radius: 2px; overflow: hidden; max-width: 320px; margin: 0 auto; }
+.loadingProgressFill { height: 100%; background: var(--grad-brand); animation: progress-fill 28s linear forwards; }
+
+@media (max-width: 640px) {
+  .daGaugeRow { grid-template-columns: 1fr 1fr; }
+  .scoreDetails { flex-direction: column; }
+  .scoreRight { flex-direction: column; align-items: flex-end; }
+}

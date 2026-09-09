@@ -1,0 +1,41 @@
+@import './tokens.css';
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--c-slate-50);
+  color: var(--c-slate-800);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+button { font-family: var(--font-body); cursor: pointer; }
+input, textarea, select { font-family: var(--font-body); }
+a { color: inherit; text-decoration: none; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--c-slate-200); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--c-slate-300); }
+
+@keyframes spin        { to { transform: rotate(360deg); } }
+@keyframes pulse-ring  { 0%,100%{transform:scale(1);opacity:.6;} 50%{transform:scale(1.08);opacity:1;} }
+@keyframes shimmer     { 0%{background-position:-600px 0;} 100%{background-position:600px 0;} }
+@keyframes sonar-ring  { 0%{transform:scale(0.5);opacity:0.8;} 100%{transform:scale(3);opacity:0;} }
+@keyframes float-y     { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-8px);} }
+@keyframes progress-fill { from{width:0} to{width:var(--target-w)} }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

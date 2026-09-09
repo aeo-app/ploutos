@@ -1,0 +1,70 @@
+.page { max-width: 1100px; }
+
+.briefGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.briefGridFull { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.fieldLabel { font-size: 12px; font-weight: 700; color: var(--c-slate-600); }
+.fieldHint { font-size: 11px; color: var(--c-slate-400); font-weight: 400; }
+.input {
+  font-size: 13.5px; padding: 9px 12px; border-radius: var(--r-md);
+  border: 1.5px solid var(--c-slate-200); font-family: inherit;
+}
+.input:focus { outline: none; border-color: var(--c-indigo-400); }
+.textarea { min-height: 64px; resize: vertical; }
+.numberInput { width: 120px; }
+
+.topicRow { display: flex; gap: 10px; align-items: flex-end; margin-top: 6px; }
+.topicRow .field { flex: 1; margin-bottom: 0; }
+.actionBtn {
+  border: none; background: var(--grad-brand); color: white; font-weight: 700; font-size: 13px;
+  padding: 10px 20px; border-radius: var(--r-md); cursor: pointer; white-space: nowrap;
+}
+.actionBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.secondaryBtn {
+  border: 1.5px solid var(--c-indigo-300); background: var(--c-white); color: var(--c-indigo-700);
+  font-weight: 700; font-size: 13px; padding: 10px 20px; border-radius: var(--r-md); cursor: pointer;
+}
+.secondaryBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.disclaimerBanner {
+  font-size: 12px; line-height: 1.6; color: var(--c-warning-text, #92400E); background: var(--c-warning-bg);
+  border: 1px solid var(--c-warning); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 14px;
+}
+
+.researchSection { margin-bottom: 16px; }
+.researchSectionLabel { font-size: 11px; font-weight: 700; color: var(--c-slate-500); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px; }
+.chipList { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; background: var(--c-indigo-50); color: var(--c-indigo-700); padding: 4px 10px; border-radius: 20px; }
+.bulletList { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--c-slate-700); }
+.bulletList li { margin-left: 18px; }
+
+.sourceTable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sourceTable th { text-align: left; padding: 6px 10px; color: var(--c-slate-500); font-weight: 700; border-bottom: 1.5px solid var(--c-slate-200); }
+.sourceTable td { padding: 8px 10px; border-bottom: 1px solid var(--c-slate-100); vertical-align: top; }
+.sourceTable a { color: var(--c-indigo-600); }
+
+.pillarGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.pillarCard { padding: 10px 12px; background: var(--c-slate-50); border-radius: var(--r-md); border: 1px solid var(--c-slate-200); }
+.pillarName { font-size: 11px; font-weight: 700; color: var(--c-indigo-600); text-transform: uppercase; letter-spacing: 0.02em; }
+.pillarTopic { font-size: 13px; color: var(--c-slate-800); margin-top: 2px; }
+
+.articleHeader { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.articleTitle { font-family: var(--font-display); font-size: 22px; font-weight: 800; color: var(--c-slate-900); }
+.metaRow { display: flex; gap: 8px; flex-wrap: wrap; }
+.metaField { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-slate-600); }
+
+.articleSection { margin-bottom: 18px; }
+.articleSectionHeading { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--c-slate-900); margin-bottom: 6px; }
+.articleBody { font-size: 13.5px; line-height: 1.75; color: var(--c-slate-700); white-space: pre-wrap; }
+
+.faqItem { margin-bottom: 12px; }
+.faqQuestion { font-size: 13.5px; font-weight: 700; color: var(--c-slate-800); }
+.faqAnswer { font-size: 13px; color: var(--c-slate-600); margin-top: 3px; line-height: 1.6; }
+
+.loadingRow { display: flex; align-items: center; gap: 10px; padding: 20px 0; color: var(--c-slate-400); font-size: 13px; }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--c-slate-200); border-top-color: var(--c-indigo-600); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 700px) {
+  .briefGrid { grid-template-columns: 1fr; }
+}

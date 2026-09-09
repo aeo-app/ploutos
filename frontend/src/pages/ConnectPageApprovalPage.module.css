@@ -1,0 +1,44 @@
+.wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #EEF2FF 0%, #F8FAFC 100%); padding: 24px;
+  font-family: var(--font-body, system-ui, sans-serif);
+}
+.card {
+  background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(30,41,59,0.12);
+  padding: 40px 36px; max-width: 440px; width: 100%; text-align: center;
+}
+.brand {
+  font-family: var(--font-display, system-ui, sans-serif); font-weight: 800; font-size: 15px;
+  color: #1E293B; margin-bottom: 28px;
+}
+.brandAccent { color: #4F46E5; }
+
+.icon, .successIcon, .errorIcon { font-size: 40px; margin-bottom: 14px; }
+.successIcon { color: #10B981; }
+.errorIcon { color: #F59E0B; }
+
+.title { font-family: var(--font-display, system-ui, sans-serif); font-size: 19px; font-weight: 800; color: #1E293B; margin-bottom: 10px; line-height: 1.35; }
+.body { font-size: 13.5px; color: #64748B; line-height: 1.65; margin-bottom: 22px; }
+
+.warningBanner {
+  font-size: 12.5px; color: #92400E; background: #FFFBEB; border: 1px solid #F59E0B;
+  border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; text-align: left;
+}
+
+.connectBtn {
+  width: 100%; border: none; background: linear-gradient(135deg, #4F46E5, #6366F1); color: white;
+  font-weight: 700; font-size: 14.5px; padding: 13px 20px; border-radius: 12px; cursor: pointer;
+}
+.connectBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.pageList { display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.pageOption {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 14px 16px; border: 1.5px solid #E2E8F0; border-radius: 12px; background: white;
+  font-size: 13.5px; font-weight: 600; color: #1E293B; cursor: pointer; transition: all 0.15s;
+}
+.pageOption:hover:not(:disabled) { border-color: #6366F1; background: #EEF2FF; }
+.pageOption:disabled { opacity: 0.6; cursor: not-allowed; }
+.pageOptionAction { font-size: 12px; font-weight: 700; color: #4F46E5; white-space: nowrap; }
+
+.errorText { font-size: 12.5px; color: #EF4444; margin-top: 14px; }
