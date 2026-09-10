@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bash .github/hooks/code-review-reminder.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}
