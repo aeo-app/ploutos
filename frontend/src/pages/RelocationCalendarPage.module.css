@@ -1,4 +1,4 @@
-.page { max-width: 1300px; }
+.page { max-width: 1100px; }
 
 .formRow { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -46,7 +46,7 @@
 }
 .actionTab + .actionTab { margin-left: 12px; }
 .actionTabActive { color: var(--c-indigo-600); border-bottom-color: var(--c-indigo-600); }
-.captionBox { background: var(--c-white); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 12px 14px; font-size: 13px; color: var(--c-slate-700); white-space: pre-wrap; line-height: 1.9; position: relative; }
+.captionBox { background: var(--c-white); border: 1px solid var(--c-slate-200); border-radius: var(--r-md); padding: 12px 14px; font-size: 13px; color: var(--c-slate-700); white-space: pre-wrap; line-height: 1.6; position: relative; }
 .captionCopyBtn { position: absolute; top: 8px; right: 8px; }
 
 .visualBox { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--c-slate-600); background: var(--c-white); border: 1px dashed var(--c-slate-300); border-radius: var(--r-md); padding: 10px 12px; }

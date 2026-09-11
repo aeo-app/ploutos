@@ -492,7 +492,7 @@
 }/* ============================================================ */
 /* Pricing                                                      */
 /* ============================================================ */
-.landingPage .pricing-head { text-align: center; max-width: 720px; margin: 0 auto 56px; }.landingPage .pricing-head .section-eyebrow { justify-content: center; }.landingPage .cycle {
+.landingPage .pricing-head { text-align: center; max-width: 1280px; margin: 0 auto 56px; }.landingPage .pricing-head .section-eyebrow { justify-content: center; }.landingPage .cycle {
   display: inline-flex;
   background: var(--bg-2);
   border: 1px solid var(--line);
@@ -553,7 +553,7 @@
 }.landingPage .plan-feats li {
   display: flex; gap: 10px;
   font-size: 14.5px; color: var(--fg-dim);
-}.landingPage .plan-feats svg { color: var(--accent); flex-shrink: 0; margin-top: 5px; }.landingPage .plans-foot { margin-top: 32px; text-align: center; font-size: 14.5px; color: var(--fg-dim); }.landingPage .plans-foot a { color: var(--accent); font-weight: 500; }/* ============================================================ */
+}.landingPage .plan-feats svg { color: var(--accent); flex-shrink: 0; margin-top: 5px; }.landingPage .plans-foot { margin-top: 32px; text-align: center; font-size: 14.5px; color: var(--fg-dim); }.landingPage .plans-foot a { color: var(--accent); font-weight: 500; }.landingPage .plans-loading { text-align: center; padding: 40px 0; color: var(--fg-dim); font-size: 14px; }/* ============================================================ */
 /* Customer quotes carousel                                      */
 /* ============================================================ */
 .landingPage .quotes {

@@ -8,8 +8,8 @@
 // anything). That's likely why error messages looked wrong or generic in
 // production — the app was silently trying to call the tester's own
 // machine, not the real API.
-// const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
-export const BASE_URL = "https://api.aeo-app.ai/api/v1";
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+// const BASE_URL = "https://api.aeo-app.ai/api/v1";
 // 🔹 Error message mapping
 // Matches routers/auth_router.py's _STATUS dict exactly — these are the
 // REAL Cognito exception codes the backend actually sends in

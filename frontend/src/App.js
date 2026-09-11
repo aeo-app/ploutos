@@ -18,6 +18,7 @@ import { DomainAuthorityPage } from './pages/DomainAuthorityPage';
 import { FullReportPage }      from './pages/FullReportPage';
 import { ContentStrategyPage } from './pages/ContentStrategyPage';
 import { RelocationCalendarPage } from './pages/RelocationCalendarPage';
+import { BlogsPage } from './pages/BlogsPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { BillingPage } from './pages/BillingPage';
 import { BlogTopicsPage } from './pages/BlogTopicsPage';
@@ -25,6 +26,8 @@ import { ArticleGeneratorPage } from './pages/ArticleGeneratorPage';
 import { AdminApp } from './pages/AdminApp';
 import { AdminErrorBoundary } from './components/AdminErrorBoundary';
 import { ConnectPageApprovalPage } from './pages/ConnectPageApprovalPage';
+import { PublicBlogPostPage } from './pages/PublicBlogPostPage';
+import { PublicBlogIndexPage } from './pages/PublicBlogIndexPage';
 
 // Auth pages
 import { SignupPage }       from './pages/auth/SignupPage';
@@ -47,6 +50,7 @@ const APP_PAGES = {
   report:   FullReportPage,
   contentStrategy: ContentStrategyPage,
   relocationCalendar: RelocationCalendarPage,
+  blogs: BlogsPage,
   history: HistoryPage,
   billing: BillingPage,
   blogTopics: BlogTopicsPage,
@@ -219,6 +223,15 @@ export default function App() {
   const pathMatch = window.location.pathname.match(/^\/connect-page\/([^/]+)\/?$/);
   if (pathMatch) {
     return <ConnectPageApprovalPage inviteToken={pathMatch[1]} />;
+  }
+
+  if (window.location.pathname === '/blog' || window.location.pathname === '/blog/') {
+    return <PublicBlogIndexPage />;
+  }
+
+  const blogMatch = window.location.pathname.match(/^\/blog\/([^/]+)\/?$/);
+  if (blogMatch) {
+    return <PublicBlogPostPage slug={blogMatch[1]} />;
   }
 
   return (

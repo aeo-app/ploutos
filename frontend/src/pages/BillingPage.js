@@ -3,7 +3,7 @@ import { usePayment } from '../context/PaymentContext';
 import { useAuth } from '../context/AuthContext';
 import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
-import { PlanCards, PricingSectionHeader, CycleToggle, PricingFooter } from '../components/payment/PlanCards';
+import { PlanCards, PricingSectionHeader, PricingFooter } from '../components/payment/PlanCards';
 import { PaymentDropIn } from '../components/payment/PaymentDropIn';
 import { Card, Badge, SectionHeader, DataTable, SkeletonCard, ErrorCard } from '../components/ui/UI';
 import s from './BillingPage.module.css';
@@ -18,9 +18,14 @@ function formatDate(iso) {
 }
 
 export function BillingPage() {
-  const { isPaid, paidUntil, plan, planName, refresh } = usePayment();
+  const {
+    isPaid, paidUntil, plan, planName, refresh,
+    autoRenew, paymentMethodSummary, renewalStatus, renewalFailureReason,
+  } = usePayment();
   const { goScreen, logout } = useAuth();
   const authCtx = { goScreen, logout };
+  const [togglingRenew, setTogglingRenew] = useState(false);
+  const [renewToggleError, setRenewToggleError] = useState(null);
 
   const [catalog, setCatalog] = useState(null);
   const [history, setHistory] = useState(null);
@@ -28,7 +33,6 @@ export function BillingPage() {
   const [pageError, setPageError] = useState(null);
 
   const [checkoutIntent, setCheckoutIntent] = useState(null);
-  const [cycle, setCycle] = useState('monthly');
   const [checkoutStage, setCheckoutStage] = useState('idle'); // idle | loading | ready | confirming | success | failed
   const [checkoutError, setCheckoutError] = useState(null);
 
@@ -73,6 +77,19 @@ export function BillingPage() {
     setCheckoutError(null);
   };
 
+  const handleToggleAutoRenew = async () => {
+    setTogglingRenew(true);
+    setRenewToggleError(null);
+    try {
+      await withTokenExpiry(paymentApi.setAutoRenew(!autoRenew), authCtx);
+      await refresh();
+    } catch (e) {
+      if (e?.code !== 'TokenExpired') setRenewToggleError(e.message || 'Could not update auto-renewal.');
+    } finally {
+      setTogglingRenew(false);
+    }
+  };
+
   const pollForConfirmation = async (paymentIntentId) => {
     setCheckoutStage('confirming');
     for (let attempt = 0; attempt < 15; attempt++) {
@@ -94,6 +111,7 @@ export function BillingPage() {
     { key: 'plan_id', label: 'Plan', render: v => <Badge variant="brand">{v || '—'}</Badge> },
     { key: 'amount', label: 'Amount', render: (v, row) => `${v} ${row.currency}` },
     { key: 'status', label: 'Status', render: v => <Badge variant={v === 'SUCCEEDED' ? 'success' : v === 'FAILED' ? 'danger' : 'default'}>{v}</Badge> },
+    { key: 'is_renewal', label: 'Type', render: v => v ? <Badge>Auto-renewal</Badge> : <Badge variant="brand">Checkout</Badge> },
     { key: 'created_at', label: 'Date', render: v => formatDate(v) || '—' },
   ];
 
@@ -106,7 +124,11 @@ export function BillingPage() {
           {isPaid ? (
             <>
               <Badge variant="success">✓ {planName || catalog?.plans?.find(p => p.plan_id === plan)?.name || plan} plan active</Badge>
-              {paidUntil && <span className={s.statusText}>Renews/expires {formatDate(paidUntil)}</span>}
+              {paidUntil && (
+                <span className={s.statusText}>
+                  {autoRenew ? 'Auto-renews' : 'Expires'} {formatDate(paidUntil)}
+                </span>
+              )}
             </>
           ) : paidUntil ? (
             <>
@@ -117,6 +139,37 @@ export function BillingPage() {
             <Badge variant="warning">No active plan</Badge>
           )}
         </div>
+
+        {renewalStatus === 'failed' && (
+          <div className={s.renewalFailedBox}>
+            <span className={s.renewalFailedIcon}>⚠</span>
+            <div>
+              <div className={s.renewalFailedTitle}>Last auto-renewal attempt failed</div>
+              <div className={s.renewalFailedReason}>{renewalFailureReason || 'Your payment method was declined.'}</div>
+              <div className={s.renewalFailedNote}>
+                {paidUntil && new Date(paidUntil) > new Date()
+                  ? "Your access is still active — we'll automatically retry before your plan expires. You can also update your payment method by starting a new checkout below."
+                  : 'Your access has lapsed. Pick a plan below to renew.'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {paymentMethodSummary && (
+          <div className={s.paymentMethodRow}>
+            <span className={s.paymentMethodLabel}>💳 Saved payment method:</span>
+            <span className={s.paymentMethodValue}>{paymentMethodSummary}</span>
+            <button
+              type="button" className={s.autoRenewToggleBtn}
+              disabled={togglingRenew}
+              onClick={handleToggleAutoRenew}
+              title={autoRenew ? 'Turn off automatic renewal' : 'Turn on automatic renewal'}
+            >
+              {togglingRenew ? '…' : autoRenew ? 'Auto-renew: On' : 'Auto-renew: Off'}
+            </button>
+          </div>
+        )}
+        {renewToggleError && <div className={s.errorBox} style={{ marginTop: 10 }}>{renewToggleError}</div>}
       </Card>
 
       {loadingPage && <SkeletonCard rows={4} />}
@@ -126,14 +179,12 @@ export function BillingPage() {
         <Card style={{ marginBottom: 20 }}>
           <PricingSectionHeader
             eyebrow="Pricing"
-            title="Simple pricing,"
-            accent="priced by prompts."
-            subtitle="Pick the number of prompts you want tracked — 10, 50 or 100. Every plan includes site audits, automated fixes and your own AI agent. No overage fees. Cancel anytime."
+            title="Pricing built around"
+            accent="how often you publish."
+            subtitle="Every plan tracks your AI-search visibility and ships content automatically. Pick the cadence that matches your team."
           />
-          <CycleToggle cycle={cycle} onChange={setCycle} />
           <PlanCards
             plans={catalog.plans}
-            cycle={cycle}
             currentPlanId={plan}
             selectedPlanId={checkoutIntent?.plan_id}
             onSelect={selectPlan}

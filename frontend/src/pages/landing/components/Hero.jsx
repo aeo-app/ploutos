@@ -5,11 +5,11 @@ import ReportCard from './ReportCard.jsx';
 function Ticker() {
   return (
     <div className="ticker">
-      <div className="ticker-info">
+      {/* <div className="ticker-info">
         <span className="ticker-info-dot" />
         <span>AI-search volume tracked today:</span>
         <span className="mono">$184.7m</span>
-      </div>
+      </div> */}
     </div>
   );
 }
@@ -29,7 +29,7 @@ function Nav({ onSignIn, onGetStarted }) {
         <div className="nav-links">
           <a className="nav-link" href="#solutions">Products <Caret /></a>
           <a className="nav-link" href="#solutions">Solutions <Caret /></a>
-          <a className="nav-link" href="#blog">Resources <Caret /></a>
+          <a className="nav-link" href="#blog">Blogs</a>
           <a className="nav-link" href="#pricing">Pricing</a>
         </div>
         <div className="nav-cta">

@@ -7,11 +7,15 @@
     "framer-motion": "^11.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-scripts": "5.0.1"
+    "react-markdown": "^10.1.0",
+    "react-scripts": "5.0.1",
+    "remark-gfm": "^4.0.1"
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "build": "node scripts/generate-sitemap.js && react-scripts build && node scripts/prerender/index.js",
+    "sitemap": "node scripts/generate-sitemap.js",
+    "prerender": "node scripts/prerender/index.js",
     "deploy": "npm run build && aws s3 sync build s3://www.aeo-app.ai --delete"
   },
   "browserslist": {
@@ -25,5 +29,9 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.5",
+    "@babel/register": "^8.0.5"
   }
 }

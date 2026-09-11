@@ -1,0 +1,74 @@
+# robots.txt for aeo-app.ai
+#
+# This app is an AEO/SEO tool — it should practice what it preaches by
+# staying visible to AI crawlers, not accidentally blocking them the way
+# a leftover "block everything" rule from 2023-2024 commonly still does.
+#
+# Explicitly named below, one block per bot rather than a single wildcard
+# rule, so each is independently auditable:
+#   GPTBot            - OpenAI, training crawler
+#   ClaudeBot         - Anthropic, training crawler
+#   PerplexityBot     - Perplexity, crawler (used for both indexing and training)
+#   Google-Extended   - Google, opt-in/out signal specifically for Gemini
+#                       and other AI features (does NOT affect standard
+#                       Google Search indexing/ranking — Googlebot is
+#                       separate and already covered by the default rule below)
+#
+# Also named: the AI *retrieval/citation* bots most guides recommend
+# alongside the four above, since blocking these specifically is what
+# actually removes a site from AI-generated answers (ChatGPT, Claude,
+# Perplexity) even when the training bots are allowed:
+#   OAI-SearchBot, ChatGPT-User   - OpenAI
+#   Claude-SearchBot, Claude-User - Anthropic
+#   Perplexity-User               - Perplexity
+#
+# No "Allow: /" lines here on purpose, even though every bot below IS
+# fully allowed — with no rules at all, "allow everything" is already
+# the default, and an explicit "Allow: /" is not just redundant but
+# actively dangerous: tested directly with Python's urllib.robotparser,
+# adding "Allow: /" alongside "Disallow: /connect-page/" in the SAME
+# block caused the Disallow to be silently ignored entirely, allowing
+# /connect-page/ through. That parser doesn't implement "most specific
+# rule wins" the way most real crawlers do. Omitting Allow avoids relying
+# on that behavior being implemented correctly by every crawler that
+# reads this file.
+#
+# /connect-page/ carries a live, sensitive, single-use token in the URL
+# itself (see routers/social_publish_router.py's invite flow) — this is
+# not an SEO decision, it's to stop that token from ever being cached,
+# indexed, or logged by any crawler. Repeated in every block below, not
+# just the wildcard one, since each User-agent block is independent and
+# does not inherit rules from any other block, including the wildcard.
+
+User-agent: GPTBot
+Disallow: /connect-page/
+
+User-agent: ClaudeBot
+Disallow: /connect-page/
+
+User-agent: PerplexityBot
+Disallow: /connect-page/
+
+User-agent: Google-Extended
+Disallow: /connect-page/
+
+User-agent: OAI-SearchBot
+Disallow: /connect-page/
+
+User-agent: ChatGPT-User
+Disallow: /connect-page/
+
+User-agent: Claude-SearchBot
+Disallow: /connect-page/
+
+User-agent: Claude-User
+Disallow: /connect-page/
+
+User-agent: Perplexity-User
+Disallow: /connect-page/
+
+# Default for every other crawler (including Googlebot, Bingbot, etc.)
+User-agent: *
+Disallow: /connect-page/
+
+Sitemap: https://www.aeo-app.ai/sitemap.xml

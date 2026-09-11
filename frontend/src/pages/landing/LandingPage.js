@@ -29,7 +29,7 @@ import './LandingPage.css';
   authenticated (`authScreen === null`), App.js renders the existing
   apac_premium application instead of this page.
 */
-export function LandingPage() {
+export function LandingPage({ initialPlans, initialPosts } = {}) {
   const { goScreen } = useAuth();
 
   const handleSignIn = () => goScreen('login');
@@ -46,9 +46,9 @@ export function LandingPage() {
       <Solutions />
       <ThreeUp />
       <MarketingAgent />
-      <Pricing onStartTrial={handleStartTrial} />
+      <Pricing onStartTrial={handleStartTrial} initialPlans={initialPlans} />
       <Quotes />
-      <Blog />
+      <Blog initialPosts={initialPosts} />
       <Contact />
       <Footer />
     </div>

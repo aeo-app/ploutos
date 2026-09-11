@@ -431,10 +431,7 @@ async def get_invite_public_status(invite_token: str):
             "stage": "pick_page",
             "platform": invite["platform"],
             "requested_by_label": invite["requested_by_label"],
-            "available_pages": [
-                {"id": page["id"], "label": page["label"]}
-                for page in invite.get("available_pages", [])
-            ],
+            "available_pages": invite.get("available_pages", []),
             "return_to_app": invite.get("return_to_app", False),
         }
     return {
@@ -515,9 +512,7 @@ async def _handle_meta_invite_callback(invite_token: str, code: str):
         return _invite_redirect(invite_token, error=True)
     try:
         short_lived = meta.exchange_code_for_token(code)
-        logger.info(f"[social-publish] Meta code exchange succeeded for invite {invite_token}")
         long_lived = meta.exchange_for_long_lived_token(short_lived["access_token"])
-        logger.info(f"[social-publish] Meta long-lived token exchange succeeded for invite {invite_token}")
         user_token = long_lived["access_token"]
         pages = meta.list_pages(user_token)
         if not pages:

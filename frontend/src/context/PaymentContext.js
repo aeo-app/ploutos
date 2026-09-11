@@ -7,7 +7,11 @@ const PaymentCtx = createContext(null);
 
 export function PaymentProvider({ children }) {
   const { goScreen, logout } = useAuth();
-  const [status, setStatus] = useState({ is_paid: false, paid_until: null, plan: null, plan_name: null });
+  const [status, setStatus] = useState({
+    is_paid: false, paid_until: null, plan: null, plan_name: null,
+    auto_renew: false, payment_method_summary: null, renewal_status: null,
+    renewal_failure_reason: null, last_renewal_attempt_at: null,
+  });
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState(null);
 
@@ -24,7 +28,11 @@ export function PaymentProvider({ children }) {
       // than silently unlocking the app on a network hiccup.
       if (e?.code !== 'TokenExpired') {
         setError(e.message || 'Could not check payment status.');
-        setStatus({ is_paid: false, paid_until: null, plan: null, plan_name: null });
+        setStatus({
+          is_paid: false, paid_until: null, plan: null, plan_name: null,
+          auto_renew: false, payment_method_summary: null, renewal_status: null,
+          renewal_failure_reason: null, last_renewal_attempt_at: null,
+        });
       }
       return null;
     } finally {
@@ -36,7 +44,13 @@ export function PaymentProvider({ children }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   return (
-    <PaymentCtx.Provider value={{ isPaid: status.is_paid, paidUntil: status.paid_until, plan: status.plan, planName: status.plan_name, checking, error, refresh }}>
+    <PaymentCtx.Provider value={{
+      isPaid: status.is_paid, paidUntil: status.paid_until, plan: status.plan, planName: status.plan_name,
+      autoRenew: status.auto_renew, paymentMethodSummary: status.payment_method_summary,
+      renewalStatus: status.renewal_status, renewalFailureReason: status.renewal_failure_reason,
+      lastRenewalAttemptAt: status.last_renewal_attempt_at,
+      checking, error, refresh,
+    }}>
       {children}
     </PaymentCtx.Provider>
   );

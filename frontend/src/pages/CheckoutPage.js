@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
 import { AIRWALLEX_ENV } from '../api/config';
-import { PlanCards, PricingSectionHeader, CycleToggle, PricingFooter } from '../components/payment/PlanCards';
+import { PlanCards, PricingSectionHeader, PricingFooter } from '../components/payment/PlanCards';
 import s from './CheckoutPage.module.css';
 
 // Previously this had its own local `const AIRWALLEX_ENV = 'demo'`, with a
@@ -29,7 +29,6 @@ export function CheckoutPage() {
 
   const [catalog, setCatalog] = useState(null);      // { currency, billing_cycle_days, plans: [...] }
   const [catalogError, setCatalogError] = useState(null);
-  const [cycle, setCycle] = useState('monthly');
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [intent, setIntent] = useState(null);        // { payment_intent_id, client_secret, plan_id, plan_name, amount, currency, description }
   const [loading, setLoading] = useState(false);
@@ -174,10 +173,8 @@ export function CheckoutPage() {
             )}
             {catalog && (
               <>
-                <CycleToggle cycle={cycle} onChange={setCycle} />
                 <PlanCards
                   plans={catalog.plans}
-                  cycle={cycle}
                   selectedPlanId={selectedPlanId}
                   onSelect={selectPlan}
                   ctaLabel="Start now"
