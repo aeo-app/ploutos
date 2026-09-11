@@ -66,4 +66,6 @@ export const paymentApi = {
   getStatus: (paymentIntentId) =>
     get(`/payment/status${paymentIntentId ? `?payment_intent_id=${encodeURIComponent(paymentIntentId)}` : ""}`),
   getHistory: () => get("/payment/history"),
+  /** @param {boolean} enabled */
+  setAutoRenew: (enabled) => post(`/payment/auto-renew?enabled=${enabled}`),
 };

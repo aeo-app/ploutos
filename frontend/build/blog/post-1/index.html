@@ -1,0 +1,157 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#4F46E5"/><meta name="description" content="AEO Intel — AI-Powered SEO Intelligence for Asia-Pacific Markets"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400&display=swap" rel="stylesheet"/><title>How to Check If Your Website Is Invisible to AI Crawlers (Free 10-Minute Audit) — AEO Intel Blog</title><script defer="defer" src="/static/js/main.1d52520c.js"></script><link href="/static/css/main.8287584b.css" rel="stylesheet"></head><body><div id="root"><div><div><a href="/">AEO<span>Intel</span></a><a href="/">← Back to home</a></div><div><article><img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&amp;q=80" alt=""/><div><span>15 July 2026</span><span>·</span><span>13 min read</span></div><h1>How to Check If Your Website Is Invisible to AI Crawlers (Free 10-Minute Audit)</h1><div><p><strong>The 5-step checklist — under 10 minutes, no sign-up needed:</strong></p>
+<ol>
+<li>View page source vs. the rendered page</li>
+<li>Check robots.txt for AI crawler blocks</li>
+<li>Run Google Search Console&#x27;s URL Inspection tool</li>
+<li>Validate schema markup with Google&#x27;s Rich Results Test</li>
+<li>Check whether an llms.txt file exists</li>
+</ol>
+<p>Run all five, and you&#x27;ll know whether AI systems like ChatGPT and Perplexity can actually see your site — not just whether Google can.</p>
+<p><strong>Why this matters:</strong> Buyers now ask ChatGPT or Perplexity for recommendations before they ever Google your brand name. If your site is invisible to those crawlers, you&#x27;re missing the entire research phase — and it won&#x27;t show up in your analytics because there&#x27;s no click to measure.</p>
+<p><strong>A quick note before you start:</strong> these checks look at AI visibility separately from your normal SEO ranking. A site can rank well on Google and still be invisible to AI crawlers, because the two use different rules for what counts as accessible content. That&#x27;s exactly why each check below covers both — how to run it, and why it matters specifically for AI, not just search rank.</p>
+<hr/>
+<p><strong>AI Visibility vs. SEO Ranking: Why They&#x27;re Not the Same Thing</strong></p>
+<p>Ranking #1 on Google and being cited by ChatGPT are two different problems, solved by two different mechanisms. Here&#x27;s the short version, side by side:</p>
+<table><thead><tr><th>Factor</th><th>Google Search (SEO)</th><th>AI Crawlers (AEO / AI visibility)</th></tr></thead><tbody><tr><td>How it reads pages</td><td>Renders JavaScript before indexing, in most cases</td><td>Mostly reads raw HTML; many still don&#x27;t render JS</td></tr><tr><td>What happens if it&#x27;s blocked</td><td>Rare — most sites allow Googlebot by default</td><td>Common by accident — old robots.txt files don&#x27;t name GPTBot, ClaudeBot, etc.</td></tr><tr><td>Fallback when content is unclear</td><td>Can still rank using backlinks, click data, domain history</td><td>Usually just skips the page and cites a competitor instead</td></tr><tr><td>Newer signals (llms.txt, clean schema)</td><td>Little to no effect on ranking</td><td>Directly shapes whether you get cited</td></tr><tr><td>What &quot;doing well&quot; here tells you</td><td>Whether Google can find and rank your page</td><td>Whether ChatGPT, Perplexity, Claude etc. can read and quote your page</td></tr></tbody></table>
+<p>Four things drive that gap in practice:</p>
+<p><strong>1. Less rendering power</strong></p>
+<p>Googlebot has gotten good at running JavaScript over the years — it renders pages with an evergreen, Chrome-based system before indexing them. Most AI crawlers haven&#x27;t made that investment. A joint analysis by Vercel and the SEO firm MERJ, examining more than 500 million real GPTBot requests, found zero evidence of JavaScript execution: GPTBot fetched JS files about 11.5% of the time but never ran them. The same study found the same pattern for ClaudeBot and PerplexityBot.</p>
+<p><em>Example:</em> a SaaS pricing page built with client-side rendering (React or Vue, no server-side rendering) often loads its plan names and prices through an API call after the page loads. A human — and Googlebot — sees a full pricing table. Raw HTML shows only <code>&lt;div id=&quot;root&quot;&gt;&lt;/div&gt;</code> and a loading spinner. An AI crawler reading that raw HTML has nothing to cite.</p>
+<p><strong>2. Stricter about being blocked</strong></p>
+<p>Google has one main crawler that most sites already allow. AI systems run several separate, named crawlers instead — OpenAI alone operates three (GPTBot for training, OAI-SearchBot for ChatGPT search, and ChatGPT-User for live user requests), each controllable independently in robots.txt, per OpenAI&#x27;s own crawler documentation. A robots.txt file written before these existed has no idea any of them do — so they often get blocked by accident, not on purpose.</p>
+<p><em>Example:</em> a robots.txt last edited in 2019 might explicitly allow Googlebot and Bingbot, with a leftover <code>Disallow: /</code> rule under a wildcard user-agent (<code>User-agent: *</code>) that was meant to block a staging environment years ago and never got cleaned up. Google is named and excluded from that rule. GPTBot isn&#x27;t named anywhere, so it falls under the wildcard block — shut out without anyone deciding to shut it out.</p>
+<p><strong>3. No &quot;10 blue links&quot; fallback</strong></p>
+<p>If Google can&#x27;t fully parse a page, it can still rank it using signals like backlinks and click behavior. AI systems mostly just skip what they can&#x27;t cleanly read and cite a competitor instead.</p>
+<p><em>Example:</em> an e-commerce category page with broken or missing schema might still hold a decent Google ranking on the strength of backlinks and years of traffic. An AI system comparing two similar category pages has no such history to fall back on — it picks whichever page hands over clean, structured facts, and moves on.</p>
+<p><strong>4. Newer standards, lower adoption</strong></p>
+<p>Things like llms.txt don&#x27;t affect Google rankings at all. Adoption is still low across the web — single digits to roughly one site in ten, depending on which tracker you check — so most sites haven&#x27;t touched it yet. Whether AI systems actually read it consistently is still an open question (more on that in Step 5), but the fact that adoption remains low is exactly why publishing one is a cheap way to stand out from most competitors.</p>
+<p>This is why a site can look completely healthy in Google Search Console and Google Analytics and still be functionally invisible to the AI tools your buyers are increasingly using instead of search.</p>
+<hr/>
+<p><strong>1. View Source vs. Rendered Page</strong></p>
+<p><strong>How to check:</strong></p>
+<ol>
+<li>Open a key page — homepage, product page, or pricing page — in your browser.</li>
+<li>Right-click anywhere on the page and choose &quot;View Page Source&quot; (or press Ctrl+U on Windows, Cmd+Option+U on Mac).</li>
+<li>Use Ctrl+F / Cmd+F inside that source view to search for a specific piece of visible text — a headline, a price, a product name.</li>
+<li>Compare what you find in the source to what you see on the normal, rendered page.</li>
+</ol>
+<p><em>Real example:</em> search for your homepage&#x27;s main headline in the source view. If it&#x27;s sitting right there in plain text, you&#x27;re fine. If a search for your $49/month pricing figure returns zero matches in the source — even though it&#x27;s clearly visible on the live page — that price is being injected by JavaScript after the page loads, and it&#x27;s invisible to any crawler that doesn&#x27;t run that script.</p>
+<p><strong>Pass:</strong> Your visible text — headlines, pricing, features — also appears in the raw source.</p>
+<p><strong>Fail:</strong> The source is mostly empty tags and scripts, with no real content until JavaScript runs.</p>
+<p><strong>Why it matters for AI visibility:</strong> Many AI crawlers don&#x27;t fully execute JavaScript. If your content only appears after rendering, they may see a blank page even though your site looks fine to humans and ranks fine on Google.</p>
+<hr/>
+<p><strong>2. Check robots.txt for AI Crawler Blocks</strong></p>
+<p><strong>How to check:</strong></p>
+<ol>
+<li>Go to yourdomain.com/robots.txt</li>
+<li>Scan the file for these four user-agent names, each on its own line:<!-- -->
+<ol>
+<li>GPTBot (ChatGPT)</li>
+<li>ClaudeBot (Claude)</li>
+<li>PerplexityBot (Perplexity)</li>
+<li>Google-Extended (Google AI features)</li>
+</ol>
+</li>
+<li>For each one you find, check the lines directly under it for a Disallow rule. Also check the very top of the file for a wildcard user-agent (&quot;*&quot;) that might block everyone by default.</li>
+</ol>
+<p><em>What a block looks like:</em></p>
+<blockquote>
+<p>User-agent: GPTBot
+Disallow: /</p>
+</blockquote>
+<p><em>What it should look like instead (if you want that crawler in):</em></p>
+<blockquote>
+<p>User-agent: GPTBot
+Allow: /</p>
+</blockquote>
+<p><strong>Pass:</strong> None of the four are under a <code>Disallow: /</code> rule, and there&#x27;s no blanket block on all user-agents.</p>
+<p><strong>Fail:</strong> Any of them are disallowed, or a wildcard rule blocks everyone by default.</p>
+<p><strong>Why it matters for AI visibility:</strong> A robots.txt block doesn&#x27;t slow a crawler down — it tells the AI system not to access your content at all, no matter how good it is.</p>
+<hr/>
+<p><strong>3. Test With Google Search Console&#x27;s URL Inspection Tool</strong></p>
+<p><strong>How to check:</strong></p>
+<ol>
+<li>Log into Google Search Console for your property.</li>
+<li>Paste a key URL into the search bar at the top.</li>
+<li>Click &quot;View Crawled Page&quot; once the inspection loads.</li>
+<li>Check both the &quot;HTML&quot; tab (the raw code Google stored) and the rendered screenshot next to it.</li>
+</ol>
+<p><em>Real example:</em> the screenshot tab often looks completely normal — full page, images, pricing table and all — because it&#x27;s a rendered view. The HTML tab tells the real story: if your pricing table&#x27;s text is missing there even though the screenshot shows it, that&#x27;s the same JavaScript-rendering gap from Step 1, confirmed from Google&#x27;s own crawl data.</p>
+<p><strong>Pass:</strong> Both the crawled HTML and the screenshot show your real content in full.</p>
+<p><strong>Fail:</strong> The screenshot looks fine, but the HTML tab is missing content — or the page shows as blocked or excluded.</p>
+<p><strong>Why it matters for AI visibility:</strong> This is the closest free way to see your site as a bot sees it, not as a human with a full browser sees it — and many AI crawlers render less than Googlebot does.</p>
+<hr/>
+<p><strong>4. Validate Schema Markup With Google&#x27;s Rich Results Test</strong></p>
+<p><strong>How to check:</strong></p>
+<ol>
+<li>Open Google&#x27;s Rich Results Test.</li>
+<li>Paste in your homepage URL first, then run it again for a product page or FAQ page.</li>
+<li>Review the results panel for detected item types and for any errors or warnings listed under them.</li>
+</ol>
+<p><em>Real example:</em> an FAQ page might have FAQPage schema present — so it looks fine at a glance — but flagged with a warning for a duplicate mainEntity field, left over from a page template that was copy-pasted and never fully edited. A human reader never notices. An AI system reading that schema for clean facts sees a contradiction and may disregard the whole block.</p>
+<p><strong>Pass:</strong> Structured data (Organization, Product, FAQPage, etc.) is detected with zero errors and zero warnings.</p>
+<p><strong>Fail:</strong> No structured data is found, or it&#x27;s flagged with errors — duplicate fields, missing properties, bad formatting.</p>
+<p><strong>Why it matters for AI visibility:</strong> Schema hands AI systems clean, labeled facts instead of making them guess from paragraphs of copy. Broken schema can be worse than none — it signals your data can&#x27;t be trusted.</p>
+<hr/>
+<p><strong>5. Check for an llms.txt File</strong></p>
+<p><strong>How to check:</strong></p>
+<ol>
+<li>Go to yourdomain.com/llms.txt</li>
+<li>If it loads, check that it lists your key pages with short, plain descriptions rather than sitting empty or duplicating your sitemap.</li>
+</ol>
+<p><em>What a minimal, usable llms.txt looks like:</em></p>
+<blockquote>
+<p># Your Company Name</p>
+<p>&gt; One-line description of what you do and who it&#x27;s for.</p>
+<p>## Docs</p>
+<ul>
+<li>[Getting Started](<a href="https://yourdomain.com/docs/start">https://yourdomain.com/docs/start</a>): Setup guide for new users</li>
+<li>[Pricing](<a href="https://yourdomain.com/pricing">https://yourdomain.com/pricing</a>): Plans and what&#x27;s included</li>
+</ul>
+<p>## About</p>
+<ul>
+<li>[FAQ](<a href="https://yourdomain.com/faq">https://yourdomain.com/faq</a>): Common questions answered</li>
+</ul>
+</blockquote>
+<p><strong>Pass:</strong> The file loads and lists key pages — product, docs, comparisons — with brief descriptions.</p>
+<p><strong>Fail:</strong> You get a 404 error. The file doesn&#x27;t exist yet.</p>
+<p><strong>Why it matters for AI visibility:</strong> llms.txt adoption is still low — independent trackers put it anywhere from roughly 5% to 10% of sites depending on the sample and month measured, and an Ahrefs server-log study found 97% of published llms.txt files got zero AI-crawler requests. Google has also said it doesn&#x27;t use the file. In plain terms: this is a low-cost, low-risk addition rather than a guaranteed win, and it&#x27;s worth doing precisely because so few competitors have bothered — not because any AI vendor has confirmed it drives citations.</p>
+<hr/>
+<p><strong>What to Do If You Failed Any of These Checks</strong></p>
+<p><strong>Blocked in robots.txt?</strong></p>
+<p>Remove the disallow rule for that crawler, or add an explicit Allow rule under its own user-agent line, as shown in Step 2 above. This is a one-line text edit — no deployment needed beyond re-uploading the file.</p>
+<p><strong>JavaScript-only content?</strong></p>
+<p>Add server-side rendering or a static fallback. In practice this usually means one of three routes, roughly in order of effort:</p>
+<ol>
+<li><strong>Static generation:</strong> if the page content doesn&#x27;t change per visitor (pricing, product, marketing pages), pre-build the HTML at deploy time — for example, static export in Next.js or Nuxt — so the full content ships in the initial HTML.</li>
+<li><strong>Server-side rendering:</strong> render the page to HTML on the server for every request, rather than in the visitor&#x27;s browser, so both bots and users get complete markup immediately.</li>
+<li><strong>Dynamic rendering for bots:</strong> keep your existing client-side-rendered site for human visitors, but serve a pre-rendered HTML snapshot specifically when the request comes from a known crawler user-agent. This is the smallest change if a full rebuild isn&#x27;t realistic right now.</li>
+</ol>
+<p><strong>Broken or missing schema?</strong></p>
+<p>Fix the specific errors or warnings the Rich Results Test lists — usually a missing required property or a duplicate field, as in the Step 4 example — then re-run the test until it comes back clean.</p>
+<p><strong>No llms.txt?</strong></p>
+<p>Publish a basic version pointing to your key pages, following the template shown in Step 5. Ten to fifteen lines covering your most important pages is enough to start.</p>
+<p>None of this needs a full site rebuild — most fixes are a developer task measured in hours, not weeks. Send this checklist straight to whoever manages your site, and you should have a clear pass/fail on all five within a day.</p>
+<hr/>
+<p><strong>Frequently Asked Questions</strong></p>
+<p><strong>Do I need a developer for all five checks?</strong></p>
+<p>No — all five checks themselves just need a browser. Only the fixes (steps 1, 2, and 4) usually need a developer; llms.txt (step 5) can often be added by anyone comfortable editing a plain text file.</p>
+<p><strong>How often should I re-run this checklist?</strong></p>
+<p>Once a quarter is enough for most sites, and always after a site redesign, a CMS migration, or a new page builder rollout — those are the moments blocks and broken schema tend to sneak in.</p>
+<p><strong>Will fixing these five things guarantee AI systems cite my site?</strong></p>
+<p>No — structure gets you back in the running; it doesn&#x27;t guarantee a citation. Content quality and relevance still decide who actually gets cited once a site is technically visible.</p>
+<p><strong>What if I only have time to fix one thing first?</strong></p>
+<p>Start with robots.txt. It&#x27;s the fastest check to run, the fastest fix to make, and the one most likely to be silently blocking every AI crawler at once — the other four fixes don&#x27;t matter if the crawler can&#x27;t get in the door to begin with.</p>
+<p><strong>Does this apply to every page on my site, or just a few?</strong></p>
+<p>Focus on the pages that actually drive business first — homepage, pricing, top product or service pages, and your main FAQ. These are the pages most likely to get pulled into an AI answer, so they&#x27;re where a block or a schema error costs you the most. Once those pass, you can run the same five checks across the rest of the site as time allows.</p>
+<p><strong>I run a small team with no in-house developer — is this still doable?</strong></p>
+<p>Yes. All five checks only need a browser, so you can run the full audit yourself in under 10 minutes without touching any code. For the fixes, robots.txt and llms.txt are usually simple text-file edits you can hand to a freelancer or your hosting support team for a quick turnaround; only the JavaScript rendering fix tends to need someone with real development experience.</p>
+<hr/>
+<p><strong>Want This Done for You?</strong></p>
+<p>AEO Intel runs this same audit automatically, plus a few dozen additional checks, and returns a scored report in minutes. Run a free scan of your site with AEO Intel to see exactly where you stand.</p>
+<hr/>
+<p><strong>Sources</strong></p>
+<p>OpenAI, <a href="https://developers.openai.com/api/docs/bots">Overview of OpenAI Crawlers</a> — official documentation for GPTBot, OAI-SearchBot, OAI-AdsBot, and ChatGPT-User, including robots.txt behavior.</p>
+<p>Vercel &amp; MERJ, <a href="https://www.getpassionfruit.com/blog/javascript-rendering-and-ai-crawlers-can-llms-read-your-spa">JavaScript Rendering and AI Crawlers</a> — analysis of 500M+ GPTBot fetches finding no JavaScript execution, with the same pattern found for ClaudeBot and PerplexityBot.</p>
+<p>Originality.ai, <a href="https://ppc.land/llms-txt-adoption-rises-8-8x-but-97-of-files-get-zero-ai-requests/">llms.txt adoption tracker coverage</a> — year-long tracking study of llms.txt adoption, cross-referenced with an Ahrefs server-log study on how often AI crawlers actually request the file.</p>
+<p>Rankability, <a href="https://www.rankability.com/data/llms-txt-adoption/">LLMS.txt Adoption Tracker</a> — monthly-updated adoption rate among the top 1,000 and top 10,000 websites.</p></div></article></div></div></div></body></html>

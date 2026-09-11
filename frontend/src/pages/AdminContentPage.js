@@ -237,6 +237,23 @@ export function AdminContentPage({ contentType, selectedUser, onSelectUser }) {
 
   const unlockedDays = contentType === 'calendars' && selected ? (selected?.result?.days || []).filter(d => !d?.locked) : [];
 
+  useEffect(() => {
+    // A <select> always visually displays SOME option as selected, even
+    // when its bound value ('' initially, or a stale date from a
+    // previously-viewed calendar) doesn't match any of the current
+    // options — the browser just shows the first one. That made this
+    // look selected in the UI while reviseDate stayed out of sync
+    // underneath, which silently kept the "Revise & save" button disabled
+    // (disabled={... !reviseDate}) — clicking it did nothing at all, no
+    // error, since the click never reached the handler in the first place.
+    if (unlockedDays.length > 0 && !unlockedDays.some(d => d?.date === reviseDate)) {
+      setReviseDate(unlockedDays[0].date);
+    } else if (unlockedDays.length === 0 && reviseDate) {
+      setReviseDate('');
+    }
+    // eslint-disable-next-line
+  }, [selected?.analysis_id, unlockedDays.length]);
+
   const adminSocialApi = useMemo(() => {
     if (!selectedUser?.user_id) return null;
     const userId = selectedUser.user_id;

@@ -3,7 +3,7 @@ import { usePayment } from '../../context/PaymentContext';
 import { useAuth } from '../../context/AuthContext';
 import { paymentApi } from '../../api/paymentApi';
 import { withTokenExpiry } from '../../api/authApi';
-import { PlanCards, PricingSectionHeader, CycleToggle, PricingFooter } from './PlanCards';
+import { PlanCards, PricingSectionHeader, PricingFooter } from './PlanCards';
 import { PaymentDropIn } from './PaymentDropIn';
 import s from './UnlockModal.module.css';
 
@@ -29,7 +29,6 @@ export function UnlockModal({
 
   const [catalog, setCatalog] = useState(null);
   const [catalogError, setCatalogError] = useState(null);
-  const [cycle, setCycle] = useState('monthly');
 
   const [intent, setIntent] = useState(null);
   const [stage, setStage] = useState('plans'); // plans | loading | ready | confirming | success | failed
@@ -93,8 +92,7 @@ export function UnlockModal({
             {!catalog && !catalogError && <div className={s.loadingRow}><span className={s.spinner} /><span>Loading plans…</span></div>}
             {catalog && (
               <>
-                <CycleToggle cycle={cycle} onChange={setCycle} />
-                <PlanCards plans={catalog.plans} cycle={cycle} onSelect={selectPlan} ctaLabel="Unlock now" />
+                <PlanCards plans={catalog.plans} onSelect={selectPlan} ctaLabel="Unlock now" />
                 <PricingFooter />
               </>
             )}

@@ -1,0 +1,41 @@
+.wrap { min-height: 100vh; background: #fff; }
+.topBar {
+  display: flex; align-items: center; justify-content: space-between; padding: 18px 32px;
+  border-bottom: 1px solid #EEF0F3; position: sticky; top: 0; background: #fff; z-index: 10;
+}
+.brand { font-family: var(--font-display, system-ui, sans-serif); font-weight: 800; font-size: 16px; color: #1E293B; text-decoration: none; }
+.brandAccent { color: #4F46E5; }
+.homeLink { font-size: 13px; font-weight: 700; color: #64748B; text-decoration: none; }
+.homeLink:hover { color: #4F46E5; }
+
+.content { max-width: 720px; margin: 0 auto; padding: 48px 24px 100px; }
+.loading, .error { color: #94A3B8; font-size: 14px; padding: 60px 0; text-align: center; }
+.error { color: #EF4444; }
+.notFound { text-align: center; padding: 80px 0; }
+.notFoundTitle { font-size: 20px; font-weight: 800; color: #1E293B; margin-bottom: 8px; }
+.notFoundBody { font-size: 14px; color: #64748B; }
+
+.image { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; margin-bottom: 28px; }
+.meta { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #64748B; margin-bottom: 14px; }
+.categoryBadge {
+  background: #EEF2FF; color: #4F46E5; font-size: 11.5px; font-weight: 700;
+  padding: 3px 10px; border-radius: 999px;
+}
+.title { font-family: var(--font-display, system-ui, sans-serif); font-size: 34px; font-weight: 800; color: #0F172A; line-height: 1.25; margin: 0 0 28px; }
+
+.body { font-size: 17px; line-height: 1.85; color: #334155; }
+.body h1 { font-family: var(--font-display, system-ui, sans-serif); font-size: 25px; margin: 32px 0 16px; }
+.body h2 { font-family: var(--font-display, system-ui, sans-serif); font-size: 21px; margin: 28px 0 14px; }
+.body h3 { font-family: var(--font-display, system-ui, sans-serif); font-size: 18px; margin: 22px 0 12px; }
+.body p { margin: 0 0 18px; }
+.body ul, .body ol { margin: 0 0 18px; padding-left: 26px; }
+.body li { margin-bottom: 8px; }
+.body code { background: #F1F5F9; padding: 2px 7px; border-radius: 5px; font-size: 15px; }
+.body pre { background: #0F172A; color: #fff; padding: 18px 22px; border-radius: 12px; overflow-x: auto; margin-bottom: 18px; }
+.body pre code { background: none; color: inherit; padding: 0; }
+.body blockquote { border-left: 3px solid #C7D2FE; padding-left: 18px; color: #64748B; margin: 0 0 18px; }
+.body img { max-width: 100%; border-radius: 12px; }
+.body a { color: #4F46E5; }
+.body table { border-collapse: collapse; width: 100%; margin-bottom: 18px; }
+.body th, .body td { border: 1px solid #E2E8F0; padding: 10px 16px; font-size: 15px; text-align: left; }
+.body th { background: #F8FAFC; font-weight: 700; }

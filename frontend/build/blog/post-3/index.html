@@ -1,0 +1,92 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#4F46E5"/><meta name="description" content="AEO Intel — AI-Powered SEO Intelligence for Asia-Pacific Markets"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400&display=swap" rel="stylesheet"/><title>How to Add FAQPage Schema in 10 Minutes (No-Code Guide) — AEO Intel Blog</title><script defer="defer" src="/static/js/main.1d52520c.js"></script><link href="/static/css/main.8287584b.css" rel="stylesheet"></head><body><div id="root"><div><div><a href="/">AEO<span>Intel</span></a><a href="/">← Back to home</a></div><div><article><img src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&amp;q=80" alt=""/><div><span>1 September 2026</span><span>·</span><span>5 min read</span></div><h1>How to Add FAQPage Schema in 10 Minutes (No-Code Guide)</h1><div><p>If your SaaS blog and help pages have an FAQ section, you&#x27;re sitting on something worth structuring properly. FAQPage schema is a small piece of code that tells search engines, and increasingly AI crawlers like GPTBot and PerplexityBot, exactly which text on your page is a question and which is the answer. You don&#x27;t need a developer, and you don&#x27;t need to touch your site&#x27;s design. You need about ten minutes and this guide.</p>
+<p>By the end, you&#x27;ll have FAQPage schema live on your site, validated correctly, and prioritised on the three pages that matter most.</p>
+<hr/>
+<p><strong>What FAQPage Schema Actually Does (and What It Stopped Doing)</strong></p>
+<p>Schema markup, also called structured data, is invisible code sitting in the background of a page. It doesn&#x27;t change how anything looks to a visitor; it changes how machines read your content.</p>
+<p><strong>Key Changes:</strong></p>
+<ul>
+<li><strong>Google SERP Dropdown Removed:</strong> FAQPage schema used to earn an expandable Q&amp;A dropdown right under your Google listing. Google officially deprecated this on May 7, 2026, and the rich result stopped appearing in Search that same day.</li>
+<li><strong>Reporting Tool Phase-Out:</strong> The FAQ search-appearance filter and Rich Results Test support are ending in June 2026, followed by Search Console API support in August 2026.</li>
+</ul>
+<p><strong>Why You Should Still Use It:</strong></p>
+<p>None of that makes the FAQPage type invalid. Google&#x27;s own notice confirms unused structured data doesn&#x27;t cause problems for Search, and the markup remains a valid schema.org type.</p>
+<p>The pitch has shifted: you&#x27;re not chasing a Google search-results dropdown anymore. Instead, you are labelling your Q&amp;A content clearly so that Bing, and AI crawlers like GPTBot and PerplexityBot, can parse it without guessing.</p>
+<hr/>
+<p><strong>Step 1: Pick the FAQ Content You Want to Mark Up</strong></p>
+<ul>
+<li><strong>Copy Existing Text:</strong> Before opening any tool, go to the page and copy the exact questions and answers as they appear. Keep answers concise (a few sentences each works best).</li>
+<li><strong>Visible Content Only:</strong> If the page doesn&#x27;t have an FAQ section yet, add 3 to 5 real, relevant questions first. Schema only works on content that is actually visible to visitors.</li>
+</ul>
+<hr/>
+<p><strong>Step 2: Generate the Code With a Free Schema Generator</strong></p>
+<p>You don&#x27;t need to write JSON-LD by hand. Use free, no-signup tools like Merkle&#x27;s Schema Markup Generator or TechnicalSEO.com&#x27;s FAQ Schema Generator.</p>
+<ol>
+<li>Select <strong>&quot;FAQPage&quot;</strong> as the schema type in the generator.</li>
+<li>Enter your first question and matching answer.</li>
+<li>Click <strong>&quot;Add Question&quot;</strong> and repeat for each Q&amp;A pair.</li>
+<li>The tool will automatically generate the code block wrapped in <code>&lt;script type=&quot;application/ld+json&quot;&gt;</code> tags. Leave those tags in place.</li>
+</ol>
+<hr/>
+<p><strong>Step 3: Copy the Generated Code</strong></p>
+<p>Select the full code block, starting from <code>&lt;script type=&quot;application/ld+json&quot;&gt;</code> and ending at <code>&lt;/script&gt;</code>, and copy it. Make sure not to leave out the script tags, as they tell your site this is structured data, not plain text.</p>
+<hr/>
+<p><strong>Step 4: Paste It Into Google Tag Manager (or Your CMS Header)</strong></p>
+<p>Choose one of the two common paths depending on your setup:</p>
+<ul>
+<li><strong>Option A — Google Tag Manager (GTM):</strong> Open your GTM workspace and click <strong>&quot;New Tag.&quot;</strong> Choose <strong>&quot;Custom HTML&quot;</strong> as the tag type, and paste your full script block into the HTML field. Set the trigger to fire only on the specific page(s) where this FAQ content lives, name the tag, and publish the container.</li>
+<li><strong>Option B — CMS Header (WordPress, Webflow, etc.):</strong> Paste the script into the page-specific header code field so it only loads on that particular page.</li>
+</ul>
+<hr/>
+<p><strong>Step 5: Validate the Markup Properly</strong></p>
+<p>Google&#x27;s Rich Results Test is losing FAQ support, so it is no longer the right tool for confirmation.</p>
+<ol>
+<li>Use the <strong>Schema.org Validator</strong> instead.</li>
+<li>Paste in your page URL or the raw code.</li>
+<li>Run the check and look for <strong>&quot;FAQPage&quot;</strong> recognised with <strong>zero errors</strong>.</li>
+<li>Confirm the questions and answers in the code match what is visibly written on the page word-for-word.</li>
+</ol>
+<hr/>
+<p><strong>Finished FAQ JSON-LD Example</strong></p>
+<p>Here is a completed, validator-clean block for a simple two-question FAQ template:</p>
+<pre><code class="language-json">&lt;script type=&quot;application/ld+json&quot;&gt;
+{
+&quot;@context&quot;: &quot;https://schema.org&quot;,
+&quot;@type&quot;: &quot;FAQPage&quot;,
+&quot;mainEntity&quot;: [
+{
+&quot;@type&quot;: &quot;Question&quot;,
+&quot;name&quot;: &quot;What is FAQPage schema?&quot;,
+&quot;acceptedAnswer&quot;: {
+&quot;@type&quot;: &quot;Answer&quot;,
+&quot;text&quot;: &quot;FAQPage schema is structured data that labels the questions and answers on a page so search engines and AI tools can identify and read them accurately.&quot;
+}
+},
+{
+&quot;@type&quot;: &quot;Question&quot;,
+&quot;name&quot;: &quot;Do I need a developer to add FAQ schema?&quot;,
+&quot;acceptedAnswer&quot;: {
+&quot;@type&quot;: &quot;Answer&quot;,
+&quot;text&quot;: &quot;No. You can generate the code with a free tool and paste it into Google Tag Manager or your CMS header without writing any code yourself.&quot;
+}
+}
+]
+}
+&lt;/script&gt;
+</code></pre>
+<hr/>
+<p><strong>Which Pages to Prioritise First</strong></p>
+<p>You don&#x27;t need to mark up every page on day one. Start with these three:</p>
+<ol>
+<li><strong>Homepage:</strong> Usually your highest-traffic page with broad product or brand FAQs.</li>
+<li><strong>Pricing Page:</strong> Directly answers questions about plans, costs, and features that users often type into AI search engines.</li>
+<li><strong>Top-Performing Blog Post:</strong> Your highest-traffic organic post, making its answers easier for crawlers to process.</li>
+</ol>
+<hr/>
+<p><strong>Sources</strong></p>
+<ul>
+<li><a href="https://www.searchenginejournal.com/google-drops-faq-rich-results-from-search/574429/">Google Search Central — FAQ rich result deprecation coverage, Search Engine Journal</a></li>
+<li><a href="https://validator.schema.org/">Schema.org Validator</a> — official tool for checking structured data syntax</li>
+<li>Google Search Central documentation changelog — deprecation notice added to the FAQ structured data page, May 7–8, 2026, with removal of FAQ documentation and Rich Results Test support following in June 2026</li>
+<li>Google&#x27;s generative AI search guidance (published mid-May 2026) — confirms structured data isn&#x27;t required for AI Overviews or AI Mode, and there&#x27;s no special <a href="http://schema.org/">schema.org</a> markup for either</li>
+<li>Google Tag Manager Help — Custom HTML tags — official steps for creating and triggering a Custom HTML tag</li>
+</ul></div></article></div></div></div></body></html>

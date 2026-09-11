@@ -61,13 +61,12 @@ def _compute_paid_until() -> str | None:
 
 
 @router.get("/api/v1/payment/plans", summary="List available plans (Starter/Growth/Scale)")
-async def list_plans(user_id: str = Depends(get_current_user_id)):
+async def list_plans():
     """
-    Single source of truth for pricing AND display content — the dashboard's
-    pricing area should render its cards entirely from this response
-    (name, price, blurb, prompts, features, highlight) rather than
-    hardcoding any of it, so marketing copy and the actual checkout price
-    can never drift out of sync again (see the module note above PLANS).
+    Public catalog — the landing page is accessible without login, and the
+    pricing cards are designed to render for anonymous visitors as well.
+    The response is still the single source of truth for both marketing and
+    checkout pricing, so the UI and actual plan charges can never drift.
     """
     return {
         "currency": PAYMENT_CURRENCY,

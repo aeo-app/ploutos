@@ -27,6 +27,7 @@ function getNav() {
         { id: 'blogTopics', icon: '📝', label: 'Blog Topics' },
         { id: 'articleGenerator', icon: '📰', label: 'Article Generator' },
         { id: 'relocationCalendar', icon: '📅', label: 'Social Media Calendar' },
+        { id: 'blogs', icon: '📝', label: 'Blogs' },
       ],
     },
     {
@@ -122,6 +123,7 @@ export function Sidebar({ open, onClose }) {
                   : item.id === 'billing' ? false
                   : item.id === 'admin' ? false
                   : item.id === 'blogTopics' ? false
+                  : item.id === 'blogs' ? false
                   : item.id === 'articleGenerator' ? false
                   : !!state.results[item.id] || !!state.results.fullReport;
                 return (
