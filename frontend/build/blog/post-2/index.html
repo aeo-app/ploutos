@@ -1,0 +1,87 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="theme-color" content="#4F46E5"/><meta name="description" content="AEO Intel — AI-Powered SEO Intelligence for Asia-Pacific Markets"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400&display=swap" rel="stylesheet"/><title>How ChatGPT, Perplexity, and Gemini Actually Choose What to Recommend — AEO Intel Blog</title><script defer="defer" src="/static/js/main.1d52520c.js"></script><link href="/static/css/main.8287584b.css" rel="stylesheet"></head><body><div id="root"><div><div><a href="/">AEO<span>Intel</span></a><a href="/">← Back to home</a></div><div><article><img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&amp;q=80" alt=""/><div><span>11 August 2026</span><span>·</span><span>10 min read</span></div><h1>How ChatGPT, Perplexity, and Gemini Actually Choose What to Recommend</h1><div><p>Ranking high on Google doesn&#x27;t mean you will show up in AI answers. You also need to structure content so AI can easily read, evaluate, and use it.</p>
+<ul>
+<li><strong>Traditional Search Engines:</strong> They just give you a list of website links. Websites compete to rank at the top of the page.</li>
+<li><strong>AI Search Engines:</strong> They gather information from multiple websites and give you a direct, combined answer. Here, websites compete to be trusted and cited as a source by the AI.</li>
+</ul>
+<p>A site can hold the top Google position for a topic and still be absent from an AI-generated answer on that same topic, because the two systems are solving different problems: one ranks documents, the other verifies and assembles facts. Multiple independent citation studies report that a meaningful share of what AI tools cite falls outside the usual top-10 Google results for the same query — and that share has grown year over year. The overlap between &quot;what ranks&quot; and &quot;what gets cited&quot; is narrowing, not widening.</p>
+<p>This article explains, in plain terms, how these systems locate sources, what they retrieve, and why they use some content while skipping other content. To keep the analysis grounded rather than speculative, it draws on established, publicly documented standards and frameworks — including the U.S. National Institute of Standards and Technology&#x27;s AI Risk Management Framework (NIST AI RMF), the Federal Trade Commission&#x27;s Endorsement Guides, and the W3C&#x27;s structured-data standards — rather than relying solely on unverified industry commentary. It closes with a practical, standards-aligned checklist.</p>
+<hr/>
+<p><strong>A Standards-Based View of AI Trust</strong></p>
+<p>AI companies do not make up their own rules when deciding which sources to trust; instead, they follow official guidelines like the NIST AI Risk Management Framework (AI RMF 1.0) introduced in January 2023. These standards state that for an AI system to be trustworthy, the information it shares must be accurate and repeatable — not just popular — and the system must remain transparent by clearly showing where its details come from.</p>
+<p>Two of those characteristics explain most of what follows in this article:</p>
+<ul>
+<li>A system built to be valid and reliable has to check whether the information it surfaces is accurate and reproducible, not merely popular.</li>
+<li>A system built to be accountable and transparent has to be able to show where a claim came from.</li>
+</ul>
+<p>That is why AI engines favour content that is independently corroborated, clearly structured, and dated — properties that make a source easy to verify and attribute.</p>
+<hr/>
+<p><strong>1. AI Tools Don&#x27;t Rank Pages. They Pull Facts and Build an Answer.</strong></p>
+<p>An AI search engine typically breaks a complex prompt into several targeted sub-queries, retrieves candidate pages for each, and cites only the sources that contribute directly to the final answer. Traditional ranking position influences retrieval, but it is not the deciding factor, as content teams often assume.</p>
+<p><strong>What is Query Fan-Out?</strong> Instead of doing just one search, an AI does multiple smaller searches to answer your single question.</p>
+<p><strong>Why the Sources Look Different:</strong> Because the AI searches for different details in multiple places, the sources it lists may look completely different from Google&#x27;s top page results.</p>
+<p><strong>The three major AI engines handle retrieval differently:</strong></p>
+<ul>
+<li><strong>Perplexity:</strong> Behaves like a research assistant. It searches the live web for most queries and draws from a wide mix of sources, including forums and specialist sites with granular detail that larger general sites often lack.</li>
+<li><strong>ChatGPT:</strong> Applies a narrower filter. When it searches the web, it evaluates a batch of candidate pages for relevance and trustworthiness, then draws from a small number — often two to four sources — rather than citing everything it reviewed.</li>
+<li><strong>Gemini:</strong> Draws heavily on Google&#x27;s own index and applies a similar multi-query approach. It often shows fewer visible citations than the other two, especially when it paraphrases rather than quotes directly.</li>
+</ul>
+<p><strong>Practical implication:</strong> optimise for retrieval across multiple engines and multiple sub-queries on a topic, not for a single ranking algorithm.</p>
+<hr/>
+<p><strong>2. Structure That Aligns With Recognised Web Standards Improves Retrieval</strong></p>
+<p>AI systems do not read a page top to bottom the way a person does. They scan for discrete, self-contained facts — a definition, a figure, a procedural step — that can be extracted without losing meaning. Content that states its answer early is retrieved more often than content that arrives at the point after several paragraphs of introduction.</p>
+<p>This is not merely a stylistic preference. The structured-data markup that makes a page&#x27;s content explicit to machines — most commonly expressed as JSON-LD — is built on <strong>JSON-LD 1.1</strong>, a formal <strong>World Wide Web Consortium (W3C) Recommendation</strong> published in July 2020. The vocabulary used inside that markup, Schema.org, is itself developed through open W3C Community Groups and is expressed using W3C-defined formats (JSON-LD, RDFa) alongside the WHATWG Microdata format. In other words, using structured markup correctly is an act of conformance with recognised, publicly governed interoperability standards for the Web — the same standards that browsers, search engines, and AI retrieval systems all rely on to parse content unambiguously.</p>
+<p><strong>In practice, that means:</strong></p>
+<ul>
+<li>Marking up FAQs, step-by-step procedures, and product or organisation details using Schema.org vocabulary in JSON-LD format.</li>
+<li>Using distinct, descriptive headings that map to the actual sections of the page, rather than decorative or vague labels.</li>
+<li>Keeping paragraphs brief and answers close to the top of each section, so both the visible content and its underlying markup describe the identical structure.</li>
+</ul>
+<p>Even without technical markup, plain formatting — short paragraphs, clear headings, numbered steps, simple tables — signals structure that both conventional search engines and AI retrieval systems pick up on. Structured markup formalises that signal in a machine-readable, standards-compliant form.</p>
+<hr/>
+<p><strong>3. Independent Corroboration Functions Like Substantiation</strong></p>
+<p>A brand controls what it says about itself. A business can describe itself as the leading provider in its category on its own website, and that claim carries the weight the business chooses to give it — but AI systems are built to treat self-description with more caution than externally verified fact, because a party describing itself has an inherent, undisclosed interest in the outcome.</p>
+<p>A useful, if imperfect, real-world parallel is how the <strong>FTC&#x27;s Guides Concerning the Use of Endorsements and Testimonials in Advertising (16 CFR Part 255)</strong> and the FTC&#x27;s related advertising substantiation doctrine treat marketing claims. Those Guides require that endorsements be truthful, reflect genuine and substantiated experience, and disclose any material connection between an endorser and the business being promoted — the underlying principle being that a claim&#x27;s credibility depends on its independence from the party making it, and on whether competent, reliable evidence backs it up. The FTC framework governs advertising disclosure, not AI citation behaviour, but the evidentiary logic is the same one AI systems apply: an unsubstantiated first-party claim is treated as weaker evidence than a claim corroborated by independent, disinterested sources.</p>
+<p><strong>In practice, the sources that build this kind of independent corroboration include:</strong></p>
+<ul>
+<li>Forum discussions</li>
+<li>Video reviews</li>
+<li>Comparison articles</li>
+<li>Review platforms</li>
+<li>Press coverage</li>
+</ul>
+<p>Each one gives an AI system something to check a brand&#x27;s own claims against. When many unrelated sources describe a product the same way the business itself does, that consistency functions as corroborating evidence. When a business&#x27;s own website is the only place making a claim, the AI system has comparatively little basis to treat that claim as verified.</p>
+<p>A separate, practical point: being mentioned by an AI system is not the same as being linked. Several AI tools name a brand in a generated answer without providing a clickable citation. Independent corroboration can therefore improve the likelihood of being cited without guaranteeing referral traffic — a distinction that did not significantly exist in a search-engine-only environment.</p>
+<hr/>
+<p><strong>4. Currency, Provenance, and the &quot;Valid and Reliable&quot; Standard</strong></p>
+<p>Search engines have long favoured freshness. AI systems have another reason to care: when an AI system states a fact, it is putting its own output&#x27;s accuracy on the line, not simply pointing a user to a page that may be outdated. That raises the operational cost of citing stale or unverifiable information, a practical expression of the NIST AI RMF&#x27;s validity and reliability characteristic described above.</p>
+<p>This is also consistent with recognised data-governance practice outside the AI context. The <strong>FAIR Data Principles</strong> (Findable, Accessible, Interoperable, Reusable), first published by Wilkinson et al. in <em>Scientific Data</em> in 2016 and widely adopted as a data-stewardship standard, specifically call for data and metadata to carry clear provenance and licensing information so that a downstream user — human or machine — can judge whether the material is current and trustworthy enough to reuse. Dating a claim, citing the source it came from, and updating figures on a defined schedule are, in effect, provenance practices in the FAIR sense, applied to a web page rather than a research dataset.</p>
+<p>Different AI systems appear to apply different freshness windows — some seem to favour content updated within the past week, others operate on more of a monthly or quarterly cycle — but the direction is consistent: a page untouched for a year is treated as a riskier citation than a recently reviewed one, even where the underlying facts have not changed.</p>
+<p><strong>Practical implication:</strong> date every material claim, cite the primary source it rests on, and review key pages on a defined schedule rather than an ad-hoc one.</p>
+<hr/>
+<p><strong>5. A Standards-Aligned Five-Point Checklist</strong></p>
+<p>Each item below ties to the specific principle it draws on, so the rationale — not just the instruction — travels with the checklist.</p>
+<p><strong>1. Answer first, then explain</strong></p>
+<p>State the answer to the implied question in the first line of each section, then support it. This directly serves the NIST AI RMF&#x27;s explainability and interpretability characteristic: content that states its conclusion plainly is easier for a retrieval system to extract without misreading it.</p>
+<p><strong>2. Use W3C-conformant structured markup</strong></p>
+<p>Implement FAQ, HowTo, Product, and Organization markup in JSON-LD, per the W3C&#x27;s JSON-LD 1.1 Recommendation and the Schema.org vocabulary. This is a standards-compliance measure, not a ranking trick, and it gives AI systems and search engines a shared, unambiguous description of the page&#x27;s content.</p>
+<p><strong>3. Build independent, off-site corroboration</strong></p>
+<p>Pursue genuine mentions on:</p>
+<ul>
+<li>Review platforms</li>
+<li>Comparison sites</li>
+<li>Forums</li>
+<li>Video platforms</li>
+<li>Press outlets</li>
+</ul>
+<p>Applying the same logic behind the FTC&#x27;s substantiation standard, treat every independently sourced, accurate mention as evidence that strengthens a first-party claim — and treat first-party claims with no outside corroboration as inherently weaker evidence, because that is how AI retrieval systems tend to treat them too.</p>
+<p><strong>4. Maintain claim consistency across all sources</strong></p>
+<p>Describe the brand, product names, and core factual claims the same way on the company website and everywhere else that description can be influenced. Consistency across independent sources lets an AI system treat a claim as accountable and verifiable rather than an isolated, unconfirmed assertion — directly supporting the NIST framework&#x27;s accountable and transparent characteristic.</p>
+<p><strong>5. Maintain dated, provenance-backed content</strong></p>
+<p>Update key pages on a defined schedule, refresh figures, and visibly date material claims and their sources. This reflects the provenance requirement in the FAIR Data Principles and directly supports the validity and reliability that NIST identifies as the foundation of trustworthy AI output.</p>
+<p>Conventional SEO fundamentals are not obsolete; they remain the baseline. What has changed is the objective above that baseline: the goal is no longer solely to secure a ranking position, but to become a source that AI systems can verify, attribute, and trust enough to quote.</p>
+<hr/>
+<p><strong>Sources</strong></p>
+<p>National Institute of Standards and Technology, <a href="https://nvlpubs.nist.gov/nistpubs/ai/nist.ai.100-1.pdf">Artificial Intelligence Risk Management Framework (AI RMF 1.0) — NIST AI 100-1</a> (January 2023).</p>
+<p>Federal Trade Commission, <a href="https://www.federalregister.gov/documents/2023/07/26/2023-14795/guides-concerning-the-use-of-endorsements-and-testimonials-in-advertising">Guides Concerning the Use of Endorsements and Testimonials in Advertising, 16 CFR Part 255</a> — see also the FTC&#x27;s plain-language <a href="https://www.ftc.gov/business-guidance/resources/ftcs-endorsement-guides-what-people-are-asking">summary for businesses</a>.</p>
+<p>World Wide Web Consortium, <a href="https://www.w3.org/TR/json-ld11/">JSON-LD 1.1 — A JSON-based Serialization for Linked Data</a> (W3C Recommendation, 16 July 2020); Schema.org, <a href="https://google.schema.org/docs/howwework.html">How We Work</a>.</p>
+<p>Wilkinson, M.D. et al., <a href="https://www.nature.com/articles/sdata201618">The FAIR Guiding Principles for Scientific Data Management and Stewardship</a>, Scientific Data 3, 160018 (2016).</p></div></article></div></div></div></body></html>
