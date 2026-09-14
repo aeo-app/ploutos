@@ -8,7 +8,7 @@ const CHECK = (
 );
 // USD is the only one we KNOW is right without asking — anything else
 // falls back to the currency code itself rather than guessing a symbol.
-const CURRENCY_SYMBOLS = { USD: '$', SGD: 'S$', EUR: '€', GBP: '£' };
+const CURRENCY_SYMBOLS = { USD: '$', SGD: 'S$', INR: '₹', EUR: '€', GBP: '£' };
 
 /**
  * Same visual design as the landing page's Pricing.jsx (adopted directly

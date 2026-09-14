@@ -114,6 +114,17 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
+  schema {
+    name                = "country"
+    attribute_data_type = "String"
+    developer_only_attribute = false
+    mutable             = true
+    string_attribute_constraints {
+      min_length = 2
+      max_length = 100
+    }
+  }
+
   # Token lifetimes
   user_pool_add_ons {
     advanced_security_mode = "ENFORCED"
@@ -157,8 +168,8 @@ resource "aws_cognito_user_pool_client" "api" {
   # defaults to "all schema attributes", which works but is less clear about
   # intent) — must list the new custom:company_name/custom:domain attributes
   # here too, or AdminUpdateUserAttributes/GetUser calls for them will fail.
-  read_attributes  = ["email", "name", "custom:company_name", "custom:domain"]
-  write_attributes = ["email", "name", "custom:company_name", "custom:domain"]
+  read_attributes  = ["email", "name", "custom:company_name", "custom:domain", "custom:country"]
+  write_attributes = ["email", "name", "custom:company_name", "custom:domain", "custom:country"]
 }
 
 # ── Outputs ───────────────────────────────────────────────────────────────────

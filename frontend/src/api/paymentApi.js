@@ -1,10 +1,20 @@
 import { ApiError } from "./authApi"; // shared ApiError class
-import { BASE, checkAuthTokens, getAuthHeaders } from "./seoApi"; // reuse the same auth plumbing
+import { BASE, checkAuthTokens } from "./seoApi";
+
+function getPaymentAuthHeaders() {
+  checkAuthTokens();
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${localStorage.getItem("id_token")}`,
+    "X-Access-Token": localStorage.getItem("access_token"),
+    "X-User-ID": localStorage.getItem("user_id"),
+  };
+}
 
 async function get(path) {
   try {
     checkAuthTokens();
-    const res = await fetch(`${BASE}${path}`, { method: "GET", headers: getAuthHeaders() });
+    const res = await fetch(`${BASE}${path}`, { method: "GET", headers: getPaymentAuthHeaders() });
     const data = await res.json().catch(() => ({}));
 
     if (res.status === 401) {
@@ -31,7 +41,7 @@ async function post(path, body) {
     checkAuthTokens();
     const res = await fetch(`${BASE}${path}`, {
       method: "POST",
-      headers: getAuthHeaders(),
+      headers: getPaymentAuthHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));

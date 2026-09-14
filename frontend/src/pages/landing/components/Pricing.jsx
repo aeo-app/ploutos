@@ -10,7 +10,7 @@ const CHECK = (
 // USD is the only one we KNOW is right without asking — anything else
 // falls back to showing the currency code itself (e.g. "SGD 50") rather
 // than guessing a symbol that might be wrong.
-const CURRENCY_SYMBOLS = { USD: '$', SGD: 'S$', EUR: '€', GBP: '£' };
+const CURRENCY_SYMBOLS = { USD: '$', SGD: 'S$', INR: '₹', EUR: '€', GBP: '£' };
 
 /**
  * Design adopted directly from the uploaded AEOPricing.jsx component —
@@ -22,6 +22,8 @@ const CURRENCY_SYMBOLS = { USD: '$', SGD: 'S$', EUR: '€', GBP: '£' };
  * wrapper's getAuthHeaders() throws when no one is logged in — this
  * section is reached by unauthenticated visitors by definition.
  */
+// Mirrors the public backend catalog for offline/error rendering. Normal
+// renders use /payment/plans, which is the authoritative catalog for checkout.
 const FALLBACK_PLANS = [
   {
     plan_id: 'starter',
@@ -81,10 +83,30 @@ export default function Pricing({ onStartTrial, initialPlans }) {
   const [plans, setPlans] = useState(initialPlans || null);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (initialPlans) return; // prerender already resolved this — skip the fetch entirely
+  const getBrowserCountry = () => {
+    if (typeof window === 'undefined') return '';
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const timezoneCountry = {
+      'Asia/Singapore': 'SG',
+      'Asia/Kolkata': 'IN',
+      'Asia/Calcutta': 'IN',
+      'America/New_York': 'US',
+      'America/Los_Angeles': 'US',
+      'Europe/London': 'GB',
+      'Australia/Sydney': 'AU',
+      'Pacific/Auckland': 'NZ',
+    }[timezone];
+    if (timezoneCountry) return timezoneCountry;
 
-    fetch(`${BASE}/payment/plans`)
+    const locale = window.navigator.language || '';
+    return locale.match(/[-_]([A-Z]{2})$/i)?.[1]?.toUpperCase() || '';
+  };
+
+  useEffect(() => {
+    const country = getBrowserCountry();
+    const query = country ? `?country=${encodeURIComponent(country)}` : '';
+
+    fetch(`${BASE}/payment/plans${query}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
       .then((data) => setPlans(data.plans || FALLBACK_PLANS))
       .catch((err) => {
@@ -94,8 +116,6 @@ export default function Pricing({ onStartTrial, initialPlans }) {
       });
     // eslint-disable-next-line
   }, []);
-
-  const visiblePlans = plans && plans.length > 0 ? plans : FALLBACK_PLANS;
 
   return (
     <section className="section aeo-pricing" id="pricing" style={{ background: '#0b0d16', maxWidth: '1580px' }}>
@@ -162,23 +182,23 @@ export default function Pricing({ onStartTrial, initialPlans }) {
 const STYLES = `
 .aeo-pricing {
   --aeo-bg: #0b0d16;
-  --aeo-card: #ffffff;
-  --aeo-card-border: #e6e6f0;
-  --aeo-ink: #12132b;
-  --aeo-ink-soft: #5c5e79;
-  --aeo-ink-faint: #8688a3;
-  --aeo-accent: #5b52f0;
-  --aeo-accent-ink: #ffffff;
-  --aeo-badge-bg: #5b52f0;
-  --aeo-badge-ink: #ffffff;
-  --aeo-check: #5b52f0;
-  --aeo-pill-bg: rgba(255,255,255,0.08);
-  --aeo-pill-ink: rgba(255,255,255,0.8);
-  --aeo-divider: #ececf5;
-  --aeo-btn-border: #dcdce8;
-  --aeo-btn-ink: #12132b;
-  --aeo-shadow: 0 1px 2px rgba(18,19,43,0.04);
-  --aeo-shadow-pop: 0 20px 40px -12px rgba(91,82,240,0.28);
+  --aeo-card: #15162a;
+  --aeo-card-border: #26273f;
+  --aeo-ink: #f1f1fa;
+  --aeo-ink-soft: #a7a8c4;
+  --aeo-ink-faint: #787a9c;
+  --aeo-accent: #8b82ff;
+  --aeo-accent-ink: #0d0e1a;
+  --aeo-badge-bg: #8b82ff;
+  --aeo-badge-ink: #0d0e1a;
+  --aeo-check: #8b82ff;
+  --aeo-pill-bg: #1e1f3d;
+  --aeo-pill-ink: #b5aeff;
+  --aeo-divider: #232445;
+  --aeo-btn-border: #33345a;
+  --aeo-btn-ink: #f1f1fa;
+  --aeo-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  --aeo-shadow-pop: 0 20px 45px -12px rgba(139,130,255,0.35);
 
   width: 100vw;
   margin-left: calc(50% - 50vw);

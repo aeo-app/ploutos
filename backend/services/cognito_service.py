@@ -155,7 +155,7 @@ def _map_error(e: ClientError) -> CognitoError:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def sign_up(email: str, password: str, full_name: str, company_name: str, domain: str) -> dict:
+def sign_up(email: str, password: str, full_name: str, company_name: str, domain: str, country: str) -> dict:
     """
     Register a new user with email + password + company_name + domain.
     Cognito sends a 6-digit OTP to the email address. company_name/domain
@@ -180,6 +180,7 @@ def sign_up(email: str, password: str, full_name: str, company_name: str, domain
                 {"Name": "name", "Value": full_name},
                 {"Name": "custom:company_name", "Value": company_name},
                 {"Name": "custom:domain", "Value": domain},
+                {"Name": "custom:country", "Value": country},
         ],)
         destination = resp.get("CodeDeliveryDetails", {}).get("Destination", email)
         logger.info(f"[cognito] sign_up OK — sub={resp['UserSub']} email={email} domain={domain}")
@@ -370,7 +371,7 @@ def list_users_in_group(group_name: str = ADMIN_GROUP_NAME) -> list[dict]:
         raise _map_error(e)
 
 
-def update_user_profile(access_token: str, company_name: str, domain: str) -> dict:
+def update_user_profile(access_token: str, company_name: str, domain: str, country: str) -> dict:
     """
     Sets custom:company_name / custom:domain for the CURRENTLY authenticated
     user (via their own access token — no admin credentials needed). Used
@@ -391,12 +392,18 @@ def update_user_profile(access_token: str, company_name: str, domain: str) -> di
             UserAttributes=[
                 {"Name": "custom:company_name", "Value": company_name},
                 {"Name": "custom:domain", "Value": domain},
+                {"Name": "custom:country", "Value": country},
             ],
         )
-        logger.info(f"[cognito] update_user_profile OK — domain={domain}")
-        return {"company_name": company_name, "domain": domain}
+        logger.info(f"[cognito] update_user_profile OK — domain={domain} country={country}")
+        return {"company_name": company_name, "domain": domain, "country": country}
     except ClientError as e:
         raise _map_error(e)
+
+
+def get_user_country_from_token(access_token: str) -> str | None:
+    """Read the registered country using the user's token-scoped Cognito access."""
+    return get_user(access_token).get("custom:country") or None
 
 
 def forgot_password(email: str) -> dict:

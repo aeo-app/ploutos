@@ -155,7 +155,7 @@ export function CheckoutPage() {
             eyebrow="Pricing"
             title="Simple pricing,"
             accent="priced by prompts."
-            subtitle="Pick the number of prompts you want tracked — 10, 50 or 100. Every plan includes site audits, automated fixes and your own AI agent. No overage fees. Cancel anytime."
+            subtitle="Pick the publishing cadence that fits your team. Every plan tracks AI-search visibility and ships content automatically. Cancel anytime."
           />
         ) : (
           <div className={s.header}>

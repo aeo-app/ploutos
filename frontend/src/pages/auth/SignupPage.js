@@ -21,6 +21,13 @@ function validate(name, email, password, confirmPassword, companyName, domain) {
   return null;
 }
 
+const COUNTRY_OPTIONS = [
+  ['SG', 'Singapore'], ['IN', 'India'], ['US', 'United States'], ['GB', 'United Kingdom'],
+  ['AU', 'Australia'], ['NZ', 'New Zealand'], ['CA', 'Canada'], ['AE', 'United Arab Emirates'],
+  ['MY', 'Malaysia'], ['ID', 'Indonesia'], ['PH', 'Philippines'], ['TH', 'Thailand'],
+  ['JP', 'Japan'], ['CN', 'China'], ['HK', 'Hong Kong'], ['CH', 'Switzerland'],
+];
+
 export function SignupPage() {
   const { login, goScreen, setPending } = useAuth();
   const [name,            setName]            = useState('');
@@ -29,10 +36,11 @@ export function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [companyName,     setCompanyName]     = useState('');
   const [domain,          setDomain]          = useState('');
+  const [country,         setCountry]         = useState('');
   const [error,           setError]           = useState('');
   const [loading,         setLoading]         = useState(false);
   const [touched,         setTouched]         = useState({
-    name: false, email: false, password: false, confirmPassword: false, companyName: false, domain: false,
+    name: false, email: false, password: false, confirmPassword: false, companyName: false, domain: false, country: false,
   });
 
   const nameErr = touched.name && !name.trim() ? 'Full name is required' : '';
@@ -50,15 +58,15 @@ export function SignupPage() {
 
   const handleSubmit = async e => {
     e.preventDefault();
-    setTouched({ name: true, email: true, password: true, confirmPassword: true, companyName: true, domain: true });
-    const err = validate(name, email, password, confirmPassword, companyName, domain);
+    setTouched({ name: true, email: true, password: true, confirmPassword: true, companyName: true, domain: true, country: true });
+    const err = validate(name, email, password, confirmPassword, companyName, domain) || (!country ? 'Country is required' : null);
     if (err) { setError(err); return; }
     setError('');
     setLoading(true);
     try {
       const data = await withTokenExpiry(authApi.signup({
         full_name: name.trim(), email: email.trim(), password,
-        company_name: companyName.trim(), domain: domain.trim(),
+        company_name: companyName.trim(), domain: domain.trim(), country,
       }), { goScreen });
       setPending(email.trim(), name.trim(), password);
       goScreen('signup-verify');
@@ -162,6 +170,25 @@ export function SignupPage() {
             <div style={{ fontSize: 11.5, color: 'var(--c-slate-400)', marginTop: 4 }}>
               One domain per account — this can't be changed later, so double-check it's right.
             </div>
+          </div>
+
+          <div className={s.fieldWrap}>
+            <label className={s.fieldLabel}>
+              Country<span className={s.fieldRequired}>*</span>
+            </label>
+            <select
+              autoComplete="country"
+              value={country}
+              className={`${s.input} ${touched.country && !country ? s.inputError : ''}`}
+              onChange={e => setCountry(e.target.value)}
+              onBlur={() => setTouched(p => ({ ...p, country: true }))}
+              disabled={loading}
+              aria-invalid={touched.country && !country}
+            >
+              <option value="">Select your country</option>
+              {COUNTRY_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+            </select>
+            {touched.country && !country && <div className={s.fieldErr}>⚠ Country is required</div>}
           </div>
 
           {/* Email */}

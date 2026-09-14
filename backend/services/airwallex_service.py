@@ -22,6 +22,7 @@ API reference confirmed against Airwallex's current docs (2026):
 from __future__ import annotations
 
 import hashlib
+import json
 import hmac
 import logging
 import os
@@ -40,84 +41,181 @@ AIRWALLEX_BASE_URL = (
 AIRWALLEX_CLIENT_ID = os.getenv("AIRWALLEX_CLIENT_ID", "")
 AIRWALLEX_API_KEY = os.getenv("AIRWALLEX_API_KEY", "")
 AIRWALLEX_WEBHOOK_SECRET = os.getenv("AIRWALLEX_WEBHOOK_SECRET", "")
+AIRWALLEX_PRODUCTS_PATH = os.getenv("AIRWALLEX_PRODUCTS_PATH", "/api/v1/products")
+AIRWALLEX_CATALOG_CACHE_SECONDS = int(os.getenv("AIRWALLEX_CATALOG_CACHE_SECONDS", "300"))
 
 # The price is fixed here (server-side), never trusted from the client.
 # The price is fixed here (server-side) per plan, never trusted from the
 # client — the client only selects WHICH plan_id to pay for, not the amount.
-# Same currency across all plans (simplest, standard for a single-market
-# SaaS product); add a per-plan currency override later if needed.
-PAYMENT_CURRENCY = os.getenv("PAYMENT_CURRENCY", "USD")
+# Default currency and prices used when no currency-specific catalog is
+# configured. Currency-specific prices should be supplied by the Airwallex
+# product catalog configuration below, rather than calculated with FX rates.
+PAYMENT_CURRENCY = "SGD"
+
+COUNTRY_CURRENCIES = {
+    "SG": "SGD", "Singapore": "SGD",
+    "IN": "INR", "India": "INR",
+    "US": "USD", "United States": "USD", "United States of America": "USD",
+    "GB": "GBP", "United Kingdom": "GBP",
+    "AU": "AUD", "Australia": "AUD",
+    "NZ": "NZD", "New Zealand": "NZD",
+    "CA": "CAD", "Canada": "CAD",
+    "AE": "AED", "United Arab Emirates": "AED",
+    "MY": "MYR", "Malaysia": "MYR",
+    "ID": "IDR", "Indonesia": "IDR",
+    "PH": "PHP", "Philippines": "PHP",
+    "TH": "THB", "Thailand": "THB",
+    "JP": "JPY", "Japan": "JPY",
+    "CN": "CNY", "China": "CNY",
+    "HK": "HKD", "Hong Kong": "HKD",
+    "CH": "CHF", "Switzerland": "CHF",
+}
+
+
+def currency_for_country(country: str | None) -> str:
+    """Resolve a registered country to its payment currency."""
+    value = (country or "").strip()
+    return COUNTRY_CURRENCIES.get(value) or PAYMENT_CURRENCY
 
 PLANS: dict[str, dict] = {
     "starter": {
         "name": "Starter",
-        "amount": os.getenv("PLAN_STARTER_PRICE", "29.00"),
+        "amount": "50.00",
         "blurb": "For founders putting AI search on the map.",
-        "prompts": "10",
+        "prompts": "5",
         "highlight": False,
         "features": [
-            "1 domain · 10 tracked prompts",
-            "Weekly visibility refresh",
-            "Tracks 5 answer engines",
-            "Monthly site audit",
-            "AI agent · 10 messages / day",
-            "Email support",
-            "Weekly 2 posts on Facebook, Instagram, Google My Business & LinkedIn",
-            "Monthly 2 videos",
+                  '1 domain · 5 tracked prompts',
+      'Weekly 3 posts on Facebook, Instagram, LinkedIn & Google My Business',
+      'Monthly AEO / SEO audit',
+      'Technical site audit',
+      'Competitor analysis',
         ],
     },
     "growth": {
         "name": "Growth",
-        # Kept in sync with the marketing landing page's Pricing section
-        # ("Simple pricing, priced by prompts") — was 79.00, mismatched.
-        "amount": os.getenv("PLAN_GROWTH_PRICE", "99.00"),
+        "amount": "150.00",
         "blurb": "For marketing teams shipping content weekly.",
-        "prompts": "50",
+        "prompts": "15",
         "highlight": True,
         "features": [
-            "3 domains · 50 tracked prompts",
-            "Daily refresh · all engines",
-            "Automated audit fixes",
-            "Content engine + brand voice",
-            "Unlimited AI agent + Slack alerts",
-            "Competitor benchmarking (3 rivals)",
-            "Priority support · 4h SLA",
-            "Weekly 8 posts on Facebook, Instagram, Google My Business & LinkedIn",
-            "Monthly 5 videos",
+            '1 domain · 15 tracked prompts',
+      'Weekly 7 posts on Facebook, Instagram, LinkedIn & Google My Business',
+      'Competitor analysis',
+      'Technical site audit',
+      'Automated audit fixes on site',
+      'Monthly 2 videos / reels',
+      'Weekly 2 blogs',
         ],
     },
     "scale": {
         "name": "Scale",
-        # Kept in sync with the marketing landing page — was 199.00, mismatched.
-        "amount": os.getenv("PLAN_SCALE_PRICE", "179.00"),
+        "amount": "500.00",
         "blurb": "For agencies and multi-brand portfolios.",
-        "prompts": "100",
+        "prompts": "15",
         "highlight": False,
         "features": [
-            "10 domains · 100 tracked prompts",
-            "Hourly refresh + custom engines",
-            "Unlimited automations + pull requests",
-            "White-label reports + client portal",
-            "API, webhooks & Postgres mirror",
-            "Dedicated AEO strategist · 1h SLA",
-            "Weekly 15 posts on Facebook, Instagram, Google My Business & LinkedIn",
-            "Monthly 8 videos",
+            '4 domains · 15 tracked prompts',
+      'Weekly 7 posts on Facebook, Instagram, LinkedIn & Google My Business',
+      'Competitor analysis',
+      'Technical site audit',
+      'Automated audit fixes on site',
+      'Monthly 2 videos / reels',
+      'Weekly 2 blogs',
         ],
     },
 }
+
+
+def _load_currency_prices() -> dict[str, dict[str, str]]:
+    """Load Airwallex product prices keyed by plan and ISO currency code."""
+    raw = os.getenv("AIRWALLEX_PRODUCT_PRICES_JSON", "").strip()
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("AIRWALLEX_PRODUCT_PRICES_JSON must be valid JSON") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError("AIRWALLEX_PRODUCT_PRICES_JSON must be an object")
+    return {
+        str(plan_id): {str(currency).upper(): str(amount) for currency, amount in prices.items()}
+        for plan_id, prices in value.items()
+        if isinstance(prices, dict)
+    }
+
+
+AIRWALLEX_PRODUCT_PRICES = _load_currency_prices()
+_catalog_prices: dict[str, dict[str, str]] = {}
+_catalog_loaded_at = 0.0
+
+
+def get_plan_price(plan_id: str, currency: str | None = None) -> str:
+    """Return the configured product price for a plan and currency."""
+    global _catalog_prices, _catalog_loaded_at
+    plan = PLANS[plan_id]
+    currency_code = (currency or PAYMENT_CURRENCY).upper()
+    now = time.time()
+    if now - _catalog_loaded_at >= AIRWALLEX_CATALOG_CACHE_SECONDS:
+        try:
+            _catalog_prices = _fetch_catalog_prices()
+            _catalog_loaded_at = now
+        except (AirwallexError, ValueError, TypeError) as exc:
+            logger.warning("[airwallex] product catalog fetch failed: %s", exc)
+
+    configured_price = (
+        _catalog_prices.get(plan_id, {}).get(currency_code)
+        or AIRWALLEX_PRODUCT_PRICES.get(plan_id, {}).get(currency_code)
+    )
+    if configured_price is not None:
+        return configured_price
+    if currency_code == PAYMENT_CURRENCY:
+        return plan["amount"]
+    raise LookupError(f"No Airwallex product price configured for {plan_id}/{currency_code}")
+
+
+def _fetch_catalog_prices() -> dict[str, dict[str, str]]:
+    """Fetch product prices from Airwallex and map product names to plan IDs."""
+    response = _request_with_retry("GET", AIRWALLEX_PRODUCTS_PATH)
+    products = response.get("items") or response.get("data") or response.get("products") or []
+    if not isinstance(products, list):
+        raise ValueError("Airwallex product catalog response has no product list")
+
+    prices: dict[str, dict[str, str]] = {}
+    plan_names = {plan["name"].casefold(): plan_id for plan_id, plan in PLANS.items()}
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+        product_name = str(product.get("name") or product.get("display_name") or "").casefold()
+        plan_id = plan_names.get(product_name)
+        if not plan_id:
+            continue
+        product_prices = product.get("prices") or product.get("price") or []
+        if isinstance(product_prices, dict):
+            product_prices = [product_prices]
+        for price in product_prices:
+            if not isinstance(price, dict):
+                continue
+            currency = str(price.get("currency") or "").upper()
+            amount = price.get("amount", price.get("unit_amount", price.get("unit_amount_decimal")))
+            if currency and amount is not None:
+                prices.setdefault(plan_id, {})[currency] = str(amount)
+    return prices
+
+
+def get_plan(plan_id: str, currency: str | None = None) -> dict:
+    """Return plan metadata with the price for the requested currency."""
+    plan = PLANS[plan_id]
+    return {**plan, "amount": get_plan_price(plan_id, currency)}
+
 # IMPORTANT — these per-plan feature lists are marketing copy carried over
 # verbatim from the landing page. The backend does NOT currently enforce any
 # of these as usage caps or feature gates: every paid plan (any plan_id)
 # grants identical full access via require_paid_access — see
-# core/security.py. Only the PRICE differs today. If usage limits are ever
+# core/security.py. Only the PRICE and marketing copy differ today. If usage limits are ever
 # enforced to match this copy, that's a separate quota-tracking subsystem,
 # not something this catalog implies is already live.
 
-
-def get_plan(plan_id: str) -> dict:
-    """Raises KeyError (caller turns this into a 400) for an unknown plan_id —
-    never silently falls back to a default price."""
-    return PLANS[plan_id]
 
 REQUEST_TIMEOUT = int(os.getenv("AIRWALLEX_TIMEOUT_SECONDS", "15"))
 
@@ -194,7 +292,7 @@ def _request_with_retry(method: str, path: str, **kwargs) -> dict:
 
 
 # ── Payment Intents ──────────────────────────────────────────────────────────
-def create_payment_intent(user_id: str, plan_id: str) -> dict:
+def create_payment_intent(user_id: str, plan_id: str, currency: str | None = None) -> dict:
     """
     Creates a PaymentIntent for the fixed, server-decided price of `plan_id`
     (looked up from PLANS — never trusted from the client). Returns the raw
@@ -203,11 +301,12 @@ def create_payment_intent(user_id: str, plan_id: str) -> dict:
     Raises KeyError if plan_id isn't in PLANS — the router turns this into a
     400, not a 500 (it's a client input error, not a server failure).
     """
-    plan = get_plan(plan_id)  # raises KeyError for an unknown plan_id
+    resolved_currency = (currency or PAYMENT_CURRENCY).upper()
+    plan = get_plan(plan_id, resolved_currency)  # raises KeyError for an unknown plan_id
     body = {
         "request_id": str(uuid.uuid4()),  # idempotency key
         "amount": float(plan["amount"]),
-        "currency": PAYMENT_CURRENCY,
+        "currency": resolved_currency,
         "merchant_order_id": f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:12]}",
         "descriptor": f"{plan['name']} plan"[:126],  # Airwallex caps descriptor length
     }

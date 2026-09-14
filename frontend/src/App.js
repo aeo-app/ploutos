@@ -123,7 +123,7 @@ function ProfileGate({ children }) {
   // required must complete this once — blocks everything else, same
   // principle as the payment gate but for profile data instead of payment.
   if (!hasProfile) {
-    return <CompleteProfilePage onComplete={(p) => { setProfile(p); setHasProfile(true); }} />;
+    return <CompleteProfilePage profile={profile} onComplete={(p) => { setProfile(p); setHasProfile(true); }} />;
   }
 
   return children(profile);

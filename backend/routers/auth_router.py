@@ -107,7 +107,7 @@ async def signup(req: SignUpRequest):
     domain (see db.dynamo.check_and_lock_domain). One domain per account.
     """
     try:
-        result = sign_up(req.email, req.password, req.full_name, req.company_name, req.domain)
+        result = sign_up(req.email, req.password, req.full_name, req.company_name, req.domain, req.country)
     except CognitoError as e:
         raise _err(e)
     except RuntimeError as e:
@@ -386,6 +386,7 @@ async def get_profile(request: Request):
     company_name = user.get("custom:company_name") or None
     domain = user.get("custom:domain") or None
     sub = user.get("sub")
+    country = user.get("custom:country") or None
 
     # Admin status: check BOTH mechanisms, matching core.security.require_admin
     # exactly — Cognito Groups is canonical (this endpoint already holds the
@@ -409,7 +410,8 @@ async def get_profile(request: Request):
         except Exception as e:
             logger.warning(f"[auth] could not read cognito:groups from access token (non-fatal): {e}")
 
-    return ProfileResponse(company_name=company_name, domain=domain, has_profile=bool(domain), is_admin=admin_flag)
+    return ProfileResponse(company_name=company_name, domain=domain, country=country,
+                           has_profile=bool(domain and country), is_admin=admin_flag)
 
 
 # ── POST /profile ────────────────────────────────────────────────────────────
@@ -445,10 +447,11 @@ async def set_profile(req: SetProfileRequest, request: Request):
         raise HTTPException(status_code=403, detail=str(e))
 
     try:
-        update_user_profile(token, req.company_name, req.domain)
+        update_user_profile(token, req.company_name, req.domain, req.country)
     except CognitoError as e:
         raise _err(e)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
-    return ProfileResponse(company_name=req.company_name, domain=req.domain, has_profile=True)
+    return ProfileResponse(company_name=req.company_name, domain=req.domain,
+                           country=req.country, has_profile=True)

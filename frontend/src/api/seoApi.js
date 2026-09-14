@@ -13,18 +13,31 @@ export const BASE = "https://api.aeo-app.ai/api/v1";
 // redirects.
 export const checkAuthTokens = () => {
   const idToken = localStorage.getItem("id_token");
+  const accessToken = localStorage.getItem("access_token");
   const userId = localStorage.getItem("user_id");
+  const token = [idToken, accessToken].find(candidate => candidate && !isTokenExpired(candidate));
 
   // If either token or user_id is missing, force login
-  if (!idToken || !userId) {
+  if (!token || !userId) {
     localStorage.removeItem("id_token");
     localStorage.removeItem("access_token");
     localStorage.removeItem("user_id");
     throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
   }
 
-  return { idToken, userId };
+  return { idToken: token, userId };
 };
+
+function isTokenExpired(token) {
+  try {
+    const payload = token.split('.')[1];
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(atob(normalized));
+    return typeof decoded.exp === 'number' && Date.now() >= decoded.exp * 1000;
+  } catch {
+    return false;
+  }
+}
 
 // 🔹 Centralized Auth Headers
 export const getAuthHeaders = () => {

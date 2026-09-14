@@ -119,13 +119,13 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     if (state.request.company_name) return; // already filled (this session or by the user)
 
     if (profile?.company_name && profile?.domain) {
-      setRequest({ company_name: profile.company_name, url: profile.domain });
-      // still pull market/industry from history if available, since the
-      // profile only carries company_name/domain, not those two.
+      setRequest({ company_name: profile.company_name, url: profile.domain, market: profile.country || 'Singapore' });
+      // Still pull industry from history. Country from the profile is the
+      // authoritative value for the sidebar and currency selection.
       historyApi.list({ limit: 1 })
         .then(data => {
           const latest = data?.items?.[0];
-          if (latest) setRequest({ market: latest.market || 'Singapore', industry: latest.industry || '' });
+          if (latest) setRequest({ market: profile.country || latest.market || 'Singapore', industry: latest.industry || '' });
         })
         .catch(err => console.warn("[AppShell] market/industry prepopulation failed:", err?.message || err));
       return;

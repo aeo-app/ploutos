@@ -6,6 +6,13 @@ import { authApi } from '../../api/authApi';
 import { useAuth } from '../../context/AuthContext';
 import s from './Auth.module.css';
 
+const COUNTRY_OPTIONS = [
+  ['SG', 'Singapore'], ['IN', 'India'], ['US', 'United States'], ['GB', 'United Kingdom'],
+  ['AU', 'Australia'], ['NZ', 'New Zealand'], ['CA', 'Canada'], ['AE', 'United Arab Emirates'],
+  ['MY', 'Malaysia'], ['ID', 'Indonesia'], ['PH', 'Philippines'], ['TH', 'Thailand'],
+  ['JP', 'Japan'], ['CN', 'China'], ['HK', 'Hong Kong'], ['CH', 'Switzerland'],
+];
+
 /**
  * Shown once for accounts that signed up before company_name/domain were
  * required. Blocks everything else — same "restricted content needs
@@ -13,26 +20,28 @@ import s from './Auth.module.css';
  * instead of payment. Calls authApi.setProfile() (backend also locks the
  * domain in the one-to-one user<->domain mapping in the same call).
  */
-export function CompleteProfilePage({ onComplete }) {
+export function CompleteProfilePage({ profile, onComplete }) {
   const { logout } = useAuth();
-  const [companyName, setCompanyName] = useState('');
-  const [domain, setDomain] = useState('');
+  const [companyName, setCompanyName] = useState(profile?.company_name || '');
+  const [domain, setDomain] = useState(profile?.domain || '');
+  const [country, setCountry] = useState(profile?.country || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [touched, setTouched] = useState({ companyName: false, domain: false });
+  const [touched, setTouched] = useState({ companyName: false, domain: false, country: false });
 
   const companyNameErr = touched.companyName && !companyName.trim() ? 'Company name is required' : '';
   const domainErr = touched.domain && !domain.trim() ? 'Your company domain/website is required' : '';
+  const countryErr = touched.country && !country ? 'Country is required' : '';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setTouched({ companyName: true, domain: true });
-    if (!companyName.trim() || !domain.trim()) return;
+    setTouched({ companyName: true, domain: true, country: true });
+    if (!companyName.trim() || !domain.trim() || !country) return;
     setError('');
     setLoading(true);
     try {
-      const profile = await authApi.setProfile({ company_name: companyName.trim(), domain: domain.trim() });
-      onComplete(profile);
+      const savedProfile = await authApi.setProfile({ company_name: companyName.trim(), domain: domain.trim(), country });
+      onComplete(savedProfile);
     } catch (e2) {
       setError(e2.message || 'Could not save your profile. Please try again.');
     } finally {
@@ -71,6 +80,25 @@ export function CompleteProfilePage({ onComplete }) {
               aria-invalid={!!companyNameErr}
             />
             {companyNameErr && <div className={s.fieldErr}>⚠ {companyNameErr}</div>}
+          </div>
+
+          <div className={s.fieldWrap}>
+            <label className={s.fieldLabel}>
+              Country<span className={s.fieldRequired}>*</span>
+            </label>
+            <select
+              autoComplete="country"
+              value={country}
+              className={`${s.input} ${countryErr ? s.inputError : ''}`}
+              onChange={e => setCountry(e.target.value)}
+              onBlur={() => setTouched(p => ({ ...p, country: true }))}
+              disabled={loading}
+              aria-invalid={!!countryErr}
+            >
+              <option value="">Select your country</option>
+              {COUNTRY_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+            </select>
+            {countryErr && <div className={s.fieldErr}>⚠ {countryErr}</div>}
           </div>
 
           <div className={s.fieldWrap}>

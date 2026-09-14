@@ -47,7 +47,8 @@ function getInitialAuthState() {
   const idToken = localStorage.getItem('id_token');
   const accessToken = localStorage.getItem('access_token');
   const userId = localStorage.getItem('user_id');
-  const hasValidSession = !!(idToken || accessToken) && !!userId && !isTokenExpired(idToken || accessToken);
+  const usableToken = [idToken, accessToken].find(token => token && !isTokenExpired(token));
+  const hasValidSession = !!usableToken && !!userId;
 
   return {
     ...init,
@@ -109,7 +110,8 @@ export function AuthProvider({ children }) {
       const userId = localStorage.getItem('user_id');
 
       if (!idToken && !accessToken) return;
-      if (!userId || isTokenExpired(idToken || accessToken)) {
+      const usableToken = [idToken, accessToken].find(token => token && !isTokenExpired(token));
+      if (!userId || !usableToken) {
         logout();
         return;
       }

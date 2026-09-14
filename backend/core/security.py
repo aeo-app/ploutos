@@ -30,6 +30,7 @@ AWS_REGION   = os.getenv("AWS_REGION", "ap-southeast-1")
 POOL_ID      = os.getenv("COGNITO_USER_POOL_ID", "")
 CLIENT_ID    = os.getenv("COGNITO_CLIENT_ID", "")
 SKIP_AUTH    = os.getenv("SKIP_JWT_VERIFICATION", "false").lower() == "true"
+JWT_CLOCK_SKEW_SECONDS = int(os.getenv("JWT_CLOCK_SKEW_SECONDS", "120"))
 
 JWKS_URL = (
     f"https://cognito-idp.{AWS_REGION}.amazonaws.com/{POOL_ID}/.well-known/jwks.json"
@@ -84,6 +85,7 @@ def _decode_token(token: str) -> dict:
             options={"verify_exp": True},
             audience=CLIENT_ID,
             issuer=ISSUER,
+            leeway=JWT_CLOCK_SKEW_SECONDS,
         )
         return payload
 

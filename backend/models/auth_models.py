@@ -50,6 +50,7 @@ class SignUpRequest(BaseModel):
     company_name: str = Field(..., example="Acme Relocation", min_length=1, max_length=200)
     domain:       str = Field(..., example="acmerelocation.com", min_length=1, max_length=253,
                                description="The company's website/domain — locked to this account permanently (one domain per account).")
+    country:      str = Field(..., example="Singapore", min_length=2, max_length=100)
 
     @field_validator("email")
     @classmethod
@@ -81,6 +82,14 @@ class SignUpRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Domain is required")
+        return v
+
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Country is required")
         return v
 
 
@@ -211,13 +220,15 @@ class AuthErrorResponse(BaseModel):
 class ProfileResponse(BaseModel):
     company_name: Optional[str] = None
     domain:       Optional[str] = None
-    has_profile:  bool  # False = must complete profile before using the app
+    country:      Optional[str] = None
+    has_profile:  bool  # False = must complete company, domain, and country
     is_admin:     bool = False
 
 
 class SetProfileRequest(BaseModel):
     company_name: str = Field(..., min_length=1, max_length=200)
     domain:       str = Field(..., min_length=1, max_length=253)
+    country:      str = Field(..., min_length=2, max_length=100)
 
     @field_validator("company_name")
     @classmethod
@@ -225,6 +236,14 @@ class SetProfileRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Company name is required")
+        return v
+
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Country is required")
         return v
 
     @field_validator("domain")
