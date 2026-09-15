@@ -10,6 +10,9 @@ import Solutions from './components/Solutions.jsx';
 import ThreeUp from './components/ThreeUp.jsx';
 import MarketingAgent from './components/MarketingAgent.jsx';
 import Pricing from './components/Pricing.jsx';
+import Faq from './components/Faq.jsx';
+import { JsonLd } from '../../components/JsonLd';
+import { organizationSchema } from './schema';
 import Quotes from './components/Quotes.jsx';
 import Blog from './components/Blog.jsx';
 import Contact from './components/Contact.jsx';
@@ -38,6 +41,7 @@ export function LandingPage({ initialPlans, initialPosts } = {}) {
 
   return (
     <div className="page landingPage">
+      <JsonLd data={organizationSchema} />
       <Hero onSignIn={handleSignIn} onGetStarted={handleGetStarted} />
       <Logos />
       <Stats />
@@ -47,6 +51,7 @@ export function LandingPage({ initialPlans, initialPosts } = {}) {
       <ThreeUp />
       <MarketingAgent />
       <Pricing onStartTrial={handleStartTrial} initialPlans={initialPlans} />
+      <Faq />
       <Quotes />
       <Blog initialPosts={initialPosts} />
       <Contact />

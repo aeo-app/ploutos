@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BASE } from '../../../api/seoApi';
+import { JsonLd } from '../../../components/JsonLd';
+import { buildSoftwareApplicationSchema } from '../schema';
 
 const CHECK = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -119,6 +121,7 @@ export default function Pricing({ onStartTrial, initialPlans }) {
 
   return (
     <section className="section aeo-pricing" id="pricing" style={{ background: '#0b0d16', maxWidth: '1580px' }}>
+      <JsonLd data={buildSoftwareApplicationSchema(plans)} />
       <style>{STYLES}</style>
       <div className="aeo-pricing__wrap">
         <div className="aeo-pricing__head">

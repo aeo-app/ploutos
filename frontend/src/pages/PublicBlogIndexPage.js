@@ -22,7 +22,7 @@ export function PublicBlogIndexPage({ initialPosts }) {
   return (
     <div className={s.wrap}>
       <div className={s.topBar}>
-        <a href="/" className={s.brand}>AEO<span className={s.brandAccent}>Intel</span></a>
+        <a href="/" className={s.brand}>aeo-app<span className={s.brandAccent}>.ai</span></a>
         <a href="/" className={s.homeLink}>← Back to home</a>
       </div>
 

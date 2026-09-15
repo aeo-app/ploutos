@@ -553,7 +553,22 @@
 }.landingPage .plan-feats li {
   display: flex; gap: 10px;
   font-size: 14.5px; color: var(--fg-dim);
-}.landingPage .plan-feats svg { color: var(--accent); flex-shrink: 0; margin-top: 5px; }.landingPage .plans-foot { margin-top: 32px; text-align: center; font-size: 14.5px; color: var(--fg-dim); }.landingPage .plans-foot a { color: var(--accent); font-weight: 500; }.landingPage .plans-loading { text-align: center; padding: 40px 0; color: var(--fg-dim); font-size: 14px; }/* ============================================================ */
+}.landingPage .plan-feats svg { color: var(--accent); flex-shrink: 0; margin-top: 5px; }.landingPage .plans-foot { margin-top: 32px; text-align: center; font-size: 14.5px; color: var(--fg-dim); }.landingPage .plans-foot a { color: var(--accent); font-weight: 500; }.landingPage .plans-loading { text-align: center; padding: 40px 0; color: var(--fg-dim); font-size: 14px; }
+.landingPage .faq-list { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.landingPage .faq-item { border: 1px solid var(--border); border-radius: 14px; background: var(--bg-2); overflow: hidden; }
+.landingPage .faq-item-open { border-color: var(--accent); }
+.landingPage .faq-question {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 18px 22px; background: none; border: none; text-align: left; cursor: pointer;
+  font-size: 15.5px; font-weight: 600; color: var(--fg); font-family: inherit;
+}
+.landingPage .faq-caret { font-size: 20px; color: var(--accent); line-height: 1; flex-shrink: 0; }
+.landingPage .faq-answer {
+  font-size: 14.5px; line-height: 1.65; color: var(--fg-mute); padding: 0 22px;
+  max-height: 0; opacity: 0; overflow: hidden; transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+}
+.landingPage .faq-answer-open { max-height: 320px; opacity: 1; padding: 0 22px 20px; }
+/* ============================================================ */
 /* Customer quotes carousel                                      */
 /* ============================================================ */
 .landingPage .quotes {
