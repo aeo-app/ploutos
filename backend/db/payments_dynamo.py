@@ -23,11 +23,11 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
@@ -114,9 +114,14 @@ def save_payment_intent(
     status: str,
     description: str = "",
     plan_id: Optional[str] = None,
+    is_renewal: bool = False,
 ) -> None:
     """Create (or overwrite, on retry) the transaction record for one
-    Airwallex PaymentIntent."""
+    Airwallex PaymentIntent. `is_renewal` distinguishes an automatic,
+    merchant-initiated renewal charge from a customer-present checkout —
+    the webhook handler uses this to know whether a failure should update
+    renewal_status (surfaced in the billing UI) versus just being a
+    regular declined checkout."""
     table = _get_payments_table()
     now_iso = _now_iso()
     ts_compact = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
@@ -130,12 +135,13 @@ def save_payment_intent(
         "currency": currency,
         "status": status,
         "description": description,
+        "is_renewal": is_renewal,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
     try:
         table.put_item(Item=_to_dynamo(item))
-        logger.info(f"[payments_dynamo] saved payment_intent={payment_intent_id} user={user_id} plan={plan_id} status={status}")
+        logger.info(f"[payments_dynamo] saved payment_intent={payment_intent_id} user={user_id} plan={plan_id} status={status} is_renewal={is_renewal}")
     except ClientError as e:
         logger.error(f"[payments_dynamo] save_payment_intent failed: {e.response['Error']}")
         raise
@@ -202,11 +208,27 @@ def set_user_paid(
     is_paid: bool,
     paid_until: Optional[str] = None,
     plan: str = "one_time",
+    currency: Optional[str] = None,
+    airwallex_customer_id: Optional[str] = None,
+    payment_consent_id: Optional[str] = None,
+    payment_method_summary: Optional[str] = None,
+    auto_renew: Optional[bool] = None,
 ) -> None:
     """Upsert the user's entitlement record. `paid_until=None` means access
     never expires (a true one-time-forever unlock); set it to an ISO
-    timestamp for subscription-style, renewable access."""
+    timestamp for subscription-style, renewable access.
+
+    The recurring-billing fields (currency, airwallex_customer_id,
+    payment_consent_id, payment_method_summary, auto_renew) use
+    preserve-on-None semantics — passing None leaves whatever was already
+    stored untouched rather than wiping it, since this function gets
+    called from several places (checkout, webhook confirmation, the
+    renewal scheduler) that each only know about a subset of these
+    fields. A naive full overwrite would silently erase a saved payment
+    consent the moment any OTHER field got updated for an unrelated reason.
+    """
     table = _get_payments_table()
+    existing = get_user_entitlement(user_id)
     item = {
         "PK": _pk(user_id),
         "SK": _entitlement_sk(),
@@ -214,6 +236,21 @@ def set_user_paid(
         "is_paid": is_paid,
         "paid_until": paid_until,
         "plan": plan,
+        "currency": currency if currency is not None else existing.get("currency"),
+        "airwallex_customer_id": airwallex_customer_id if airwallex_customer_id is not None else existing.get("airwallex_customer_id"),
+        "payment_consent_id": payment_consent_id if payment_consent_id is not None else existing.get("payment_consent_id"),
+        "payment_method_summary": payment_method_summary if payment_method_summary is not None else existing.get("payment_method_summary"),
+        # Defaults to False for a BRAND NEW entitlement record only — once
+        # a record exists, its own stored value is preserved unless this
+        # call explicitly says otherwise. Turned on by the payment_consent.verified
+        # webhook once a real, chargeable consent exists; turned off by
+        # cancel_auto_renew (see below) — "cancelled" in the product sense
+        # IS auto_renew=False here, not a separate field, since there is
+        # no other distinct state a "cancelled" subscription needs beyond
+        # "don't attempt future automatic charges for it".
+        "auto_renew": auto_renew if auto_renew is not None else existing.get("auto_renew", False),
+        "renewal_status": existing.get("renewal_status"),  # only set_renewal_status touches this
+        "renewal_failure_reason": existing.get("renewal_failure_reason"),
         "updated_at": _now_iso(),
     }
     try:
@@ -221,6 +258,92 @@ def set_user_paid(
         logger.info(f"[payments_dynamo] entitlement updated user={user_id} is_paid={is_paid} paid_until={paid_until}")
     except ClientError as e:
         logger.error(f"[payments_dynamo] set_user_paid failed: {e.response['Error']}")
+        raise
+
+
+def cancel_auto_renew(user_id: str) -> None:
+    """The actual 'Cancel subscription' action: turns off auto_renew so
+    the renewal scheduler will never attempt another automatic charge for
+    this user, without touching is_paid/paid_until at all — a cancelled
+    subscription still runs out its already-paid-for period normally,
+    exactly like cancelling a real-world subscription; it just won't
+    silently renew into a new billing period."""
+    table = _get_payments_table()
+    try:
+        table.update_item(
+            Key={"PK": _pk(user_id), "SK": _entitlement_sk()},
+            UpdateExpression="SET auto_renew = :false",
+            ExpressionAttributeValues={":false": False},
+        )
+        logger.info(f"[payments_dynamo] auto_renew cancelled for user={user_id}")
+    except ClientError as e:
+        logger.error(f"[payments_dynamo] cancel_auto_renew failed: {e.response['Error']}")
+        raise
+
+
+def set_renewal_status(user_id: str, status: str, reason: Optional[str] = None) -> None:
+    """status: 'succeeded' | 'failed' | 'pending' — reflects the most
+    recent auto-renewal attempt specifically, surfaced in the UI so a
+    failed renewal doesn't just silently lapse into 'unpaid' with no
+    explanation of what happened."""
+    table = _get_payments_table()
+    try:
+        table.update_item(
+            Key={"PK": _pk(user_id), "SK": _entitlement_sk()},
+            UpdateExpression="SET renewal_status = :s, renewal_failure_reason = :r, last_renewal_attempt_at = :t",
+            ExpressionAttributeValues={":s": status, ":r": reason, ":t": _now_iso()},
+        )
+        logger.info(f"[payments_dynamo] renewal status for user={user_id}: {status}" + (f" ({reason})" if reason else ""))
+    except ClientError as e:
+        logger.error(f"[payments_dynamo] set_renewal_status failed: {e.response['Error']}")
+        raise
+
+
+def get_user_id_by_customer_id(airwallex_customer_id: str) -> Optional[str]:
+    """Reverse lookup for the payment_consent.verified webhook, whose
+    payload only carries Airwallex's own customer_id, never our user_id
+    directly. Scan-based — acceptable at this table's actual scale rather
+    than maintaining a separate index for a lookup that only runs once
+    per user, at first-payment time."""
+    table = _get_payments_table()
+    try:
+        resp = table.scan(
+            FilterExpression=Attr("SK").eq(_entitlement_sk()) & Attr("airwallex_customer_id").eq(airwallex_customer_id)
+        )
+        items = resp.get("Items", [])
+        return _from_dynamo(items[0]).get("user_id") if items else None
+    except ClientError as e:
+        logger.error(f"[payments_dynamo] get_user_id_by_customer_id failed: {e.response['Error']}")
+        raise
+
+
+def list_users_due_for_renewal(within_hours: int = 24) -> list[dict]:
+    """Finds every entitlement record that: has auto_renew enabled (i.e.
+    has NOT been cancelled), has a verified payment_consent_id to charge
+    against, and whose paid_until falls within the next `within_hours`
+    (or has already passed — a scheduler run that was briefly down
+    shouldn't permanently skip someone's renewal). Scan-based, same
+    trade-off as get_user_id_by_customer_id above."""
+    table = _get_payments_table()
+    cutoff = (datetime.now(timezone.utc) + timedelta(hours=within_hours)).isoformat().replace("+00:00", "Z")
+    try:
+        resp = table.scan(FilterExpression=Attr("SK").eq(_entitlement_sk()))
+        items = [_from_dynamo(i) for i in resp.get("Items", [])]
+        due = []
+        for item in items:
+            if not item.get("auto_renew") or not item.get("payment_consent_id"):
+                continue  # not opted in, or cancelled, or never completed a consent-capturing payment
+            paid_until = item.get("paid_until")
+            if not paid_until:
+                continue  # one-time-forever unlocks never renew
+            try:
+                if paid_until <= cutoff:
+                    due.append(item)
+            except TypeError:
+                continue
+        return due
+    except ClientError as e:
+        logger.error(f"[payments_dynamo] list_users_due_for_renewal failed: {e.response['Error']}")
         raise
 
 

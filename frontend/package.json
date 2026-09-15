@@ -13,8 +13,9 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "node scripts/generate-sitemap.js && react-scripts build && node scripts/prerender/index.js",
+    "build": "node scripts/generate-sitemap.js && node scripts/generate-llms-txt.js && react-scripts build && node scripts/prerender/index.js",
     "sitemap": "node scripts/generate-sitemap.js",
+    "llms-txt": "node scripts/generate-llms-txt.js",
     "prerender": "node scripts/prerender/index.js",
     "deploy": "npm run build && aws s3 sync build s3://www.aeo-app.ai --delete"
   },

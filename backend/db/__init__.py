@@ -46,6 +46,10 @@ from .payments_dynamo import (
     set_user_paid,
     get_user_entitlement,
     is_user_paid,
+    cancel_auto_renew,
+    set_renewal_status,
+    get_user_id_by_customer_id,
+    list_users_due_for_renewal,
     create_payments_table_if_not_exists,
 )
 
@@ -94,6 +98,10 @@ __all__ = [
     "list_user_payments",
     "set_user_paid",
     "get_user_entitlement",
+    "cancel_auto_renew",
+    "set_renewal_status",
+    "get_user_id_by_customer_id",
+    "list_users_due_for_renewal",
     "is_user_paid",
     "create_payments_table_if_not_exists",
 ]

@@ -71,7 +71,7 @@ export function PublicFeaturePage({ slug }) {
         <div style={{ color: '#4f46e5', fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 18 }}>{feature.eyebrow}</div>
         <h1 style={{ maxWidth: 760, margin: 0, fontSize: 'clamp(38px, 7vw, 72px)', lineHeight: 1.05, letterSpacing: '-0.04em' }}>{feature.title}</h1>
         <p style={{ maxWidth: 650, margin: '28px 0 36px', color: '#475569', fontSize: 19, lineHeight: 1.7 }}>{feature.description}</p>
-        <a href="/#audit" style={{ display: 'inline-block', padding: '14px 22px', borderRadius: 8, background: '#4f46e5', color: '#fff', fontWeight: 700, textDecoration: 'none' }}>Start with AEO Intel</a>
+        <a href="/#audit" style={{ display: 'inline-block', padding: '14px 22px', borderRadius: 8, background: '#4f46e5', color: '#fff', fontWeight: 700, textDecoration: 'none' }}>Start with AEO-APP.ai</a>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginTop: 72 }}>
           {feature.points.map((point) => (

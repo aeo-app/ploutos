@@ -24,7 +24,16 @@ function parseFrontmatter(raw) {
     const lineMatch = line.match(/^([a-zA-Z0-9_]+):\s*(.*)$/);
     if (!lineMatch) return;
     const [, key, rawValue] = lineMatch;
-    meta[key] = rawValue.replace(/^["']|["']$/g, '').trim();
+    const trimmed = rawValue.trim();
+    if (/^\[.*\]$/.test(trimmed)) {
+      meta[key] = trimmed
+        .slice(1, -1)
+        .split(',')
+        .map(s => s.trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean);
+    } else {
+      meta[key] = trimmed.replace(/^["']|["']$/g, '').trim();
+    }
   });
   return { meta, body: body.trim() };
 }
@@ -38,14 +47,16 @@ function loadBlogPostsSync() {
       const raw = fs.readFileSync(path.join(BLOG_CONTENT_DIR, filename), 'utf8');
       const slug = filename.replace(/\.md$/, '');
       const { meta, body } = parseFrontmatter(raw);
+      const tags = Array.isArray(meta.tags) ? meta.tags : [];
       return {
         slug,
         title: meta.title || slug,
         date: meta.date || '',
         author: meta.author || '',
-        category: meta.category || '',
+        category: meta.category || tags[0] || '',
+        tags,
         featured_image: meta.featured_image || '',
-        excerpt: meta.excerpt || '',
+        excerpt: meta.excerpt || meta.description || '',
         body,
       };
     });

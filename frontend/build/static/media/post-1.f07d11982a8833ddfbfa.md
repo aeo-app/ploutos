@@ -232,7 +232,7 @@ Yes. All five checks only need a browser, so you can run the full audit yourself
 
 **Want This Done for You?**
 
-AEO Intel runs this same audit automatically, plus a few dozen additional checks, and returns a scored report in minutes. Run a free scan of your site with AEO Intel to see exactly where you stand.
+AEO-APP.ai runs this same audit automatically, plus a few dozen additional checks, and returns a scored report in minutes. Run a free scan of your site with AEO-APP.ai to see exactly where you stand.
 
 ---
 

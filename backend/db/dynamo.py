@@ -1148,6 +1148,21 @@ def register_user(*, user_id: str, email: str, full_name: str, company_name: str
         raise
 
 
+def get_registered_user(user_id: str) -> Optional[dict]:
+    """Single-user lookup against the same registry register_user writes
+    to — used where only a lightweight local read is needed (e.g. email
+    for Airwallex customer creation) and a full Cognito round-trip would
+    be unnecessary overhead."""
+    table = _get_table()
+    try:
+        resp = table.get_item(Key={"PK": _REGISTRY_PK, "SK": _registry_sk(user_id)})
+        item = resp.get("Item")
+        return _from_dynamo(item) if item else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_registered_user failed: {e.response['Error']}")
+        return None
+
+
 def list_all_users(limit: int = 200) -> list[dict]:
     """Every registered user, for the admin panel. Simple PK-only query
     against the shared REGISTRY partition — no Scan needed. Newest

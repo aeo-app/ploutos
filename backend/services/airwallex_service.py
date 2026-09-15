@@ -41,7 +41,17 @@ AIRWALLEX_BASE_URL = (
 AIRWALLEX_CLIENT_ID = os.getenv("AIRWALLEX_CLIENT_ID", "")
 AIRWALLEX_API_KEY = os.getenv("AIRWALLEX_API_KEY", "")
 AIRWALLEX_WEBHOOK_SECRET = os.getenv("AIRWALLEX_WEBHOOK_SECRET", "")
-AIRWALLEX_PRODUCTS_PATH = os.getenv("AIRWALLEX_PRODUCTS_PATH", "/api/v1/products")
+# Airwallex's real Billing API — verified against current docs (2026):
+# Products and Prices are genuinely SEPARATE objects/endpoints, joined only
+# by product_id. A previous version of this integration assumed prices
+# came back embedded inside each product (they don't) and pointed at
+# /api/v1/products (not a real endpoint — the actual path is under
+# /api/v1/billing/). That silently failed on every call, was caught by
+# get_plan_price's own exception handling, and fell back to the hardcoded
+# local `amount` above without ever surfacing that the "integration" never
+# actually worked. Fixed to the real, documented shape below.
+AIRWALLEX_PRODUCTS_PATH = os.getenv("AIRWALLEX_PRODUCTS_PATH", "/api/v1/billing/products")
+AIRWALLEX_PRICES_PATH = os.getenv("AIRWALLEX_PRICES_PATH", "/api/v1/billing/prices")
 AIRWALLEX_CATALOG_CACHE_SECONDS = int(os.getenv("AIRWALLEX_CATALOG_CACHE_SECONDS", "300"))
 
 # The price is fixed here (server-side), never trusted from the client.
@@ -51,6 +61,17 @@ AIRWALLEX_CATALOG_CACHE_SECONDS = int(os.getenv("AIRWALLEX_CATALOG_CACHE_SECONDS
 # configured. Currency-specific prices should be supplied by the Airwallex
 # product catalog configuration below, rather than calculated with FX rates.
 PAYMENT_CURRENCY = "SGD"
+
+# How long a successful payment (initial checkout OR auto-renewal) grants
+# access for. 30 days is "monthly" in the sense the plans are priced and
+# marketed. Set to 0 for one-time-forever access instead (which also
+# means that account is never eligible for auto-renewal — there's
+# nothing to renew — see db.payments_dynamo.list_users_due_for_renewal's
+# own check for this). Lives here, not in routers/payment_router.py,
+# since services/subscription_renewal_scheduler.py (a service module)
+# needs the SAME value for renewal charges — a router module is the
+# wrong place for a constant a service module also depends on.
+PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))
 
 COUNTRY_CURRENCIES = {
     "SG": "SGD", "Singapore": "SGD",
@@ -84,6 +105,12 @@ PLANS: dict[str, dict] = {
         "blurb": "For founders putting AI search on the map.",
         "prompts": "5",
         "highlight": False,
+        # Set via env so this can be filled in per-deployment without a
+        # code change once the corresponding Product is actually created
+        # in the Airwallex dashboard (or via scripts/sync_airwallex_catalog.py).
+        # Empty string means "no catalog product linked yet" — falls back
+        # to name-based matching, then to the hardcoded amount above.
+        "airwallex_product_id": os.getenv("AIRWALLEX_PRODUCT_ID_STARTER", ""),
         "features": [
                   '1 domain · 5 tracked prompts',
       'Weekly 3 posts on Facebook, Instagram, LinkedIn & Google My Business',
@@ -98,6 +125,7 @@ PLANS: dict[str, dict] = {
         "blurb": "For marketing teams shipping content weekly.",
         "prompts": "15",
         "highlight": True,
+        "airwallex_product_id": os.getenv("AIRWALLEX_PRODUCT_ID_GROWTH", ""),
         "features": [
             '1 domain · 15 tracked prompts',
       'Weekly 7 posts on Facebook, Instagram, LinkedIn & Google My Business',
@@ -114,6 +142,7 @@ PLANS: dict[str, dict] = {
         "blurb": "For agencies and multi-brand portfolios.",
         "prompts": "15",
         "highlight": False,
+        "airwallex_product_id": os.getenv("AIRWALLEX_PRODUCT_ID_SCALE", ""),
         "features": [
             '4 domains · 15 tracked prompts',
       'Weekly 7 posts on Facebook, Instagram, LinkedIn & Google My Business',
@@ -151,55 +180,128 @@ _catalog_loaded_at = 0.0
 
 
 def get_plan_price(plan_id: str, currency: str | None = None) -> str:
-    """Return the configured product price for a plan and currency."""
+    """Return the configured product price for a plan and currency.
+    Tries, in order: (1) the LIVE Airwallex catalog, (2) AIRWALLEX_PRODUCT_PRICES_JSON
+    as a manual override/fallback, (3) the hardcoded local amount for the
+    default currency only. Logs which source actually won, at INFO level,
+    every time — this was previously silent, which made it impossible to
+    tell whether the live catalog integration was actually being hit at
+    all versus just reading the env fallback the whole time."""
     global _catalog_prices, _catalog_loaded_at
     plan = PLANS[plan_id]
     currency_code = (currency or PAYMENT_CURRENCY).upper()
     now = time.time()
+    catalog_fetch_failed = False
     if now - _catalog_loaded_at >= AIRWALLEX_CATALOG_CACHE_SECONDS:
         try:
             _catalog_prices = _fetch_catalog_prices()
             _catalog_loaded_at = now
+            logger.info(f"[airwallex] catalog refreshed — {len(_catalog_prices)} plan(s) resolved: {list(_catalog_prices.keys())}")
         except (AirwallexError, ValueError, TypeError) as exc:
-            logger.warning("[airwallex] product catalog fetch failed: %s", exc)
+            catalog_fetch_failed = True
+            logger.warning(f"[airwallex] product catalog fetch failed: {exc}")
 
-    configured_price = (
-        _catalog_prices.get(plan_id, {}).get(currency_code)
-        or AIRWALLEX_PRODUCT_PRICES.get(plan_id, {}).get(currency_code)
-    )
-    if configured_price is not None:
-        return configured_price
+    live_price = _catalog_prices.get(plan_id, {}).get(currency_code)
+    if live_price is not None:
+        logger.info(f"[airwallex] {plan_id}/{currency_code} = {live_price} (source: LIVE Airwallex catalog)")
+        return live_price
+
+    # Live catalog reachable but has NOTHING for this plan/currency — most
+    # likely means the corresponding Product/Price hasn't actually been
+    # created in the real Airwallex account yet (or airwallex_product_id
+    # isn't set for this plan — see PLANS above), not a code bug. Distinct
+    # from catalog_fetch_failed (the API call itself errored) — logged
+    # differently so the two causes aren't confused with each other.
+    if not catalog_fetch_failed and plan_id not in _catalog_prices:
+        logger.warning(
+            f"[airwallex] live catalog has NO product/price for plan_id={plan_id!r} — "
+            f"check that a Product exists in Airwallex with this plan's airwallex_product_id "
+            f"(currently {plan.get('airwallex_product_id') or 'NOT SET'!r}) or matching name {plan['name']!r}, "
+            f"and that it has an active Price in {currency_code}."
+        )
+
+    env_price = AIRWALLEX_PRODUCT_PRICES.get(plan_id, {}).get(currency_code)
+    if env_price is not None:
+        logger.warning(f"[airwallex] {plan_id}/{currency_code} = {env_price} (source: AIRWALLEX_PRODUCT_PRICES_JSON fallback — NOT the live catalog)")
+        return env_price
+
     if currency_code == PAYMENT_CURRENCY:
+        logger.warning(f"[airwallex] {plan_id}/{currency_code} = {plan['amount']} (source: hardcoded local PLANS default — NOT the live catalog)")
         return plan["amount"]
     raise LookupError(f"No Airwallex product price configured for {plan_id}/{currency_code}")
 
 
 def _fetch_catalog_prices() -> dict[str, dict[str, str]]:
-    """Fetch product prices from Airwallex and map product names to plan IDs."""
-    response = _request_with_retry("GET", AIRWALLEX_PRODUCTS_PATH)
-    products = response.get("items") or response.get("data") or response.get("products") or []
+    """Fetch the real Airwallex Billing catalog and resolve it into
+    {plan_id: {currency: amount}}.
+
+    Products and Prices are fetched as two separate API calls and joined
+    locally by product_id — Airwallex does not return prices embedded
+    inside a product object; a Product can have many Prices (one per
+    currency/cadence), each a standalone object referencing its product
+    via product_id (see /api/v1/billing/prices, /api/v1/billing/products).
+    """
+    products_resp = _request_with_retry("GET", AIRWALLEX_PRODUCTS_PATH)
+    products = products_resp.get("items") or products_resp.get("data") or []
     if not isinstance(products, list):
         raise ValueError("Airwallex product catalog response has no product list")
 
+    prices_resp = _request_with_retry("GET", AIRWALLEX_PRICES_PATH)
+    all_prices = prices_resp.get("items") or prices_resp.get("data") or []
+    if not isinstance(all_prices, list):
+        raise ValueError("Airwallex price catalog response has no price list")
+
+    # Prefer matching by the explicitly-configured airwallex_product_id
+    # (set per plan via env — see PLANS above) since it's exact and can't
+    # silently break the way name-matching can if a product gets renamed
+    # in the Airwallex dashboard. Falls back to matching by product name
+    # (case-insensitive) only for a plan with no product_id configured yet.
+    product_id_to_plan_id: dict[str, str] = {
+        plan["airwallex_product_id"]: plan_id
+        for plan_id, plan in PLANS.items()
+        if plan.get("airwallex_product_id")
+    }
+    plan_names_by_product_id: dict[str, str] = {}
+    unmatched_plan_names = {
+        plan["name"].casefold(): plan_id
+        for plan_id, plan in PLANS.items()
+        if not plan.get("airwallex_product_id")
+    }
+    if unmatched_plan_names:
+        for product in products:
+            if not isinstance(product, dict):
+                continue
+            pid = product.get("id")
+            name = str(product.get("name") or "").casefold()
+            matched_plan_id = unmatched_plan_names.get(name)
+            if pid and matched_plan_id:
+                plan_names_by_product_id[pid] = matched_plan_id
+
+    product_id_to_plan_id.update(plan_names_by_product_id)
+    if not product_id_to_plan_id:
+        return {}
+
     prices: dict[str, dict[str, str]] = {}
-    plan_names = {plan["name"].casefold(): plan_id for plan_id, plan in PLANS.items()}
-    for product in products:
-        if not isinstance(product, dict):
+    for price in all_prices:
+        if not isinstance(price, dict):
             continue
-        product_name = str(product.get("name") or product.get("display_name") or "").casefold()
-        plan_id = plan_names.get(product_name)
+        product_id = price.get("product_id")
+        plan_id = product_id_to_plan_id.get(product_id)
         if not plan_id:
             continue
-        product_prices = product.get("prices") or product.get("price") or []
-        if isinstance(product_prices, dict):
-            product_prices = [product_prices]
-        for price in product_prices:
-            if not isinstance(price, dict):
-                continue
-            currency = str(price.get("currency") or "").upper()
-            amount = price.get("amount", price.get("unit_amount", price.get("unit_amount_decimal")))
-            if currency and amount is not None:
-                prices.setdefault(plan_id, {})[currency] = str(amount)
+        if price.get("active") is False:
+            continue
+        currency = str(price.get("currency") or "").upper()
+        # flat_amount is the correct field for a FLAT pricing_model price
+        # (a fixed subscription price, which is what a plan like this is) —
+        # unit_amount only applies to PER_UNIT/VOLUME/GRADUATED models.
+        # Checked in that order since FLAT is the expected case here, not
+        # treated as interchangeable with unit_amount.
+        amount = price.get("flat_amount")
+        if amount is None:
+            amount = price.get("unit_amount")
+        if currency and amount is not None:
+            prices.setdefault(plan_id, {})[currency] = str(amount)
     return prices
 
 
@@ -292,11 +394,38 @@ def _request_with_retry(method: str, path: str, **kwargs) -> dict:
 
 
 # ── Payment Intents ──────────────────────────────────────────────────────────
-def create_payment_intent(user_id: str, plan_id: str, currency: str | None = None) -> dict:
+def create_customer(user_id: str, email: str) -> dict:
+    """Creates an Airwallex Customer — required before a PaymentConsent can
+    be attached for future merchant-initiated (off-session) charges.
+    Idempotent via merchant_customer_id: calling this again for the same
+    user_id returns the SAME customer rather than creating a duplicate,
+    since Airwallex's create-customer endpoint treats merchant_customer_id
+    as a dedup key."""
+    body = {
+        "request_id": str(uuid.uuid4()),
+        "merchant_customer_id": user_id,
+        "email": email,
+    }
+    return _request_with_retry("POST", "/api/v1/pa/customers/create", json=body)
+
+
+def create_payment_intent(
+    user_id: str, plan_id: str, currency: str | None = None,
+    customer_id: str | None = None, capture_consent: bool = False,
+) -> dict:
     """
     Creates a PaymentIntent for the fixed, server-decided price of `plan_id`
-    (looked up from PLANS — never trusted from the client). Returns the raw
-    Airwallex response (contains `id`, `client_secret`, `status`, ...).
+    (looked up from PLANS/the Airwallex Product Catalog via get_plan —
+    never trusted from the client). Returns the raw Airwallex response
+    (contains `id`, `client_secret`, `status`, ...).
+
+    `customer_id` + `capture_consent=True` is what makes this the FIRST
+    payment of a subscription rather than a one-off: it tells Airwallex
+    to save the payment method as a verified PaymentConsent for
+    merchant-initiated renewal charges later (see
+    confirm_renewal_with_consent below) — the actual consent capture
+    happens client-side, in the Drop-in Element's own configuration,
+    keyed off this same customer_id.
 
     Raises KeyError if plan_id isn't in PLANS — the router turns this into a
     400, not a 500 (it's a client input error, not a server failure).
@@ -310,7 +439,33 @@ def create_payment_intent(user_id: str, plan_id: str, currency: str | None = Non
         "merchant_order_id": f"user_{user_id}_{plan_id}_{uuid.uuid4().hex[:12]}",
         "descriptor": f"{plan['name']} plan"[:126],  # Airwallex caps descriptor length
     }
+    if customer_id:
+        body["customer_id"] = customer_id
+    if capture_consent:
+        body["payment_consent"] = {"next_triggered_by": "merchant", "merchant_trigger_reason": "scheduled"}
     return _request_with_retry("POST", "/api/v1/pa/payment_intents/create", json=body)
+
+
+def confirm_renewal_with_consent(intent_id: str, customer_id: str, payment_consent_id: str) -> dict:
+    """Charges a saved payment method with NO shopper present — this is
+    the actual auto-renewal mechanism. Airwallex calls this pattern a
+    merchant-initiated transaction (MIT); triggered_by=merchant here is
+    what distinguishes it from a normal customer-present checkout."""
+    body = {
+        "request_id": str(uuid.uuid4()),
+        "customer_id": customer_id,
+        "payment_consent_id": payment_consent_id,
+        "triggered_by": "merchant",
+    }
+    return _request_with_retry("POST", f"/api/v1/pa/payment_intents/{intent_id}/confirm", json=body)
+
+
+def get_payment_consent(payment_consent_id: str) -> dict:
+    """Retrieve a PaymentConsent's current status (VERIFIED, DISABLED,
+    etc.) — used to confirm a consent is actually usable before attempting
+    a renewal charge against it, and to show the saved card's brand/last4
+    in the billing UI."""
+    return _request_with_retry("GET", f"/api/v1/pa/payment_consents/{payment_consent_id}")
 
 
 def get_payment_intent(payment_intent_id: str) -> dict:

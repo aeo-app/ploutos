@@ -8,8 +8,11 @@ and history. Every OTHER endpoint in the app (seo_router, social_router)
 requires core.security.require_paid_access instead.
 
 Three plans (Starter/Growth/Scale) differ by price only for now — every
-paid plan gets full access. Billing is manual-renewal (the user pays again
-each month), not auto-recurring — see PAID_ACCESS_DAYS below.
+paid plan gets full access. Billing auto-renews by default (see
+services/subscription_renewal_scheduler.py) using a saved payment consent
+captured on the first payment — a user can turn this off via
+/payment/cancel-auto-renew, which stops future automatic charges without
+touching their current paid period.
 """
 from __future__ import annotations
 
@@ -22,19 +25,25 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from core.security import get_current_user_id
 from db import (
+    cancel_auto_renew,
     get_user_entitlement,
+    get_user_id_by_customer_id,
     list_user_payments,
     save_payment_intent,
+    set_renewal_status,
     set_user_paid,
     update_payment_intent_status,
 )
+from db.dynamo import get_registered_user
 from models.payment_models import CreatePaymentIntentRequest
 from services.airwallex_service import (
     AirwallexError,
+    PAID_ACCESS_DAYS,
     PAYMENT_CURRENCY,
     PLANS,
     currency_for_country,
     get_plan,
+    create_customer as awx_create_customer,
     create_payment_intent as awx_create_payment_intent,
     get_payment_intent as awx_get_payment_intent,
     verify_webhook_signature,
@@ -48,13 +57,6 @@ router = APIRouter(tags=["Payments"])
 # that we treat as "paid" / "not paid" respectively.
 SUCCESS_STATUSES = {"SUCCEEDED"}
 FAILURE_STATUSES = {"FAILED", "CANCELLED", "EXPIRED"}
-
-# How long a successful payment grants access for. Billing here is
-# MANUAL-RENEWAL, not auto-recurring: the user pays again each cycle (no
-# card is stored on file, no automatic re-charge). 30 days is "monthly" in
-# the sense the plans are priced and marketed — set to 0 for one-time-forever
-# access instead, or change the number of days for a different cycle length.
-PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))
 
 
 def _country_from_authorization(authorization: str | None, access_token: str | None = None) -> str | None:
@@ -140,8 +142,32 @@ async def create_intent(
         currency = PAYMENT_CURRENCY
         plan = get_plan(req.plan_id, currency)
 
+    # Reuse an existing Airwallex customer for this user if one already
+    # exists (e.g. from a previous plan/renewal) — create_customer is
+    # idempotent via merchant_customer_id, but checking first avoids an
+    # unnecessary API round-trip on every checkout.
+    existing_ent = get_user_entitlement(user_id)
+    customer_id = existing_ent.get("airwallex_customer_id")
+    if not customer_id:
+        registered = get_registered_user(user_id) or {}
+        try:
+            customer = awx_create_customer(user_id, registered.get("email", ""))
+            customer_id = customer["id"]
+            # Linked immediately, BEFORE the payment even happens — the
+            # payment_consent.verified webhook (fired only after a
+            # successful first payment) needs this link to already exist
+            # so it can reverse-lookup which user a given Airwallex
+            # customer_id belongs to.
+            set_user_paid(
+                user_id=user_id, is_paid=existing_ent.get("is_paid", False), paid_until=existing_ent.get("paid_until"),
+                plan=existing_ent.get("plan", "one_time"), airwallex_customer_id=customer_id,
+            )
+        except AirwallexError as e:
+            logger.error(f"[payment] create_customer failed for user={user_id}: {e}")
+            raise HTTPException(status_code=502, detail=f"Could not start payment: {e}")
+
     try:
-        intent = awx_create_payment_intent(user_id, req.plan_id, currency)
+        intent = awx_create_payment_intent(user_id, req.plan_id, currency, customer_id=customer_id, capture_consent=True)
     except AirwallexError as e:
         logger.error(f"[payment] create_intent failed for user={user_id} plan={req.plan_id}: {e}")
         raise HTTPException(status_code=502, detail=f"Could not start payment: {e}")
@@ -233,7 +259,23 @@ async def payment_status(
         "paid_until": paid_until,
         "plan": plan_id,
         "plan_name": PLANS.get(plan_id, {}).get("name") if plan_id else None,
+        "auto_renew": bool(ent.get("auto_renew", False)),
+        "payment_method_summary": ent.get("payment_method_summary"),
+        "renewal_status": ent.get("renewal_status"),  # 'succeeded' | 'failed' | 'pending' | None (never attempted)
+        "renewal_failure_reason": ent.get("renewal_failure_reason"),
+        "last_renewal_attempt_at": ent.get("last_renewal_attempt_at"),
     }
+
+
+@router.post("/api/v1/payment/cancel-auto-renew", summary="Cancel automatic renewal — current access is unaffected")
+async def cancel_auto_renew_endpoint(user_id: str = Depends(get_current_user_id)):
+    """The actual 'Cancel subscription' action. Does NOT touch is_paid or
+    paid_until — the user keeps whatever access they've already paid for
+    until it naturally expires; this just stops the scheduler from ever
+    attempting another automatic charge for them, exactly like cancelling
+    a real-world subscription rather than an instant refund/revocation."""
+    cancel_auto_renew(user_id)
+    return {"auto_renew": False}
 
 
 @router.get("/api/v1/payment/history", summary="Your payment transaction history")
@@ -250,6 +292,7 @@ async def payment_history(user_id: str = Depends(get_current_user_id)):
                 "description": i.get("description", ""),
                 "created_at": i.get("created_at"),
                 "updated_at": i.get("updated_at"),
+                "is_renewal": bool(i.get("is_renewal", False)),
             }
             for i in items
         ]
@@ -279,7 +322,40 @@ async def airwallex_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Malformed webhook payload")
 
     event_type = event.get("name", "")
-    payment_intent = (event.get("data") or {}).get("object", {})
+    obj = (event.get("data") or {}).get("object", {})
+
+    # payment_consent.verified fires once, after the FIRST payment
+    # completes with consent capture requested (see create_intent above) —
+    # this is the actual moment a user's card becomes chargeable for
+    # future auto-renewals with no shopper present. Handled as its own
+    # event type, separate from the payment intent success handling
+    # below, since Airwallex sends it as a distinct webhook event, not
+    # embedded in the payment intent's own payload.
+    if event_type == "payment_consent.verified":
+        consent_id = obj.get("id")
+        customer_id = obj.get("customer_id")
+        card = (obj.get("payment_method") or {}).get("card") or {}
+        summary = f"{card.get('brand', 'card').title()} •••• {card.get('last4', '')}".strip() if card else None
+        # customer_id was already linked to a user_id at create_intent
+        # time (see create_intent above) — BEFORE this webhook could ever
+        # fire, since the customer has to exist before a payment attempt
+        # can reference it. This is a reverse lookup back to that link,
+        # not a fresh association being made here.
+        user_id = get_user_id_by_customer_id(customer_id) if customer_id else None
+        if user_id and consent_id:
+            existing = get_user_entitlement(user_id)
+            set_user_paid(
+                user_id=user_id, is_paid=existing.get("is_paid", False), paid_until=existing.get("paid_until"),
+                plan=existing.get("plan", "one_time"), currency=existing.get("currency"),
+                airwallex_customer_id=customer_id, payment_consent_id=consent_id,
+                payment_method_summary=summary, auto_renew=True,
+            )
+            logger.info(f"[payment] payment consent {consent_id} verified and saved for user={user_id} ({summary})")
+        else:
+            logger.warning(f"[payment] payment_consent.verified: no matching user_id found for customer_id={customer_id}")
+        return {"received": True}
+
+    payment_intent = obj
     payment_intent_id = payment_intent.get("id")
     status = payment_intent.get("status", "")
 
@@ -294,11 +370,22 @@ async def airwallex_webhook(request: Request):
         logger.warning(f"[payment] webhook for unknown payment_intent_id={payment_intent_id}")
         return {"received": True}
 
+    is_renewal = record.get("is_renewal", False)
+
     if status in SUCCESS_STATUSES:
         plan_id = record.get("plan_id") or "starter"
-        set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until(), plan=plan_id)
-        logger.info(f"[payment] user={record['user_id']} marked paid ({plan_id}) via webhook ({payment_intent_id})")
+        set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until(), plan=plan_id, currency=record.get("currency"))
+        if is_renewal:
+            set_renewal_status(record["user_id"], "succeeded")
+        logger.info(f"[payment] user={record['user_id']} marked paid ({plan_id}) via webhook ({payment_intent_id}, renewal={is_renewal})")
     elif status in FAILURE_STATUSES:
-        logger.info(f"[payment] payment {payment_intent_id} failed/cancelled for user={record['user_id']}")
+        logger.info(f"[payment] payment {payment_intent_id} failed/cancelled for user={record['user_id']} (renewal={is_renewal})")
+        if is_renewal:
+            # A failed renewal does NOT immediately revoke access here —
+            # paid_until simply continues counting down to its already-set
+            # expiry, and the scheduler will keep retrying on subsequent
+            # runs until it either succeeds or paid_until actually passes.
+            # This avoids yanking access over a single transient decline.
+            set_renewal_status(record["user_id"], "failed", reason=payment_intent.get("last_error", {}).get("message") or "Payment declined")
 
     return {"received": True}

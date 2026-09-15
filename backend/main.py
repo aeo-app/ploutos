@@ -71,8 +71,31 @@ async def lifespan(app: FastAPI):
     scheduler = AsyncIOScheduler()
     poll_seconds = int(os.getenv("SCHEDULED_POSTS_POLL_SECONDS", "60"))
     scheduler.add_job(_run_due_posts_job, "interval", seconds=poll_seconds, id="process_due_scheduled_posts")
+
+    # Automatic subscription renewal — see services/subscription_renewal_scheduler.py
+    # for the full mechanism (Airwallex merchant-initiated charges against
+    # a saved, verified PaymentConsent, using the Product Catalog for
+    # pricing). Runs far less often than the social-posts job above on
+    # purpose: charging a card is a much higher-stakes operation than
+    # posting a scheduled photo, and the actual renewal window this checks
+    # against is 24 hours wide, so polling every minute would just be
+    # redundant load for no benefit.
+    from services.subscription_renewal_scheduler import process_due_renewals
+
+    def _run_renewals_job():
+        try:
+            count = process_due_renewals()
+            if count:
+                logger.info(f"[scheduler] processed {count} subscription renewal(s)")
+        except Exception as e:
+            logger.error(f"[scheduler] renewal job run failed: {e}", exc_info=True)
+
+    renewal_poll_seconds = int(os.getenv("RENEWAL_POLL_SECONDS", str(60 * 60)))  # hourly by default
+    scheduler.add_job(_run_renewals_job, "interval", seconds=renewal_poll_seconds, id="process_due_renewals")
+
     scheduler.start()
     logger.info(f"[startup] Scheduled-posts background job running every {poll_seconds}s")
+    logger.info(f"[startup] Subscription renewal background job running every {renewal_poll_seconds}s")
 
     logger.info("[startup] Anti-hallucination: knowledge-declaration pipeline (no external search APIs)")
     logger.info("[startup] APAC SEO Intelligence API v4 ready")

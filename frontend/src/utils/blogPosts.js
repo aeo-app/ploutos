@@ -31,8 +31,19 @@ function parseFrontmatter(raw) {
     const lineMatch = line.match(/^([a-zA-Z0-9_]+):\s*(.*)$/);
     if (!lineMatch) return;
     const [, key, rawValue] = lineMatch;
-    // Strip optional surrounding quotes - "like this" or 'like this'
-    meta[key] = rawValue.replace(/^["']|["']$/g, '').trim();
+    const trimmed = rawValue.trim();
+    // Array syntax - tags: ["AEO", "SEO", ...] - needed since real posts
+    // use this for tags rather than a single scalar value.
+    if (/^\[.*\]$/.test(trimmed)) {
+      meta[key] = trimmed
+        .slice(1, -1)
+        .split(',')
+        .map(s => s.trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean);
+    } else {
+      // Strip optional surrounding quotes - "like this" or 'like this'
+      meta[key] = trimmed.replace(/^["']|["']$/g, '').trim();
+    }
   });
   return { meta, body: body.trim() };
 }
@@ -59,14 +70,22 @@ export async function loadBlogPosts() {
       const res = await fetch(url);
       const raw = await res.text();
       const { meta, body } = parseFrontmatter(raw);
+      const tags = Array.isArray(meta.tags) ? meta.tags : [];
       return {
         slug: slugFromFilename(filename),
         title: meta.title || slugFromFilename(filename),
         date: meta.date || '',
         author: meta.author || '',
-        category: meta.category || '',
+        // "category" as a single string is the older schema; newer posts
+        // use a "tags" array instead — first tag stands in for a category
+        // badge in the UI when there's no explicit category set.
+        category: meta.category || tags[0] || '',
+        tags,
         featured_image: meta.featured_image || '',
-        excerpt: meta.excerpt || '',
+        // "description" is what the actual content uses; "excerpt" was
+        // this loader's original field name — support both rather than
+        // assuming either, so older and newer posts both work.
+        excerpt: meta.excerpt || meta.description || '',
         body,
       };
     })

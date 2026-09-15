@@ -28,7 +28,7 @@ export function PublicBlogIndexPage({ initialPosts }) {
 
       <div className={s.content}>
         <h1 className={s.pageTitle}>Blog</h1>
-        <p className={s.pageSub}>Articles and updates from the AEO Intel team.</p>
+        <p className={s.pageSub}>Articles and updates from the AEO-APP.ai team.</p>
 
         {error && <div className={s.error}>{error}</div>}
         {posts === undefined && !error && <div className={s.loading}>Loading…</div>}

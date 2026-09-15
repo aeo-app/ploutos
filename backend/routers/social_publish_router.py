@@ -381,7 +381,7 @@ async def create_invite(req: CreateInviteRequest, user_id: str = Depends(get_cur
         users = {u["user_id"]: u for u in list_all_users()}
     except Exception:
         pass
-    requester_label = (users.get(user_id) or {}).get("company_name") or "A business using AEO Intel"
+    requester_label = (users.get(user_id) or {}).get("company_name") or "A business using AEO-APP.ai"
 
     invite_token = secrets.token_urlsafe(24)
     save_page_invite(

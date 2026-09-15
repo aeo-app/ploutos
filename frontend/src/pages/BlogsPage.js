@@ -35,7 +35,7 @@ export function BlogsPage() {
 
   return (
     <div className={s.page}>
-      <SectionHeader title="Blogs" subtitle="Articles and updates from the AEO Intel team." />
+      <SectionHeader title="Blogs" subtitle="Articles and updates from the AEO-APP.ai team." />
 
       {error && <ErrorCard message={error} />}
       {posts === null && !error && <div className={s.loadingRow}><span className={s.spinner} />Loading posts…</div>}

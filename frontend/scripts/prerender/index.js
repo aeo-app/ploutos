@@ -123,7 +123,7 @@ async function main() {
     )
   );
   writeRouteHtml('/', injectIntoTemplate(template, landingHtml, {
-    title: 'AEO Intel — Track and improve your AI search visibility',
+    title: 'AEO-APP.ai — Track and improve your AI search visibility',
     description: 'Track your brand across ChatGPT, Perplexity, and Google AI Overviews, then ship the content and technical fixes that move you into the answer.',
   }));
 
@@ -132,8 +132,8 @@ async function main() {
     React.createElement(PublicBlogIndexPage, { initialPosts: posts })
   );
   writeRouteHtml('/blog', injectIntoTemplate(template, blogIndexHtml, {
-    title: 'Blog — AEO Intel',
-    description: 'Articles and updates from the AEO Intel team on AI search visibility, answer-engine optimization, and content strategy.',
+    title: 'Blog — AEO-APP.ai',
+    description: 'Articles and updates from the AEO-APP.ai team on AI search visibility, answer-engine optimization, and content strategy.',
   }));
 
   // 3. Every individual blog post
@@ -142,7 +142,7 @@ async function main() {
       React.createElement(PublicBlogPostPage, { slug: post.slug, initialPost: post })
     );
     writeRouteHtml('/blog/' + post.slug, injectIntoTemplate(template, postHtml, {
-      title: post.title + ' — AEO Intel Blog',
+      title: post.title + ' — AEO-APP.ai Blog',
       description: post.excerpt || undefined,
     }));
   }

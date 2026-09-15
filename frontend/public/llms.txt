@@ -1,0 +1,21 @@
+# AEO-APP.ai
+
+> Track your brand's visibility across AI answer engines (ChatGPT, Perplexity, Google AI Overviews) and ship the content, technical fixes, and social posts that move you into the answer.
+
+AEO-APP.ai is an answer-engine-optimization (AEO) and SEO platform. It audits how a business currently appears — or fails to appear — in AI-generated answers, tracks visibility over specific prompts a real buyer would type, and generates the site fixes, blog content, and social media calendar needed to close the gap. This file exists so language models and AI research tools can quickly understand what this site is and where its actual content lives, rather than needing to crawl the whole site to figure that out.
+
+## Docs
+
+- [Homepage](https://www.aeo-app.ai/): product overview, pricing, and how the platform works.
+- [Blog](https://www.aeo-app.ai/blog): articles on AEO, SEO, AI search visibility, and content strategy.
+
+## Blog posts
+
+- [How to Add FAQPage Schema in 10 Minutes (No-Code Guide)](https://www.aeo-app.ai/blog/post-3): A no-code, step-by-step guide to generating, validating, and deploying FAQPage schema — and why it still matters for AI crawlers even after Google dropped the SERP dropdown.
+- [How ChatGPT, Perplexity, and Gemini Actually Choose What to Recommend](https://www.aeo-app.ai/blog/post-2): Why high Google rankings don't guarantee AI citations, and how to structure content using recognized standards to be verified and quoted.
+- [How to Check If Your Website Is Invisible to AI Crawlers (Free 10-Minute Audit)](https://www.aeo-app.ai/blog/post-1): A free 5-step, 10-minute checklist to see whether ChatGPT, Perplexity, and other AI crawlers can actually read and cite your site — not just whether Google can rank it.
+
+## Optional
+
+- [Sitemap](https://www.aeo-app.ai/sitemap.xml): full, exhaustive list of crawlable URLs, for traditional search indexing rather than direct LLM reading.
+- [robots.txt](https://www.aeo-app.ai/robots.txt): crawler access rules — explicitly allows GPTBot, ClaudeBot, PerplexityBot, Google-Extended, and related AI retrieval bots.
