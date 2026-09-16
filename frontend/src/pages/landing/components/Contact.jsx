@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Tick, Arrow } from './icons.jsx';
+import { scrollToSection } from '../scrollUtils';
 
 const COUNTRIES = [
   'United States', 'United Kingdom', 'India', 'Canada', 'Australia',
@@ -40,7 +41,7 @@ export default function Contact() {
             <li><Tick /> Cancel from in-app, no email loop</li>
           </ul>
           <div className="cta-actions">
-            <a className="btn btn-dark btn-lg" href="#audit">Start free trial <Arrow className="btn-arrow" size={13} /></a>
+            <a className="btn btn-dark btn-lg" href="#audit" onClick={(e) => scrollToSection('audit', e)}>Start free trial <Arrow className="btn-arrow" size={13} /></a>
           </div>
         </div>
         <form className="cta-form" onSubmit={step === 'otp' ? verify : sendOtp}>

@@ -1,3 +1,5 @@
+import { scrollToSection } from '../scrollUtils';
+
 function FootCol({ title, links }) {
   return (
     <div>
@@ -15,7 +17,7 @@ export default function Footer() {
       <div className="foot-inner">
         <div className="foot-top">
           <div className="foot-brand">
-            <a href="#top" className="logo">
+            <a href="#top" className="logo" onClick={(e) => scrollToSection('top', e)}>
               <span className="logo-mark">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path d="M3 11.5L8 3l5 8.5M5 9h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />

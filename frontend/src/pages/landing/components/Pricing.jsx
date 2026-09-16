@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BASE } from '../../../api/seoApi';
 import { JsonLd } from '../../../components/JsonLd';
 import { buildSoftwareApplicationSchema } from '../schema';
+import { scrollToSection } from '../scrollUtils';
 
 const CHECK = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -175,7 +176,7 @@ export default function Pricing({ onStartTrial, initialPlans }) {
         )}
 
         <p className="aeo-pricing__foot">
-          Need SSO, SOC2, on-prem or volume pricing? <a href="#contact">Talk to sales →</a>
+          Need SSO, SOC2, on-prem or volume pricing? <a href="#contact" onClick={(e) => scrollToSection('contact', e)}>Talk to sales →</a>
         </p>
       </div>
     </section>

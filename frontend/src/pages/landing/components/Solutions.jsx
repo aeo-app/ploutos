@@ -1,4 +1,5 @@
 import { Arrow } from './icons.jsx';
+import { scrollToSection } from '../scrollUtils';
 
 export default function Solutions() {
   return (
@@ -18,7 +19,7 @@ export default function Solutions() {
             We mine 500 buyer-intent prompts per domain, cluster them by funnel stage and tell you
             exactly which to defend first. Then we ship a playbook your writers can execute.
           </p>
-          <a href="#contact" className="btn btn-dark">Talk to growth <Arrow className="btn-arrow" size={13} /></a>
+          <a href="#contact" className="btn btn-dark" onClick={(e) => scrollToSection('contact', e)}>Talk to growth <Arrow className="btn-arrow" size={13} /></a>
           <div className="solution-stats">
             <div><div className="solution-stat-v">+412%</div><div className="solution-stat-l">AI citations / month</div></div>
             <div><div className="solution-stat-v">−71%</div><div className="solution-stat-l">Inbound CAC</div></div>
@@ -47,7 +48,7 @@ export default function Solutions() {
             Unlimited domains. White-label PDFs. Per-client portals. Real-time refresh on a watchlist
             of prompts, with a Postgres mirror for your warehouse.
           </p>
-          <a href="#contact" className="btn btn-dark">See enterprise <Arrow className="btn-arrow" size={13} /></a>
+          <a href="#contact" className="btn btn-dark" onClick={(e) => scrollToSection('contact', e)}>See enterprise <Arrow className="btn-arrow" size={13} /></a>
           <div className="solution-stats">
             <div><div className="solution-stat-v">∞</div><div className="solution-stat-l">Domains tracked</div></div>
             <div><div className="solution-stat-v">1h</div><div className="solution-stat-l">Refresh interval</div></div>

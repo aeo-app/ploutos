@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { Tick, Arrow, Caret, GoogleLogo, Sparkle } from './icons.jsx';
 import ReportCard from './ReportCard.jsx';
+import { scrollToSection } from '../scrollUtils';
 
 function Ticker() {
   return (
@@ -18,7 +19,7 @@ function Nav({ onSignIn, onGetStarted }) {
   return (
     <div className="nav-wrap">
       <nav className="nav">
-        <a href="#top" className="logo">
+        <a href="#top" className="logo" onClick={(e) => scrollToSection('top', e)}>
           <span className="logo-mark">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M3 11.5L8 3l5 8.5M5 9h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
@@ -27,14 +28,14 @@ function Nav({ onSignIn, onGetStarted }) {
           <span className="logo-text">aeo-app<span className="logo-dot">.ai</span></span>
         </a>
         <div className="nav-links">
-          <a className="nav-link" href="#solutions">Products <Caret /></a>
-          <a className="nav-link" href="#solutions">Solutions <Caret /></a>
-          <a className="nav-link" href="#blog">Blogs</a>
-          <a className="nav-link" href="#pricing">Pricing</a>
+          <a className="nav-link" href="#solutions" onClick={(e) => scrollToSection('solutions', e)}>Products <Caret /></a>
+          <a className="nav-link" href="#solutions" onClick={(e) => scrollToSection('solutions', e)}>Solutions <Caret /></a>
+          <a className="nav-link" href="/blog">Blogs</a>
+          <a className="nav-link" href="#pricing" onClick={(e) => scrollToSection('pricing', e)}>Pricing</a>
         </div>
         <div className="nav-cta">
           <button type="button" className="nav-link" onClick={onSignIn}>Sign in</button>
-          <a className="btn btn-ghost btn-sm" href="#contact">Contact sales</a>
+          <a className="btn btn-ghost btn-sm" href="#contact" onClick={(e) => scrollToSection('contact', e)}>Contact sales</a>
           <button type="button" className="btn btn-dark btn-sm" onClick={onGetStarted}>
             Get started <Arrow size={12} />
           </button>
