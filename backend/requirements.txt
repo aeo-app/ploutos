@@ -22,3 +22,5 @@ cryptography==43.0.1
 
 dnspython==2.7.0
 python-multipart==0.0.32
+
+beautifulsoup4==4.15.0

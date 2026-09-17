@@ -24,6 +24,28 @@ export function PublicBlogPostPage({ slug, initialPost }) {
     // eslint-disable-next-line
   }, [slug]);
 
+  // Sets <title>/<meta name="description"> to match what the prerender
+  // script bakes into the static HTML (see scripts/prerender/index.js) —
+  // relevant when this component renders WITHOUT having gone through that
+  // prerender step at all (local dev via `npm start`, or a build that
+  // skipped it), since React's own client-side render never touches
+  // <head>. A normal deployed page load already has the correct values
+  // baked in by the prerender step before this ever runs.
+  useEffect(() => {
+    if (!post) return;
+    document.title = post.meta_title || (post.title + ' — AEO-APP.ai Blog');
+    const description = post.meta_description || post.excerpt;
+    if (description) {
+      let tag = document.querySelector('meta[name="description"]');
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('name', 'description');
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', description);
+    }
+  }, [post]);
+
   return (
     <div className={s.wrap}>
       <div className={s.topBar}>

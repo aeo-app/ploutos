@@ -58,9 +58,12 @@ import re
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
+from urllib.parse import urljoin
 
 import boto3
+import requests
 import time
+from bs4 import BeautifulSoup
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
@@ -442,6 +445,161 @@ CRITICAL RULES:
   you know operate in this industry and market."""
 
 
+# ── Parent-company exclusion ────────────────────────────────────────────────
+# A parent company is never a genuine competitor of its own subsidiary — if
+# the analyzed company's parent happens to operate in the same space (or
+# just gets confused for a competitor by the model), it should never show
+# up in that subsidiary's own competitor analysis. Applied as a hard,
+# deterministic filter AFTER parsing the AI's response — the prompt below
+# also asks the model to exclude it directly, but instruction-following
+# alone isn't reliable enough for something this specific; the filter is
+# what actually guarantees it.
+def _normalize_company_token(value: str) -> str:
+    """Reduces a company NAME or a DOMAIN/URL to the same comparable form,
+    so "Acme Holdings" and "acmeholdings.com" (or "https://www.acmeholdings.com")
+    normalize to the identical token "acmeholdings" — letting a parent
+    identified by either a name or a domain be matched against competitor
+    rows, which only ever carry a plain company-name string, never a domain.
+
+    Deliberately does NOT strip legal suffixes (Inc/Ltd/Holdings/Group/...)
+    despite that being the more obvious normalization: a domain like
+    "acmeholdings.com" has no word boundary between "acme" and "holdings"
+    the way a spaced-out name does, so suffix-stripping the NAME form
+    ("Acme Holdings" -> "acme") while the DOMAIN form stays "acmeholdings"
+    would make the two forms mismatch instead of match. Once tried, that
+    mismatch required a substring-based fallback to bridge it — which in
+    turn caused a real false positive: an unrelated company like "Acme
+    Widgets Pte Ltd" got misidentified as the parent "Acme" purely because
+    one name contains the other as a substring. An exact match on the
+    UNSTRIPPED token is more conservative (occasionally misses a parent
+    named inconsistently) but never wrongly excludes a genuine, unrelated
+    competitor — the safer failure mode for something that actively
+    removes rows from a report.
+    """
+    value = value.strip().lower()
+    value = re.sub(r"^https?://", "", value)
+    value = re.sub(r"^www\.", "", value)
+    value = re.sub(r"\.(com|net|org|co|io|ai|sg|com\.sg)(/.*)?$", "", value)  # strip domain TLD/path if this was a URL
+    value = re.sub(r"[^a-z0-9]", "", value)  # collapse spaces/punctuation so "Acme Holdings" == "acmeholdings"
+    return value
+
+
+def _is_parent_company(candidate_name: str, parent_name: str | None) -> bool:
+    """Exact match only, on the normalized token — see
+    _normalize_company_token's docstring for why a fuzzy/substring
+    fallback was tried and rejected."""
+    if not candidate_name or not parent_name:
+        return False
+    candidate_token = _normalize_company_token(candidate_name)
+    parent_token = _normalize_company_token(parent_name)
+    return bool(candidate_token) and bool(parent_token) and candidate_token == parent_token
+
+
+def _exclude_parent_company(result: CompetitorAnalysisResponse, own_company_name: str, parent_name: str | None) -> CompetitorAnalysisResponse:
+    """Removes any row identifying the parent company from every list that
+    carries a company name — never removes the analyzed company's OWN row
+    (own_company_name), which is deliberately included in these lists as
+    a benchmark/comparison entry, not a competitor to exclude.
+
+    `parent_name` comes from the AI's own reading of the analyzed
+    company's real website content (see _fetch_company_page_text and the
+    detection step in generate_competitor_analysis below) — never from
+    user input. This filter is what actually GUARANTEES the exclusion;
+    the prompt also asks the model to leave the parent out directly, but
+    instruction-following alone isn't reliable enough on its own for
+    something this specific.
+    """
+    if not parent_name:
+        return result
+
+    own_token = _normalize_company_token(own_company_name)
+
+    def _keep(company_name: str) -> bool:
+        if _normalize_company_token(company_name) == own_token:
+            return True  # never strip the analyzed company's own benchmark row
+        return not _is_parent_company(company_name, parent_name)
+
+    removed_count = 0
+    for field_name in ("competitor_overview", "seo_visibility", "competitor_scores"):
+        rows = getattr(result, field_name, None)
+        if not rows:
+            continue
+        before = len(rows)
+        filtered = [row for row in rows if _keep(getattr(row, "company", ""))]
+        removed_count += before - len(filtered)
+        setattr(result, field_name, filtered)
+
+    if removed_count:
+        logger.info(
+            f"[bedrock] excluded parent company ({parent_name!r}, detected from {own_company_name}'s own website) "
+            f"from its competitor analysis — {removed_count} row(s) removed"
+        )
+    return result
+
+
+# ── Parent-company DETECTION from the analyzed company's own website ───────
+# The actual "check the website" step: fetches the company's real homepage
+# (and, if discoverable, an About/Company page) and extracts visible text
+# for the AI to read — a parent-company relationship is typically stated
+# in a footer copyright line ("© 2026 Acme Holdings"), an About page
+# ("a subsidiary of..."), or similar. The AI call itself has no
+# web-browsing/tool-use capability (see _converse — plain text generation
+# only), so this fetch has to happen here, before the prompt is built, for
+# the model to have any real, current information to read at all — without
+# it, "detection" would silently fall back to whatever the model happens
+# to already know from training, which can be wrong or outdated for a
+# lesser-known company or a recent acquisition.
+_ABOUT_PAGE_PATTERNS = re.compile(r"about[-_]?us|about|company|who[-_]?we[-_]?are", re.IGNORECASE)
+_MAX_PAGE_TEXT_CHARS = 3000  # keeps prompt token cost bounded — a few paragraphs is enough for this
+
+
+def _extract_visible_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg"]):
+        tag.decompose()
+    text = soup.get_text(separator=" ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _find_about_page_url(html: str, base_url: str) -> str | None:
+    soup = BeautifulSoup(html, "html.parser")
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        label = a.get_text() or ""
+        if _ABOUT_PAGE_PATTERNS.search(href) or _ABOUT_PAGE_PATTERNS.search(label):
+            return urljoin(base_url, href)
+    return None
+
+
+def _fetch_company_page_text(url: str, timeout: float = 6.0) -> str:
+    """Fetches the company's homepage, plus its About/Company page if one
+    is discoverably linked from the homepage. Best-effort: any failure
+    (timeout, non-200, blocked, malformed HTML) returns an empty string
+    rather than raising — a company whose site can't be fetched simply
+    gets no parent-company detection for this run, not a broken report."""
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; AEOAppBot/1.0; +https://www.aeo-app.ai)"}
+    combined_text = ""
+    try:
+        resp = requests.get(url, headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            logger.warning(f"[bedrock] company page fetch for {url} returned status {resp.status_code} — skipping parent-company detection")
+            return ""
+        combined_text += _extract_visible_text(resp.text)[:_MAX_PAGE_TEXT_CHARS]
+
+        about_url = _find_about_page_url(resp.text, url)
+        if about_url and about_url.rstrip("/") != url.rstrip("/"):
+            try:
+                about_resp = requests.get(about_url, headers=headers, timeout=timeout)
+                if about_resp.status_code == 200:
+                    combined_text += " " + _extract_visible_text(about_resp.text)[:_MAX_PAGE_TEXT_CHARS]
+            except requests.RequestException as e:
+                logger.info(f"[bedrock] about-page fetch for {about_url} failed (non-fatal, homepage text still used): {e}")
+    except requests.RequestException as e:
+        logger.warning(f"[bedrock] company page fetch for {url} failed: {e} — skipping parent-company detection")
+        return ""
+    return combined_text[: _MAX_PAGE_TEXT_CHARS * 2]
+
+
 # ── Generator: Competitor Analysis ────────────────────────────────────────────
 def generate_competitor_analysis(
     req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
@@ -455,17 +613,38 @@ def generate_competitor_analysis(
     n_keywords = 8 if is_paid else FREE_PREVIEW_ROWS
     n_takeaways = 5 if is_paid else 1
 
+    # Real, current text from the company's OWN website — see
+    # _fetch_company_page_text's docstring for why this fetch has to
+    # happen here rather than relying on the model's own training
+    # knowledge. Best-effort: an empty string (fetch failed, timed out,
+    # or blocked) just means no parent-company detection for this run,
+    # not a broken report — the rest of the analysis proceeds normally.
+    company_page_text = _fetch_company_page_text(req.url)
+    if company_page_text:
+        parent_detection_block = f"""
+Below is real text extracted from {req.company_name}'s own website (homepage, and its About/Company page if one was found). Read it for any statement of a PARENT COMPANY relationship — a copyright line like "© 2026 Acme Holdings", a phrase like "a subsidiary of...", "part of the ... Group", or "owned by...". Do not guess or invent one if the text doesn't actually state it.
+
+--- START OF WEBSITE TEXT ---
+{company_page_text}
+--- END OF WEBSITE TEXT ---
+
+If a parent company is stated above, set "detected_parent_company" to its name, and make sure that company is NEVER included in competitor_overview, seo_visibility, or competitor_scores below — a parent company is not a competitor of its own subsidiary. If no parent company is stated in the text, set "detected_parent_company" to null.
+"""
+    else:
+        parent_detection_block = "\n(Could not fetch this company's website to check for a parent-company relationship — set \"detected_parent_company\" to null.)\n"
+
     prompt = f"""
 Analyse the competitive landscape for:
   Company: {req.company_name}
   URL: {req.url}
   Market: {req.market}
   Industry: {req.industry}
-
+{parent_detection_block}
 Return a JSON object with EXACTLY these keys:
 {{
   "company": "{req.company_name}",
   "url": "{req.url}",
+  "detected_parent_company": "string or null — see instructions above",
   "competitor_overview": [{{
       "rank": 1,
       "company": "string",
@@ -514,6 +693,7 @@ Return a JSON object with EXACTLY these keys:
     raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
     result = CompetitorAnalysisResponse(**data)
+    result = _exclude_parent_company(result, req.company_name, result.detected_parent_company)
 
     if not is_paid:
         result.competitor_overview = _pad_rows(result.competitor_overview, 7, _locked_competitor_overview)

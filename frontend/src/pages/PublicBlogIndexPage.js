@@ -19,6 +19,19 @@ export function PublicBlogIndexPage({ initialPosts }) {
     // eslint-disable-next-line
   }, []);
 
+  // Same defense-in-depth reasoning as PublicBlogPostPage.js — a normal
+  // deployed page load already has these baked in by the prerender step.
+  useEffect(() => {
+    document.title = 'Blog — AEO-APP.ai';
+    let tag = document.querySelector('meta[name="description"]');
+    if (!tag) {
+      tag = document.createElement('meta');
+      tag.setAttribute('name', 'description');
+      document.head.appendChild(tag);
+    }
+    tag.setAttribute('content', 'Articles and updates from the AEO-APP.ai team on AI search visibility, answer-engine optimization, and content strategy.');
+  }, []);
+
   return (
     <div className={s.wrap}>
       <div className={s.topBar}>

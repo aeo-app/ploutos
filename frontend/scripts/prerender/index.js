@@ -142,8 +142,13 @@ async function main() {
       React.createElement(PublicBlogPostPage, { slug: post.slug, initialPost: post })
     );
     writeRouteHtml('/blog/' + post.slug, injectIntoTemplate(template, postHtml, {
-      title: post.title + ' — AEO-APP.ai Blog',
-      description: post.excerpt || undefined,
+      // meta_title/meta_description are independently settable per post
+      // (see loadBlogPostsNode.js) precisely for cases where the ideal
+      // <title>/meta-description wording differs from the on-page H1 and
+      // card excerpt — falls back to the same derived values as before
+      // for any post that doesn't set them, so existing posts are unaffected.
+      title: post.meta_title || (post.title + ' — AEO-APP.ai Blog'),
+      description: post.meta_description || post.excerpt || undefined,
     }));
   }
 

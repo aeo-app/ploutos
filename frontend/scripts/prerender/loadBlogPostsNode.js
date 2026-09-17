@@ -57,6 +57,8 @@ function loadBlogPostsSync() {
         tags,
         featured_image: meta.featured_image || '',
         excerpt: meta.excerpt || meta.description || '',
+        meta_title: meta.meta_title || '',
+        meta_description: meta.meta_description || '',
         body,
       };
     });

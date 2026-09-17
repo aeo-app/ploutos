@@ -86,6 +86,17 @@ export async function loadBlogPosts() {
         // this loader's original field name — support both rather than
         // assuming either, so older and newer posts both work.
         excerpt: meta.excerpt || meta.description || '',
+        // meta_title/meta_description are DELIBERATELY separate from
+        // title/excerpt above, not just aliases for them. title/excerpt
+        // are for on-page display (the H1, the card preview) — meta_title
+        // and meta_description are what actually goes in <title> and
+        // <meta name="description"> for search results and link previews,
+        // which often need different wording (character limits, keyword
+        // placement, a CTR-optimized phrasing that would read oddly as an
+        // actual page heading). Both optional — see scripts/prerender/index.js
+        // for the fallback to title/excerpt when a post doesn't set them.
+        meta_title: meta.meta_title || '',
+        meta_description: meta.meta_description || '',
         body,
       };
     })

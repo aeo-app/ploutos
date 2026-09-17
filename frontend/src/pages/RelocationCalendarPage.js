@@ -521,7 +521,7 @@ export function RelocationCalendarPage() {
               <div className={s?.progressBarWrap}><div className={s?.progressBarFill} style={{ width: `${progressPct}%` }} /></div>
               <span className={s?.progressCount}>{days.length}/{totalDays} days</span>
               {lockedCount > 0 && <Badge variant="warning">🔒 {lockedCount} locked — upgrade to unlock</Badge>}
-              {errorCount > 0 && (
+              {/* {errorCount > 0 && (
                 <button
                   type="button"
                   className={s?.progressCount}
@@ -530,7 +530,7 @@ export function RelocationCalendarPage() {
                 >
                   {errorCount} failed {showFailureDetails ? '▲' : '▼ (why?)'}
                 </button>
-              )}
+              )} */}
             </div>
             {errorCount > 0 && showFailureDetails && (
               <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>

@@ -78,6 +78,15 @@ class CompetitorAnalysisResponse(BaseModel):
     keyword_rankings: list[KeywordRanking]
     competitor_scores: list[CompetitorScore]
     key_takeaways: list[SEOInsight]
+    # Populated automatically from the AI's reading of the analyzed
+    # company's OWN website content (see services.bedrock_service's
+    # _fetch_company_page_text + the parent-company detection step in
+    # generate_competitor_analysis) — never user-supplied. None means no
+    # parent-company mention was found on the site, not that detection
+    # failed to run. Surfaced here (rather than only used internally to
+    # drive the exclusion filter) so it's visible in the report and in
+    # logs why a given company might be missing from the competitor lists.
+    detected_parent_company: Optional[str] = None
 
 
 # ── Keyword Volume ─────────────────────────────────────────────────────────────
