@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { UnlockModal } from '../components/payment/UnlockModal';
 import { LockedTeaser } from '../components/payment/LockedTeaser';
 import { historyApi } from '../api/historyApi';
-import { CanvaPosterPanel } from '../components/canva/CanvaPosterPanel';
+import { PosterPanel } from '../components/canva/PosterPanel';
 import { SocialPublishPanel } from '../components/canva/SocialPublishPanel';
 import { PostStatusSummary } from '../components/canva/PostStatusSummary';
 import { ScheduledPostsList } from '../components/canva/ScheduledPostsList';
@@ -125,9 +125,9 @@ function PostCard({ post, dayDate, historyItems, socialApi }) {
       </div>
 
       <div style={{ display: actionTab === 'create' ? 'block' : 'none' }}>
-        <CanvaPosterPanel
-          dayDate={dayDate} postNumber={post.post_number} defaultText={caption || post.cta}
-          visualSuggestion={post.visual_suggestion} category={post.category} tone={post.tone} cta={post.cta}
+        <PosterPanel
+          dayDate={dayDate} postNumber={post.post_number}
+          visualSuggestion={post.visual_suggestion} caption={caption || post.cta} cta={post.cta}
           onPosterChange={p => { setPosterId(p?.poster_id || null); if (p) setActionTab('publish'); }}
         />
       </div>
@@ -521,7 +521,7 @@ export function RelocationCalendarPage() {
               <div className={s?.progressBarWrap}><div className={s?.progressBarFill} style={{ width: `${progressPct}%` }} /></div>
               <span className={s?.progressCount}>{days.length}/{totalDays} days</span>
               {lockedCount > 0 && <Badge variant="warning">🔒 {lockedCount} locked — upgrade to unlock</Badge>}
-              {/* {errorCount > 0 && (
+              {errorCount > 0 && (
                 <button
                   type="button"
                   className={s?.progressCount}
@@ -530,7 +530,7 @@ export function RelocationCalendarPage() {
                 >
                   {errorCount} failed {showFailureDetails ? '▲' : '▼ (why?)'}
                 </button>
-              )} */}
+              )}
             </div>
             {errorCount > 0 && showFailureDetails && (
               <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
