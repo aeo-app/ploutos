@@ -1017,19 +1017,31 @@ def save_poster(
     poster_id: str,
     day_date: str,
     post_number: int,
-    brand_template_id: str,
-    design_id: str,
-    edit_url: str,
-    thumbnail_url: str,
-    image_field_values: dict,
-    text_field_values: dict,
+    source: str = "openai",
+    poster_image_url: Optional[str] = None,
+    brand_template_id: Optional[str] = None,
+    design_id: Optional[str] = None,
+    edit_url: Optional[str] = None,
+    thumbnail_url: Optional[str] = None,
+    image_field_values: Optional[dict] = None,
+    text_field_values: Optional[dict] = None,
 ) -> None:
-    """Create (first generation) or overwrite (regeneration — same poster_id,
-    new design_id after re-running autofill with different images) a saved
-    poster record."""
+    """Create (first generation) or overwrite (regeneration, or an admin's
+    "edit in Canva" step updating the same poster_id with design_id/edit_url)
+    a saved poster record.
+
+    All the Canva-specific fields are optional now — the normal case
+    (source="openai") is just poster_image_url with nothing else, since
+    there is no Canva design involved at all for a poster that hasn't
+    been sent to Canva for editing. Uses preserve-on-None semantics for
+    every field below (matching the pattern in payments_dynamo.set_user_paid)
+    so the admin-only "edit in Canva" step, which only knows about the
+    Canva fields, doesn't have to re-supply (and can't accidentally wipe)
+    poster_image_url/caption/etc. it never touched.
+    """
     table = _get_table()
     now_iso = _now_iso()
-    existing = get_poster(user_id, poster_id)
+    existing = get_poster(user_id, poster_id) or {}
     item = {
         "PK": _pk(user_id),
         "SK": _poster_sk(poster_id),
@@ -1038,18 +1050,20 @@ def save_poster(
         "poster_id": poster_id,
         "day_date": day_date,
         "post_number": post_number,
-        "brand_template_id": brand_template_id,
-        "design_id": design_id,
-        "edit_url": edit_url,
-        "thumbnail_url": thumbnail_url,
-        "image_field_values": image_field_values,
-        "text_field_values": text_field_values,
-        "created_at": existing["created_at"] if existing else now_iso,
+        "source": source if source is not None else existing.get("source", "openai"),
+        "poster_image_url": poster_image_url if poster_image_url is not None else existing.get("poster_image_url"),
+        "brand_template_id": brand_template_id if brand_template_id is not None else existing.get("brand_template_id"),
+        "design_id": design_id if design_id is not None else existing.get("design_id"),
+        "edit_url": edit_url if edit_url is not None else existing.get("edit_url"),
+        "thumbnail_url": thumbnail_url if thumbnail_url is not None else existing.get("thumbnail_url"),
+        "image_field_values": image_field_values if image_field_values is not None else existing.get("image_field_values", {}),
+        "text_field_values": text_field_values if text_field_values is not None else existing.get("text_field_values", {}),
+        "created_at": existing.get("created_at", now_iso),
         "updated_at": now_iso,
     }
     try:
         table.put_item(Item=_to_dynamo(item))
-        logger.info(f"[dynamo] saved poster={poster_id} user={user_id} design={design_id}")
+        logger.info(f"[dynamo] saved poster={poster_id} user={user_id} source={item['source']}")
     except ClientError as e:
         logger.error(f"[dynamo] save_poster failed: {e.response['Error']}")
         raise

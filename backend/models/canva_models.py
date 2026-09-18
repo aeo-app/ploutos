@@ -65,10 +65,18 @@ class PosterResponse(BaseModel):
     poster_id: str
     day_date: str
     post_number: int
-    brand_template_id: str
-    design_id: str
-    edit_url: str
-    thumbnail_url: str
+    # "openai" (the normal case — a poster is just the generated image,
+    # no Canva design involved at all) or "canva" (an admin has since
+    # sent it to Canva for editing — see EditInCanvaRequest below).
+    source: str = "openai"
+    poster_image_url: Optional[str] = None
+    # Canva-specific fields — only populated once/if an admin has taken
+    # the "edit in Canva" step. All optional now, unlike before, since a
+    # poster no longer requires a Canva design to exist at all.
+    brand_template_id: Optional[str] = None
+    design_id: Optional[str] = None
+    edit_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
     image_field_values: dict = {}
     text_field_values: dict = {}
     created_at: Optional[str] = None
@@ -83,6 +91,29 @@ class ExportPosterResponse(BaseModel):
     export_urls: list[str]
 
 
+class GeneratePosterRequest(BaseModel):
+    """The new primary poster-generation request — no Canva Brand
+    Template, category/tone bias, or field values needed at all, since
+    the resulting OpenAI image IS the poster directly. Deliberately does
+    not change visual_suggestion's role or wording — it's still exactly
+    what drives what the poster looks like, just handed to a different
+    image-generation backend now (see services/openai_image_service.py).
+    """
+    day_date: str = Field(..., example="2026-09-03")
+    post_number: int = Field(..., ge=1, le=2)
+    visual_suggestion: str = Field(..., min_length=1, description="Used as the image generation prompt — unchanged in meaning, just now sent to OpenAI instead of Bedrock/Canva")
+    caption: str = Field("", description="Stored as metadata on the poster record — not burned into the image itself, since there is no text-overlay/autofill step in this flow")
+    cta: str = Field("", description="Same as caption — stored as metadata only")
+
+
+class EditInCanvaRequest(BaseModel):
+    """Admin-only: sends an existing, already-generated poster's image to
+    Canva for manual editing. Does not generate a new image — this is
+    strictly a follow-up step on a poster that already exists from
+    GeneratePosterRequest above."""
+    poster_id: str = Field(..., min_length=1)
+
+
 class AutoGeneratePosterRequest(BaseModel):
     """Fully automatic poster generation for one calendar post — no
     brand_template_id or field values required. The system picks a Brand
@@ -91,7 +122,13 @@ class AutoGeneratePosterRequest(BaseModel):
     the same template) and generates a genuinely new image from
     visual_suggestion via Bedrock, rather than reusing whatever image was
     manually uploaded last time. See services/canva_service.py's
-    select_template_for_post and services/image_generation_service.py."""
+    select_template_for_post and services/image_generation_service.py.
+
+    NOT the primary poster-generation path anymore — see
+    GeneratePosterRequest above, which is what the "Create Poster" button
+    now calls for every user. Left in place, unused by the new flow,
+    rather than deleted, in case anything else still depends on this
+    Brand-Template-driven mechanism specifically."""
     day_date: str = Field(..., example="2026-09-03")
     post_number: int = Field(..., ge=1, le=2)
     visual_suggestion: str = Field(..., min_length=1, description="Used as the image generation prompt — this is what drives what the poster actually looks like")

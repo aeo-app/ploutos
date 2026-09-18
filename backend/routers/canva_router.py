@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
-from core.security import get_current_user_id
+from core.security import get_current_user_id, require_admin
 from db import (
     get_canva_connection,
     get_canva_pkce,
@@ -38,7 +38,9 @@ from models.canva_models import (
     CanvaConnectResponse,
     CanvaStatusResponse,
     CreatePosterRequest,
+    EditInCanvaRequest,
     ExportPosterResponse,
+    GeneratePosterRequest,
     PosterListResponse,
     PosterResponse,
     RegeneratePosterRequest,
@@ -47,6 +49,7 @@ from services.canva_service import (
     CanvaError,
     build_authorize_url,
     create_autofill_job,
+    create_design_with_asset,
     create_export_job,
     exchange_code_for_tokens,
     generate_pkce_pair,
@@ -59,6 +62,9 @@ from services.canva_service import (
     upload_asset_from_url,
 )
 from services.image_generation_service import ImageGenerationError, generate_image_from_prompt
+from services.media_upload_service import upload_image
+from services.openai_image_service import OpenAIImageError
+from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/canva", tags=["Canva"])
@@ -79,10 +85,12 @@ def _record_to_poster_response(item: dict) -> PosterResponse:
         poster_id=item["poster_id"],
         day_date=item["day_date"],
         post_number=item["post_number"],
-        brand_template_id=item["brand_template_id"],
-        design_id=item["design_id"],
-        edit_url=item["edit_url"],
-        thumbnail_url=item["thumbnail_url"],
+        source=item.get("source", "openai"),
+        poster_image_url=item.get("poster_image_url"),
+        brand_template_id=item.get("brand_template_id"),
+        design_id=item.get("design_id"),
+        edit_url=item.get("edit_url"),
+        thumbnail_url=item.get("thumbnail_url"),
         image_field_values=item.get("image_field_values", {}),
         text_field_values=item.get("text_field_values", {}),
         created_at=item.get("created_at"),
@@ -400,6 +408,96 @@ async def create_poster(req: CreatePosterRequest, user_id: str = Depends(get_cur
 )
 async def auto_generate_poster(req: AutoGeneratePosterRequest, user_id: str = Depends(get_current_user_id)):
     return await _auto_generate_poster(user_id, req)
+
+
+@router.post(
+    "/posters/generate",
+    response_model=PosterResponse,
+    summary="Generate a poster via OpenAI — the primary poster-generation path for every user, no Canva involved",
+)
+async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get_current_user_id)):
+    """
+    The new "Create Poster" button's actual target. Generates one image
+    from `visual_suggestion` (unchanged in meaning — still exactly what
+    drives what the poster looks like) via OpenAI, stores it directly
+    (no Canva design, autofill, or template involved at all), and saves
+    a poster record with source="openai".
+
+    Deliberately on-demand only — nothing calls this automatically when
+    a calendar is created; it only runs when this endpoint is actually
+    hit, i.e. when the user clicks "Create Poster" for one specific day.
+    """
+    try:
+        image_bytes = generate_image_via_openai(req.visual_suggestion, width=1080, height=1080)
+    except OpenAIImageError as e:
+        raise HTTPException(status_code=502, detail=f"Could not generate an image for this poster: {e}")
+
+    try:
+        image_url = upload_image(image_bytes, filename=f"{req.day_date}-post{req.post_number}.png", user_id=user_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Generated the image but could not store it: {e}")
+
+    # Same poster_id for the same day/post across regenerations (matches
+    # the existing Canva-autofill path's behavior) — a repeat "Create
+    # Poster" click on a day that already has one overwrites it rather
+    # than accumulating duplicate poster records.
+    existing = next(
+        (p for p in list_posters(user_id) if p.get("day_date") == req.day_date and p.get("post_number") == req.post_number),
+        None,
+    )
+    poster_id = existing["poster_id"] if existing else str(uuid.uuid4())
+
+    save_poster(
+        user_id=user_id, poster_id=poster_id, day_date=req.day_date, post_number=req.post_number,
+        source="openai", poster_image_url=image_url,
+        # Explicitly clear any Canva fields from a PREVIOUS "edit in
+        # Canva" pass on this exact poster_id — a freshly (re)generated
+        # OpenAI image invalidates whatever design was built from the old
+        # one, so the stale edit_url/design_id shouldn't linger and look
+        # current when they no longer reflect this image at all.
+        brand_template_id="", design_id="", edit_url="", thumbnail_url="",
+    )
+    logger.info(f"[canva] generated poster {poster_id} via OpenAI for user={user_id}, day={req.day_date} post={req.post_number}")
+    return _record_to_poster_response(get_poster(user_id, poster_id))
+
+
+@router.post(
+    "/posters/edit-in-canva",
+    response_model=PosterResponse,
+    summary="Admin-only: send an already-generated poster's image to Canva for manual editing",
+)
+async def edit_poster_in_canva(req: EditInCanvaRequest, admin_id: str = Depends(require_admin)):
+    """
+    The only way Canva re-enters the picture at all now — takes a poster
+    that already has an OpenAI-generated image (from generate_poster
+    above) and hands that image to Canva as a genuinely editable design,
+    rather than generating anything new. Admin-only: require_admin is the
+    same DynamoDB-backed role check used throughout routers/admin_router.py.
+
+    Uses create_design_with_asset (a plain design with the image dropped
+    in), not Autofill — Autofill needs a pre-built Brand Template with
+    matching data fields, which doesn't fit "edit this one already-
+    finished image freely" at all.
+    """
+    poster = get_poster(admin_id, req.poster_id)
+    if not poster:
+        raise HTTPException(status_code=404, detail=f"No poster found with id '{req.poster_id}' for this account.")
+    if not poster.get("poster_image_url"):
+        raise HTTPException(status_code=422, detail="This poster has no generated image yet — create it first, then edit in Canva.")
+
+    token = _get_valid_access_token(admin_id)
+    try:
+        asset_id = upload_asset_from_url(token, poster["poster_image_url"], name=f"poster-{req.poster_id}.png")
+        design = create_design_with_asset(token, asset_id, title=f"Poster — {poster['day_date']} #{poster['post_number']}")
+    except CanvaError as e:
+        raise HTTPException(status_code=502, detail=f"Could not open this poster in Canva: {e}")
+
+    save_poster(
+        user_id=admin_id, poster_id=req.poster_id, day_date=poster["day_date"], post_number=poster["post_number"],
+        source="canva", design_id=design["design_id"], edit_url=design["edit_url"], thumbnail_url=design["thumbnail_url"],
+    )
+    logger.info(f"[canva] admin={admin_id} sent poster {req.poster_id} to Canva for editing, design={design['design_id']}")
+    return _record_to_poster_response(get_poster(admin_id, req.poster_id))
 
 
 @router.post(

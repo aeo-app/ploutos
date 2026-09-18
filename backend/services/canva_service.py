@@ -218,6 +218,44 @@ def upload_asset_from_url(access_token: str, image_url: str, name: str) -> str:
     return upload_asset_from_bytes(access_token, img_resp.content, name)
 
 
+# ── Designs ──────────────────────────────────────────────────────────────────
+def create_design_with_asset(access_token: str, asset_id: str, title: str) -> dict:
+    """Creates a new, blank Canva design pre-populated with `asset_id` as
+    its starting image — this (not Autofill/Brand Templates) is the
+    actual mechanism behind the admin-only "edit in Canva" step: take an
+    already-generated poster image, hand it to Canva as a genuinely
+    editable design, and return the edit_url so the admin can open it.
+
+    Uses Canva's real "type_and_asset" design-creation shape (POST
+    /v1/designs — verified directly against Canva's own API reference),
+    NOT Autofill: Autofill requires a pre-built Brand Template with
+    matching data fields, which is the wrong model for "here's one
+    already-finished image, let an admin edit it freely" — a plain design
+    with the image dropped in is what actually gives an editable canvas
+    with no template constraints. 1080x1080 (a typical social-post size)
+    is well within Canva's allowed custom-design range (40-8000px per
+    side, max 25,000,000px² total).
+
+    Note: per Canva's docs, a blank design created this way is permanently
+    deleted (bypassing trash) if no one edits it within 7 days — worth
+    knowing if an admin generates one and doesn't get to it in time.
+    """
+    body = {
+        "type": "type_and_asset",
+        "design_type": {"type": "custom", "width": 1080, "height": 1080},
+        "asset_id": asset_id,
+        "title": title,
+    }
+    data = _request(access_token, "POST", "/designs", json=body)
+    design = data.get("design", {})
+    urls = design.get("urls", {})
+    return {
+        "design_id": design.get("id", ""),
+        "edit_url": urls.get("edit_url", ""),
+        "thumbnail_url": (design.get("thumbnail") or {}).get("url", ""),
+    }
+
+
 # ── Autofill ─────────────────────────────────────────────────────────────────
 def create_autofill_job(access_token: str, brand_template_id: str, data: dict) -> str:
     """

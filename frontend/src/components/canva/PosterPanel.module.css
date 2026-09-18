@@ -1,0 +1,26 @@
+.panel { margin-top: 14px; padding: 14px; border: 1.5px dashed var(--c-slate-200); border-radius: var(--r-md); background: var(--c-slate-50); }
+.checking { font-size: 12.5px; color: var(--c-slate-400); padding: 10px 0; }
+
+.emptyState { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.createBtn {
+  border: none; background: var(--grad-brand); color: white; font-weight: 700; font-size: 12.5px;
+  padding: 10px 16px; border-radius: var(--r-md); cursor: pointer;
+}
+.createBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.hint { font-size: 11px; line-height: 1.5; color: var(--c-slate-400); margin: 0; }
+
+.errorBox {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--r-md); background: var(--c-red-50, #fef2f2);
+  border: 1px solid var(--c-red-200, #fecaca); color: var(--c-red-700, #b91c1c); font-size: 12px;
+}
+
+.result { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.image { width: 160px; height: 160px; object-fit: cover; border-radius: var(--r-md); border: 1px solid var(--c-slate-200); background: var(--c-slate-100); }
+.actions { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 160px; }
+.secondaryBtn {
+  border: 1.5px solid var(--c-slate-200); background: var(--c-white); color: var(--c-slate-600);
+  font-weight: 700; font-size: 12.5px; padding: 8px 14px; border-radius: var(--r-md); cursor: pointer;
+  text-align: center; text-decoration: none; display: inline-block;
+}
+.secondaryBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.secondaryBtn:hover:not(:disabled) { border-color: var(--c-indigo-400); color: var(--c-indigo-600); }

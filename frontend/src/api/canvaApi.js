@@ -73,6 +73,12 @@ export const canvaApi = {
   createPoster: (req) => post("/canva/posters", req),
   /** @param {object} req - {day_date, post_number, visual_suggestion, caption, cta?, category?, tone?} - no template/image selection needed, the backend picks a template and generates a unique image */
   autoGeneratePoster: (req) => post("/canva/posters/auto-generate", req),
+  // The new primary path — no Canva connection required at all for this
+  // one, since generate_poster (backend) never touches Canva.
+  generatePoster: (req) => post("/canva/posters/generate", req),
+  // Admin-only on the backend (returns 403 for anyone else) — sends an
+  // already-generated poster's image to Canva as an editable design.
+  editInCanva: (posterId) => post("/canva/posters/edit-in-canva", { poster_id: posterId }),
   /** @param {object} req - {text_fields, image_urls, image_asset_ids} — only send what's changing */
   regeneratePoster: (posterId, req) => post(`/canva/posters/${encodeURIComponent(posterId)}/regenerate`, req),
   listPosters: () => get("/canva/posters"),
