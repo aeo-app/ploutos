@@ -1,17 +1,20 @@
 {
   "files": {
     "main.css": "/static/css/main.534036b7.css",
-    "main.js": "/static/js/main.1bbc5f8a.js",
-    "static/media/post-1.md": "/static/media/post-1.f07d11982a8833ddfbfa.md",
-    "static/media/post-2.md": "/static/media/post-2.6d5036bbae4c22e9fd3d.md",
+    "main.js": "/static/js/main.22c225d9.js",
+    "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.c7a4162b412a721aa542.md",
+    "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.842452c784460c69a967.md",
+    "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.33c0cf17514f140f3be3.md",
     "static/media/aeo-vs-seo-vs-geo-the-complete-guide.md": "/static/media/aeo-vs-seo-vs-geo-the-complete-guide.9d98a24759faa81bebb2.md",
-    "static/media/post-3.md": "/static/media/post-3.17f24f0fe8b22ca02725.md",
+    "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.1d2fc5cc59fc0a696fab.md",
+    "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.bde6d124e5b20ae60080.md",
+    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.b8ed1b5d22ab0990e5a2.md",
     "index.html": "/index.html",
     "main.534036b7.css.map": "/static/css/main.534036b7.css.map",
-    "main.1bbc5f8a.js.map": "/static/js/main.1bbc5f8a.js.map"
+    "main.22c225d9.js.map": "/static/js/main.22c225d9.js.map"
   },
   "entrypoints": [
     "static/css/main.534036b7.css",
-    "static/js/main.1bbc5f8a.js"
+    "static/js/main.22c225d9.js"
   ]
 }
