@@ -21,6 +21,7 @@ const PLATFORMS = [
   { id: 'facebook', label: 'Facebook' },
   { id: 'linkedin', label: 'LinkedIn' },
   { id: 'google_business', label: 'Google Business' },
+  { id: 'youtube', label: 'YouTube' },
 ];
 
 const TONE_VARIANT = { emotional: 'danger', professional: 'info', educational: 'brand', storytelling: 'warning' };

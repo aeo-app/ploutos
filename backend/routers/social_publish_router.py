@@ -73,6 +73,7 @@ from services.media_upload_service import MediaUploadError, upload_image
 from services.social_publish import google_business_service as gbp
 from services.social_publish import linkedin_service as li
 from services.social_publish import meta_service as meta
+from services.social_publish import youtube_service as yt
 from services.social_publish.publish_service import PLATFORM_LABELS, publish_to_platforms
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ router = APIRouter(prefix="/api/v1/social-publish", tags=["Social Publishing"])
 async def status(user_id: str = Depends(get_current_user_id)):
     connections = {c["platform"]: c for c in list_social_connections(user_id)}
     platforms = []
-    for platform in ("facebook", "instagram", "linkedin", "google_business"):
+    for platform in ("facebook", "instagram", "linkedin", "google_business", "youtube"):
         conn = connections.get(platform)
         platforms.append(SocialPlatformStatus(
             platform=platform,
@@ -245,6 +246,48 @@ async def google_business_callback(
         return _redirect_result("connected")
     except Exception as e:
         logger.error(f"[social-publish] Google Business OAuth callback failed: {e}", exc_info=True)
+        return _redirect_result("error", reason=str(e))
+
+
+# ── YouTube ──────────────────────────────────────────────────────────────────
+@router.get("/youtube/connect", response_model=ConnectResponse, summary="Get the YouTube (Google) authorize URL")
+async def youtube_connect(user_id: str = Depends(get_current_user_id)):
+    state = f"{user_id}:{secrets.token_urlsafe(24)}"
+    return ConnectResponse(authorize_url=yt.build_authorize_url(state))
+
+
+@router.get("/youtube/callback", summary="YouTube OAuth redirect target")
+async def youtube_callback(
+    code: str | None = Query(None), state: str | None = Query(None),
+    error: str | None = Query(None), error_description: str | None = Query(None),
+):
+    if error or not code or not state:
+        logger.warning(
+            f"[social-publish] YouTube callback incomplete or errored: error={error!r}, "
+            f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
+        )
+        return _redirect_result("error", reason=error_description or "Missing code or state from Google")
+    user_id, sep, _ = state.partition(":")
+    if not sep or not user_id:
+        return _redirect_result("error", reason="Malformed state parameter")
+
+    is_invite, invite_token = _is_invite_state(state)
+    if is_invite:
+        return await _handle_youtube_invite_callback(invite_token, code)
+
+    try:
+        tokens = yt.exchange_code_for_token(code)
+        access_token = tokens["access_token"]
+
+        channel = yt.get_own_channel(access_token)
+        save_social_connection(
+            user_id=user_id, platform="youtube", access_token=access_token,
+            refresh_token=tokens.get("refresh_token", ""),
+            extra={"channel_id": channel["channel_id"], "label": channel["title"]},
+        )
+        return _redirect_result("connected")
+    except Exception as e:
+        logger.error(f"[social-publish] YouTube OAuth callback failed: {e}", exc_info=True)
         return _redirect_result("error", reason=str(e))
 
 # Absolute URL, not a relative path — a relative "/" redirect only lands on
@@ -459,6 +502,8 @@ async def invite_connect(invite_token: str, connect_group: str):
         return ConnectResponse(authorize_url=li.build_authorize_url(state))
     elif connect_group == "google_business":
         return ConnectResponse(authorize_url=gbp.build_authorize_url(state))
+    elif connect_group == "youtube":
+        return ConnectResponse(authorize_url=yt.build_authorize_url(state))
     raise HTTPException(status_code=422, detail=f"Unknown connect_group: {connect_group!r}")
 
 
@@ -559,6 +604,35 @@ async def _handle_linkedin_invite_callback(invite_token: str, code: str):
         return _invite_redirect(invite_token)
     except Exception as e:
         logger.error(f"[social-publish] invite {invite_token} LinkedIn callback failed: {e}", exc_info=True)
+        return _invite_redirect(invite_token, error=True)
+
+
+async def _handle_youtube_invite_callback(invite_token: str, code: str):
+    """Same no-picker shape as LinkedIn's handler above — a Google
+    account has one YouTube channel in the vast majority of cases (unlike
+    Business Profile locations, which are commonly plural), so there's
+    nothing to choose between; identifying the channel IS the connection."""
+    invite = get_page_invite(invite_token)
+    if not invite or invite["status"] != "pending":
+        return _invite_redirect(invite_token, error=True)
+    try:
+        tokens = yt.exchange_code_for_token(code)
+        access_token = tokens["access_token"]
+        channel = yt.get_own_channel(access_token)
+
+        save_social_connection(
+            user_id=invite["requested_by_user_id"], platform="youtube", access_token=access_token,
+            refresh_token=tokens.get("refresh_token", ""),
+            extra={"channel_id": channel["channel_id"], "label": channel["title"]},
+        )
+        update_page_invite(
+            invite_token, status="approved",
+            selected_page={"id": channel["channel_id"], "label": channel["title"]},
+        )
+        logger.info(f"[social-publish] invite {invite_token} approved: YouTube channel connected to user {invite['requested_by_user_id']}")
+        return _invite_redirect(invite_token)
+    except Exception as e:
+        logger.error(f"[social-publish] invite {invite_token} YouTube callback failed: {e}", exc_info=True)
         return _invite_redirect(invite_token, error=True)
 
 

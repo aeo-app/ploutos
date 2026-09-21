@@ -8,6 +8,12 @@ const PLATFORM_META = {
   instagram: { label: 'Instagram', icon: '📷', connectGroup: 'meta' },
   linkedin: { label: 'LinkedIn (personal profile)', icon: '💼', connectGroup: 'linkedin' },
   google_business: { label: 'Google Business', icon: '📍', connectGroup: 'google_business' },
+  // YouTube has no API for posting a plain image — a poster is
+  // automatically wrapped into a short, silent video and uploaded as a
+  // YouTube Short (see services/social_publish/youtube_service.py on
+  // the backend). Not in SCHEDULABLE_PLATFORMS below, same as LinkedIn
+  // and Google Business — immediate-publish only for now.
+  youtube: { label: 'YouTube (posted as a Short)', icon: '▶️', connectGroup: 'youtube' },
 };
 const SCHEDULABLE_PLATFORMS = new Set(['facebook', 'instagram']);
 

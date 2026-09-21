@@ -19,12 +19,14 @@ from db import get_social_connection, mark_connection_needs_reconnect
 from services.social_publish import google_business_service as gbp
 from services.social_publish import linkedin_service as li
 from services.social_publish import meta_service as meta
+from services.social_publish import youtube_service as yt
 
 logger = logging.getLogger(__name__)
 
 PLATFORM_LABELS = {
     "facebook": "Facebook", "instagram": "Instagram",
     "linkedin": "LinkedIn", "google_business": "Google Business Profile",
+    "youtube": "YouTube",
 }
 
 
@@ -39,7 +41,9 @@ def _is_auth_failure(platform: str, exc: Exception) -> bool:
               401, so checking status code alone would miss most of these.
               The code appears in the raw error text regardless of status.
       LinkedIn: HTTP 401 specifically for an expired/invalid/revoked token.
-      Google:   HTTP 401, or invalid_grant on a refresh_token that's been revoked.
+      Google:   HTTP 401, or invalid_grant on a refresh_token that's been
+                revoked — same signature for Google Business AND YouTube,
+                since both are standard Google OAuth2 tokens.
     """
     text = str(exc)
     status_code = getattr(exc, "status_code", None)
@@ -48,29 +52,33 @@ def _is_auth_failure(platform: str, exc: Exception) -> bool:
         return '"code": 190' in text or "code\":190" in text or "OAuthException" in text
     if platform == "linkedin":
         return status_code == 401
-    if platform == "google_business":
+    if platform in ("google_business", "youtube"):
         return status_code == 401 or "invalid_grant" in text.lower()
     return False
 
 
-def _get_valid_google_token(user_id: str, conn: dict) -> str:
+def _get_valid_google_token(user_id: str, platform: str, conn: dict) -> str:
     """Google access tokens are short-lived (~1hr) — refresh if we have a
     refresh_token, since a post might get published well after connecting,
-    or a SCHEDULED post might fire hours/days after the token was issued."""
+    or a SCHEDULED post might fire hours/days after the token was issued.
+    Shared between Google Business Profile and YouTube — both are
+    standard Google OAuth2 tokens refreshed the exact same way, just
+    against each service's own stored connection record."""
     from db import save_social_connection
 
     if not conn.get("refresh_token"):
         return conn["access_token"]
     try:
-        refreshed = gbp.refresh_access_token(conn["refresh_token"])
+        refresher = gbp.refresh_access_token if platform == "google_business" else yt.refresh_access_token
+        refreshed = refresher(conn["refresh_token"])
         new_token = refreshed["access_token"]
         save_social_connection(
-            user_id=user_id, platform="google_business", access_token=new_token,
+            user_id=user_id, platform=platform, access_token=new_token,
             refresh_token=conn["refresh_token"], extra=conn.get("extra", {}),
         )
         return new_token
     except Exception as e:
-        logger.warning(f"[social-publish] Google token refresh failed, trying existing token anyway: {e}")
+        logger.warning(f"[social-publish] Google token refresh failed for platform={platform}, trying existing token anyway: {e}")
         return conn["access_token"]
 
 
@@ -95,10 +103,21 @@ def publish_to_platform(user_id: str, platform: str, image_url: str, caption: st
             image_urn = li.upload_image(conn["access_token"], conn["extra"]["person_urn"], image_bytes)
             post_id = li.create_post(conn["access_token"], conn["extra"]["person_urn"], caption, image_urn)
         elif platform == "google_business":
-            token = _get_valid_google_token(user_id, conn)
+            token = _get_valid_google_token(user_id, "google_business", conn)
             post_id = gbp.create_local_post(
                 token, conn["extra"]["account_id"], conn["extra"]["location_id"], caption, image_url, cta_url=cta_url,
             )
+        elif platform == "youtube":
+            token = _get_valid_google_token(user_id, "youtube", conn)
+            image_bytes = requests.get(image_url, timeout=30).content
+            video_bytes = yt.generate_short_video_from_image(image_bytes)
+            # YouTube has no separate "caption" field the way an image
+            # post does — the caption becomes the video's description,
+            # and its first line (or a truncated version of the whole
+            # thing) doubles as the title, since a title is required and
+            # a calendar post was never written with one in mind.
+            title = (caption.strip().splitlines() or [caption])[0][:100] or "New post"
+            post_id = yt.upload_video(token, video_bytes, title=title, description=caption)
         else:
             raise ValueError(f"Unhandled platform: {platform}")
 
