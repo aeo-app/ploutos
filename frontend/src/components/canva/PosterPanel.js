@@ -83,7 +83,7 @@ export function PosterPanel({ dayDate, postNumber, visualSuggestion, caption, ct
           <button type="button" className={s.createBtn} onClick={handleGenerate} disabled={generating}>
             {generating ? 'Generating…' : '🖼️ Create Poster'}
           </button>
-          <p className={s.hint}>Generates an image from this post's visual suggestion — nothing is created until you click.</p>
+          <p className={s.hint}>Generates an image from this post's visual suggestion.</p>
         </div>
       )}
 
