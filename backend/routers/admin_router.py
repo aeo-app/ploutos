@@ -411,7 +411,7 @@ from datetime import datetime as _datetime, timezone as _timezone
 async def user_social_status(user_id: str, admin_id: str = Depends(require_admin)):
     connections = {c["platform"]: c for c in _list_social_connections(user_id)}
     platforms = []
-    for platform in ("facebook", "instagram", "linkedin", "google_business"):
+    for platform in ("facebook", "instagram", "linkedin", "google_business", "youtube"):
         conn = connections.get(platform)
         platforms.append(SocialPlatformStatus(
             platform=platform, connected=conn is not None,

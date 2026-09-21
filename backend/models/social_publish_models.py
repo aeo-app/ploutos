@@ -45,7 +45,7 @@ class _ImageSourceMixin(BaseModel):
 
 class PublishRequest(_ImageSourceMixin):
     caption: str = Field(..., min_length=1)
-    platforms: list[str] = Field(..., min_length=1, example=["facebook", "instagram", "linkedin", "google_business"])
+    platforms: list[str] = Field(..., min_length=1, example=["facebook", "instagram", "linkedin", "google_business", "youtube"])
     cta_url: Optional[str] = Field(None, description="Used for Google Business Profile's 'Learn more' button, if provided")
     day_date: Optional[str] = Field(None, description="Which calendar day this belongs to, if posting from a specific day's card — defaults to today if not given")
     post_number: Optional[int] = Field(None, description="Which of that day's posts (1 or 2) this is, if posting from a specific post card — lets the calendar UI match this history record back to the exact post it came from")
@@ -114,7 +114,7 @@ class CancelScheduledPostResponse(BaseModel):
 # See db/dynamo.py's page-invite section for the full architectural
 # rationale — the person approving one of these may have no account on
 # this platform at all.
-INVITABLE_CONNECT_GROUPS = {"meta", "linkedin", "google_business"}
+INVITABLE_CONNECT_GROUPS = {"meta", "linkedin", "google_business", "youtube"}
 
 
 class CreateInviteRequest(BaseModel):

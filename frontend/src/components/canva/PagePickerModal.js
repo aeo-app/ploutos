@@ -6,6 +6,7 @@ const PLATFORM_META = {
   meta: { label: 'Facebook & Instagram', icon: '📘' },
   linkedin: { label: 'LinkedIn', icon: '💼' },
   google_business: { label: 'Google Business Profile', icon: '📍' },
+  youtube: { label: 'YouTube', icon: '▶️' },
 };
 
 /**

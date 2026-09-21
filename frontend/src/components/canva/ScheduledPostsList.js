@@ -3,9 +3,9 @@ import { rememberPageBeforeOAuthRedirect } from '../../utils/oauthReturn';
 import { useApp } from '../../context/AppContext';
 import s from './ScheduledPostsList.module.css';
 
-const PLATFORM_ICON = { facebook: '📘', instagram: '📷', linkedin: '💼', google_business: '📍' };
-const PLATFORM_NAME = { facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn', google_business: 'Google Business' };
-const CONNECT_GROUP = { facebook: 'meta', instagram: 'meta', linkedin: 'linkedin', google_business: 'google_business' };
+const PLATFORM_ICON = { facebook: '📘', instagram: '📷', linkedin: '💼', google_business: '📍', youtube: '▶️' };
+const PLATFORM_NAME = { facebook: 'Facebook', instagram: 'Instagram', linkedin: 'LinkedIn', google_business: 'Google Business', youtube: 'YouTube' };
+const CONNECT_GROUP = { facebook: 'meta', instagram: 'meta', linkedin: 'linkedin', google_business: 'google_business', youtube: 'youtube' };
 const STATUS_LABEL = {
   pending: 'Scheduled', posted: 'Posted', partial: 'Partially posted', failed: 'Failed', cancelled: 'Cancelled',
 };

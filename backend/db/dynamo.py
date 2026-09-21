@@ -674,7 +674,7 @@ def delete_canva_connection(user_id: str) -> None:
 # a Google Business account/location name). `extra` carries those
 # platform-specific fields — see services/social_publish/*.py for what
 # each platform stores there. ───────────────────────────────────────────────
-VALID_SOCIAL_PLATFORMS = {"facebook", "instagram", "linkedin", "google_business"}
+VALID_SOCIAL_PLATFORMS = {"facebook", "instagram", "linkedin", "google_business", "youtube"}
 
 
 def _social_connection_sk(platform: str) -> str:

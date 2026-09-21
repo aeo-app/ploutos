@@ -49,7 +49,7 @@ async function uploadReq(path, file) {
 
 export const socialPublishApi = {
   status: () => req("GET", "/social-publish/status"),
-  /** @param {'meta'|'linkedin'|'google_business'} platform - "meta" covers both Facebook + Instagram in one OAuth flow */
+  /** @param {'meta'|'linkedin'|'google_business'|'youtube'} platform - "meta" covers both Facebook + Instagram in one OAuth flow */
   connect: (platform) => req("GET", `/social-publish/${platform}/connect`),
   disconnect: (platform) => req("POST", `/social-publish/${platform}/disconnect`),
   /** @param {File} file - a browser File object, e.g. from an <input type="file"> */
@@ -67,7 +67,7 @@ export const socialPublishApi = {
   // ── Page connection invitations ──────────────────────────────────────────
   // Meta direct connections use the server-backed Page picker. The other
   // connect groups can still be sent to an external page administrator.
-  /** @param {object} payload - {connect_group: 'meta'|'linkedin'|'google_business', label?} */
+  /** @param {object} payload - {connect_group: 'meta'|'linkedin'|'google_business'|'youtube', label?} */
   createInvite: (payload) => req("POST", "/social-publish/invites", payload),
   listInvites: () => req("GET", "/social-publish/invites"),
 };
