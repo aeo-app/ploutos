@@ -1,11 +1,8 @@
 ---
 meta_title: "How ChatGPT, Perplexity, and Gemini Choose What to Recommend"
 meta_description: "Learn how AI answer engines like ChatGPT, Perplexity, and Gemini recommend businesses, and discover the 5 technical AEO factors keeping your site visible."
-<<<<<<< HEAD
 featured_image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&q=80"
 date: "2026-09-15"
-=======
->>>>>>> release/version15
 ---
 
 # How ChatGPT, Perplexity, and Gemini Actually Choose What to Recommend

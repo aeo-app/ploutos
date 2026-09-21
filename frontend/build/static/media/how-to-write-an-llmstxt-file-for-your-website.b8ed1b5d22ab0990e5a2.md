@@ -1,11 +1,8 @@
 ---
 meta_title: "How to Write an llms.txt File for Your Website"
 meta_description: "Learn what an llms.txt file is, why businesses use it for AI search optimization, where to place it, and how to avoid setup errors."
-<<<<<<< HEAD
 featured_image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&q=80"
 date: "2026-09-15"
-=======
->>>>>>> release/version15
 ---
 
 # How to Write an llms.txt File for Your Website

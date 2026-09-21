@@ -432,17 +432,17 @@ export function ContentStrategyResultView({ result }) {
             onUnlock={() => {}} // read-only history snapshot — re-run the analysis with an active plan to unlock fresh
             progress={slot.locked ? {
               status: 'locked',
-              previewText: slot?.preview_text,
+              previewText: slot.preview_text,
             } : {
               status: 'ready',
               analysis: {
-                top_competitors: slot?.report?.top_competitors,
-                content_strategy_analysis: slot?.report?.content_strategy_analysis,
-                seo_factor_analysis: slot?.report?.seo_factor_analysis,
-                ranking_explanation: slot?.report?.ranking_explanation,
+                top_competitors: slot.report.top_competitors,
+                content_strategy_analysis: slot.report.content_strategy_analysis,
+                seo_factor_analysis: slot.report.seo_factor_analysis,
+                ranking_explanation: slot.report.ranking_explanation,
               },
-              backlinkDeepDive: slot?.report?.backlink_deep_dive,
-              report: slot?.report,
+              backlinkDeepDive: slot.report.backlink_deep_dive,
+              report: slot.report,
             }}
           />
         ))}
