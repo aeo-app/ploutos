@@ -68,7 +68,6 @@ from models.social_publish_models import (
     SocialPlatformStatus,
     UploadMediaResponse,
 )
-from services.canva_service import create_export_job, poll_export_job
 from services.media_upload_service import MediaUploadError, upload_image
 from services.social_publish import google_business_service as gbp
 from services.social_publish import linkedin_service as li
@@ -311,30 +310,35 @@ def _redirect_result(result: str, reason: str | None = None):
     return RedirectResponse(url=url)
 
 
-# ── Resolving an image source (Canva poster OR a direct upload) ────────────
+# ── Resolving an image source (a generated poster OR a direct upload) ──────
 def _resolve_image_url(user_id: str, poster_id: str | None, image_url: str | None) -> str:
     """Every publish/schedule request carries exactly one image source
     (enforced by models.social_publish_models._ImageSourceMixin). A direct
-    image_url is used as-is; a poster_id triggers a fresh Canva export so
-    edits made since the poster was first created are included."""
+    image_url is used as-is; a poster_id resolves to that poster's own
+    poster_image_url.
+
+    Does NOT call Canva's export API here anymore. That used to be
+    unconditional, back when every poster was necessarily a Canva
+    autofill design — but a poster's source is now most commonly
+    "openai" (see routers/canva_router.py's generate_poster), with no
+    design_id at all, so calling create_export_job on it failed outright
+    ('design_id' must not be blank). More importantly, it's now also
+    unnecessary for a poster that DOES have a Canva design: an admin's
+    edits made in Canva only ever reach the app via the explicit
+    sync-from-canva step (routers/canva_router.py's
+    sync_poster_from_canva), which updates poster_image_url directly —
+    so that field is already the correct, current image either way, and
+    publish/schedule never needs to reach into Canva at all.
+    """
     if image_url:
         return image_url
 
     poster = get_poster(user_id, poster_id)
     if not poster:
         raise HTTPException(status_code=404, detail=f"Poster {poster_id} not found")
-    try:
-        from routers.canva_router import _get_valid_access_token as _get_canva_token
-        canva_token = _get_canva_token(user_id)
-        job_id = create_export_job(canva_token, poster["design_id"], export_format="png")
-        export_urls = poll_export_job(canva_token, job_id)
-        if not export_urls:
-            raise HTTPException(status_code=502, detail="Canva export produced no file")
-        return export_urls[0]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Could not export the poster from Canva: {e}")
+    if not poster.get("poster_image_url"):
+        raise HTTPException(status_code=422, detail=f"Poster {poster_id} has no generated image yet.")
+    return poster["poster_image_url"]
 
 
 # ── Direct image upload (a user's own poster, not created via Canva) ───────

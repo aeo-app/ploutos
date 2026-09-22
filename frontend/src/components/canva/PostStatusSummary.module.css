@@ -5,7 +5,7 @@
 .draftBadge { font-size: 12px; font-weight: 600; color: var(--c-slate-400); }
 
 .mainRow { display: flex; gap: 12px; align-items: flex-start; }
-.thumb { width: 56px; height: 56px; object-fit: cover; border-radius: var(--r-sm); border: 1px solid var(--c-slate-200); flex-shrink: 0; }
+.thumb { width: 56px; height: 56px; object-fit: contain; background: var(--c-slate-100); border-radius: var(--r-sm); border: 1px solid var(--c-slate-200); flex-shrink: 0; }
 .info { flex: 1; min-width: 0; }
 
 .statusLine { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }

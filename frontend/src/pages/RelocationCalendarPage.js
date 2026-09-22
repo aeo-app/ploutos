@@ -129,7 +129,7 @@ function PostCard({ post, dayDate, historyItems, socialApi }) {
         <PosterPanel
           dayDate={dayDate} postNumber={post.post_number}
           visualSuggestion={post.visual_suggestion} caption={caption || post.cta} cta={post.cta}
-          onPosterChange={p => { setPosterId(p?.poster_id || null); if (p) setActionTab('publish'); }}
+          onPosterChange={(p, meta) => { setPosterId(p?.poster_id || null); if (p && meta?.isNewCreation) setActionTab('publish'); }}
         />
       </div>
 

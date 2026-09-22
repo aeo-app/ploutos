@@ -14,6 +14,8 @@ import logging
 import os
 import secrets
 import uuid
+
+import requests
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -497,6 +499,64 @@ async def edit_poster_in_canva(req: EditInCanvaRequest, admin_id: str = Depends(
         source="canva", design_id=design["design_id"], edit_url=design["edit_url"], thumbnail_url=design["thumbnail_url"],
     )
     logger.info(f"[canva] admin={admin_id} sent poster {req.poster_id} to Canva for editing, design={design['design_id']}")
+    return _record_to_poster_response(get_poster(admin_id, req.poster_id))
+
+
+@router.post(
+    "/posters/sync-from-canva",
+    response_model=PosterResponse,
+    summary="Admin-only: pull the latest edited version of a poster back from Canva",
+)
+async def sync_poster_from_canva(req: EditInCanvaRequest, admin_id: str = Depends(require_admin)):
+    """
+    Canva's editor has no live sync or webhook back to this app — an
+    admin editing a design in the Canva tab that edit_poster_in_canva
+    opened doesn't automatically update anything here. This is the
+    explicit step that closes that loop: request an export of the
+    design's CURRENT state from Canva, download the result, and store it
+    as this poster's new image — the same way the original OpenAI image
+    was stored, so every other part of the app (publish, download) keeps
+    working on a single, ordinary poster_image_url with no special case
+    for "this one came from Canva."
+
+    Only meaningful on a poster that's actually been sent to Canva
+    (source == "canva", i.e. edit_poster_in_canva has run on it) — there
+    is nothing to sync back from otherwise.
+    """
+    poster = get_poster(admin_id, req.poster_id)
+    if not poster:
+        raise HTTPException(status_code=404, detail=f"No poster found with id '{req.poster_id}' for this account.")
+    if not poster.get("design_id"):
+        raise HTTPException(status_code=422, detail="This poster hasn't been sent to Canva yet — nothing to sync back.")
+
+    token = _get_valid_access_token(admin_id)
+    try:
+        job_id = create_export_job(token, poster["design_id"])
+        export_urls = poll_export_job(token, job_id)
+    except CanvaError as e:
+        raise HTTPException(status_code=502, detail=f"Could not export the edited design from Canva: {e}")
+    if not export_urls:
+        raise HTTPException(status_code=502, detail="Canva's export finished but returned no file.")
+
+    # Canva's export URLs are temporary — downloaded and re-stored in our
+    # own media storage immediately, same as every other image this app
+    # keeps, rather than pointing poster_image_url at a link that could
+    # expire later.
+    try:
+        exported_bytes = requests.get(export_urls[0], timeout=30).content
+        new_image_url = upload_image(exported_bytes, filename=f"{poster['day_date']}-post{poster['post_number']}-canva.png", user_id=admin_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Exported from Canva but could not save the result: {e}")
+
+    save_poster(
+        user_id=admin_id, poster_id=req.poster_id, day_date=poster["day_date"], post_number=poster["post_number"],
+        source="canva", poster_image_url=new_image_url,
+        # thumbnail_url previously pointed at a stale render from before
+        # this edit — clear it so nothing keeps showing an outdated
+        # preview now that poster_image_url itself is the fresh export.
+        thumbnail_url="",
+    )
+    logger.info(f"[canva] admin={admin_id} synced poster {req.poster_id} back from Canva design={poster['design_id']}")
     return _record_to_poster_response(get_poster(admin_id, req.poster_id))
 
 

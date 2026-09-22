@@ -284,7 +284,7 @@ export function SocialPublishPanel({ api, dayDate, postNumber, posterId, default
       <div className={s.sourceToggleRow}>
         {posterId && (
           <button type="button" className={`${s.toggleBtn} ${imageSource === 'poster' ? s.toggleBtnActive : ''}`} onClick={() => setImageSource('poster')}>
-            Use Canva poster
+            Use generated poster
           </button>
         )}
         <button type="button" className={`${s.toggleBtn} ${imageSource === 'upload' ? s.toggleBtnActive : ''}`} onClick={() => setImageSource('upload')}>

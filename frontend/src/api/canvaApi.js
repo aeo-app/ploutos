@@ -79,6 +79,10 @@ export const canvaApi = {
   // Admin-only on the backend (returns 403 for anyone else) — sends an
   // already-generated poster's image to Canva as an editable design.
   editInCanva: (posterId) => post("/canva/posters/edit-in-canva", { poster_id: posterId }),
+  // Admin-only on the backend - pulls the current exported state of a
+  // design back from Canva into the app, since Canva's editor has no
+  // live sync/webhook of its own.
+  syncFromCanva: (posterId) => post("/canva/posters/sync-from-canva", { poster_id: posterId }),
   /** @param {object} req - {text_fields, image_urls, image_asset_ids} — only send what's changing */
   regeneratePoster: (posterId, req) => post(`/canva/posters/${encodeURIComponent(posterId)}/regenerate`, req),
   listPosters: () => get("/canva/posters"),
