@@ -21,4 +21,6 @@ cryptography==43.0.1
 # No external search APIs required — all grounding via prompt engineering
 
 dnspython==2.7.0
-python-multipart==0.0.32
+python-multipart==0.0.20
+
+beautifulsoup4==4.12.3

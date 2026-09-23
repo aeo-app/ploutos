@@ -46,7 +46,9 @@ AUTHORIZE_URL = f"https://www.facebook.com/{GRAPH_VERSION}/dialog/oauth"
 # pages_show_list + pages_read_engagement: find the Page and its linked IG
 # account. pages_manage_posts: post to the Page. instagram_basic +
 # instagram_content_publish: read/publish to the linked Instagram account.
-SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish"
+# SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish"
+SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management,instagram_basic,instagram_content_publish"
+
 
 REQUEST_TIMEOUT = int(os.getenv("SOCIAL_PUBLISH_TIMEOUT_SECONDS", "20"))
 POLL_INTERVAL_SECONDS = 2

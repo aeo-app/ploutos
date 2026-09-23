@@ -2,7 +2,7 @@
 meta_title: "How to Add FAQ Page Schema in 10 Minutes"
 meta_description: "Learn how to set up FAQ page schema quickly, avoid common JSON-LD errors, and keep structured data up to date across your entire site."
 featured_image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&q=80"
-date: "2026-09-15"
+date: "2026-05-21"
 ---
 
 # How to Add FAQ Page Schema in 10 Minutes

@@ -1,20 +1,20 @@
 {
   "files": {
-    "main.css": "/static/css/main.534036b7.css",
-    "main.js": "/static/js/main.22c225d9.js",
-    "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.c7a4162b412a721aa542.md",
-    "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.842452c784460c69a967.md",
-    "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.33c0cf17514f140f3be3.md",
+    "main.css": "/static/css/main.208116e2.css",
+    "main.js": "/static/js/main.afe466a3.js",
+    "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.72706333d4512aca83ae.md",
+    "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.175589911c60b5c18595.md",
+    "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.e0d2ed767e9916946d98.md",
     "static/media/aeo-vs-seo-vs-geo-the-complete-guide.md": "/static/media/aeo-vs-seo-vs-geo-the-complete-guide.9d98a24759faa81bebb2.md",
-    "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.1d2fc5cc59fc0a696fab.md",
-    "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.bde6d124e5b20ae60080.md",
-    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.b8ed1b5d22ab0990e5a2.md",
+    "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.688aeb40ed2e6ca0e365.md",
+    "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.39952ad6bc079e1ba5c0.md",
+    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.641be1a33c89e7034fc4.md",
     "index.html": "/index.html",
-    "main.534036b7.css.map": "/static/css/main.534036b7.css.map",
-    "main.22c225d9.js.map": "/static/js/main.22c225d9.js.map"
+    "main.208116e2.css.map": "/static/css/main.208116e2.css.map",
+    "main.afe466a3.js.map": "/static/js/main.afe466a3.js.map"
   },
   "entrypoints": [
-    "static/css/main.534036b7.css",
-    "static/js/main.22c225d9.js"
+    "static/css/main.208116e2.css",
+    "static/js/main.afe466a3.js"
   ]
 }

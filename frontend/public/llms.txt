@@ -12,12 +12,12 @@ AEO-APP.ai is an answer-engine-optimization (AEO) and SEO platform. It audits ho
 ## Blog posts
 
 - [AEO vs SEO vs GEO: The Complete Guide](https://www.aeo-app.ai/blog/aeo-vs-seo-vs-geo-the-complete-guide): A clear, honest breakdown of what SEO, AEO, and GEO actually mean, where the terms genuinely overlap and disagree, and what to actually do about each one.
+- [the-complete-guide-to-schema-markup-for-ai-search-visibility](https://www.aeo-app.ai/blog/the-complete-guide-to-schema-markup-for-ai-search-visibility)
+- [how-to-write-an-llmstxt-file-for-your-website](https://www.aeo-app.ai/blog/how-to-write-an-llmstxt-file-for-your-website)
+- [how-to-check-if-your-website-is-invisible-to-ai-crawlers](https://www.aeo-app.ai/blog/how-to-check-if-your-website-is-invisible-to-ai-crawlers)
+- [why-zero-click-search-is-reshaping-b2b-buyer-journeys](https://www.aeo-app.ai/blog/why-zero-click-search-is-reshaping-b2b-buyer-journeys)
 - [how-chatgpt-perplexity-and-gemini-choose-what-to-recommend](https://www.aeo-app.ai/blog/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend)
 - [how-to-add-faq-page-schema-in-10-minutes](https://www.aeo-app.ai/blog/how-to-add-faq-page-schema-in-10-minutes)
-- [how-to-check-if-your-website-is-invisible-to-ai-crawlers](https://www.aeo-app.ai/blog/how-to-check-if-your-website-is-invisible-to-ai-crawlers)
-- [how-to-write-an-llmstxt-file-for-your-website](https://www.aeo-app.ai/blog/how-to-write-an-llmstxt-file-for-your-website)
-- [the-complete-guide-to-schema-markup-for-ai-search-visibility](https://www.aeo-app.ai/blog/the-complete-guide-to-schema-markup-for-ai-search-visibility)
-- [why-zero-click-search-is-reshaping-b2b-buyer-journeys](https://www.aeo-app.ai/blog/why-zero-click-search-is-reshaping-b2b-buyer-journeys)
 
 ## Optional
 

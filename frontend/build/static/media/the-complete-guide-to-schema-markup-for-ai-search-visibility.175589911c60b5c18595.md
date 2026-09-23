@@ -2,7 +2,7 @@
 meta_title: "The Complete Guide to Schema Markup for AI Search Visibility"
 meta_description: "Discover how schema markup drives AI search visibility in tools like ChatGPT and Gemini. Learn page-by-page checklists and how to avoid schema errors."
 featured_image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&q=80"
-date: "2026-09-15"
+date: "2026-09-05"
 ---
 
 # The Complete Guide to Schema Markup for AI Search Visibility

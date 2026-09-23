@@ -2,13 +2,13 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://www.aeo-app.ai/</loc>
-    <lastmod>2026-09-18</lastmod>
+    <lastmod>2026-09-22</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog</loc>
-    <lastmod>2026-09-18</lastmod>
+    <lastmod>2026-09-22</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
@@ -20,37 +20,37 @@
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-06-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog/how-to-add-faq-page-schema-in-10-minutes</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-05-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog/how-to-check-if-your-website-is-invisible-to-ai-crawlers</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-07-15</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog/how-to-write-an-llmstxt-file-for-your-website</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-08-25</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog/the-complete-guide-to-schema-markup-for-ai-search-visibility</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-09-05</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://www.aeo-app.ai/blog/why-zero-click-search-is-reshaping-b2b-buyer-journeys</loc>
-    <lastmod>2026-09-15</lastmod>
+    <lastmod>2026-07-13</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
