@@ -1669,16 +1669,13 @@
 
   function initTheme() {
     var stored = read(THEME_KEY);
-    var prefersDark =
-      window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var theme = stored === "light" || stored === "dark" ? stored : prefersDark ? "dark" : "light";
+    var theme = stored === "light" || stored === "dark" ? stored : "dark";
     document.documentElement.setAttribute("data-theme", theme);
 
     var buttons = document.querySelectorAll("[data-theme-toggle]");
     for (var i = 0; i < buttons.length; i++) {
       buttons[i].addEventListener("click", function () {
-        var next =
-          document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
         document.documentElement.setAttribute("data-theme", next);
         write(THEME_KEY, next);
       });
