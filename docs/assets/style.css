@@ -1148,3 +1148,127 @@ h1 {
 @media (max-width: 560px) {
   .hero { border-radius: 22px; }
 }
+
+/* Give every report panel the same polished glass depth and a soft hover sheen. */
+.results > .card,
+.results > .stat,
+.results > .table-scroll,
+.results > .cal-row,
+.results > .recap > .stat,
+.results > .card-list > .card,
+.results > .stat-row > .stat {
+  isolation: isolate;
+  overflow: hidden;
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease,
+    border-color .28s ease, backdrop-filter .28s ease, background-color .28s ease;
+}
+
+.results > .card::after,
+.results > .stat::after,
+.results > .table-scroll::after,
+.results > .cal-row::after,
+.results > .recap > .stat::after,
+.results > .card-list > .card::after,
+.results > .stat-row > .stat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(118deg, transparent 20%, rgba(255,255,255,.7) 43%, rgba(255,255,255,.14) 53%, transparent 72%);
+  transform: translateX(-65%);
+  transition: transform .7s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .results > .card:hover,
+  .results > .stat:hover,
+  .results > .table-scroll:hover,
+  .results > .cal-row:hover,
+  .results > .recap > .stat:hover,
+  .results > .card-list > .card:hover,
+  .results > .stat-row > .stat:hover {
+    transform: translateY(-4px) scale(1.008);
+    border-color: rgba(255,255,255,1);
+    background-color: rgba(255,255,255,.78);
+    backdrop-filter: blur(30px) saturate(175%);
+    -webkit-backdrop-filter: blur(30px) saturate(175%);
+    box-shadow: 0 24px 58px rgba(44,60,98,.15), inset 0 1px 0 #fff,
+      0 0 0 1px rgba(255,255,255,.36);
+  }
+
+  .results > .card:hover::after,
+  .results > .stat:hover::after,
+  .results > .table-scroll:hover::after,
+  .results > .cal-row:hover::after,
+  .results > .recap > .stat:hover::after,
+  .results > .card-list > .card:hover::after,
+  .results > .stat-row > .stat:hover::after {
+    opacity: 1;
+    transform: translateX(65%);
+  }
+}
+
+.results > .table-scroll:hover { overflow-x: auto; }
+
+/* Nested cards are used for grouped report sections as well. */
+.results .card,
+.results .stat,
+.results .table-scroll,
+.results .cal-row {
+  isolation: isolate;
+  overflow: hidden;
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), box-shadow .28s ease,
+    border-color .28s ease, backdrop-filter .28s ease;
+}
+.results .card::after,
+.results .stat::after,
+.results .table-scroll::after,
+.results .cal-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-70%);
+  background: linear-gradient(118deg, transparent 20%, rgba(255,255,255,.68) 44%, rgba(255,255,255,.12) 54%, transparent 74%);
+  transition: transform .7s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .results .card:hover,
+  .results .stat:hover,
+  .results .table-scroll:hover,
+  .results .cal-row:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255,255,255,1);
+    backdrop-filter: blur(30px) saturate(175%);
+    -webkit-backdrop-filter: blur(30px) saturate(175%);
+    box-shadow: 0 24px 58px rgba(44,60,98,.15), inset 0 1px 0 #fff,
+      0 0 0 1px rgba(255,255,255,.36);
+  }
+  .results .card:hover::after,
+  .results .stat:hover::after,
+  .results .table-scroll:hover::after,
+  .results .cal-row:hover::after {
+    opacity: 1;
+    transform: translateX(70%);
+  }
+}
+
+.results .card::after,
+.results .stat::after,
+.results .table-scroll::after,
+.results .cal-row::after { z-index: 0; }
+.results .card > *,
+.results .stat > *,
+.results .table-scroll > *,
+.results .cal-row > * { position: relative; z-index: 1; }
+
+/* Keep typography consistent across static and dynamically rendered docs content. */
+*,
+*::before,
+*::after {
+  font-family: var(--font);
+}
