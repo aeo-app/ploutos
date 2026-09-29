@@ -4,9 +4,9 @@
   border-bottom: 1px solid #EEF0F3; position: sticky; top: 0; background: #fff; z-index: 10;
 }
 .brand { font-family: var(--font-display, system-ui, sans-serif); font-weight: 800; font-size: 16px; color: #1E293B; text-decoration: none; }
-.brandAccent { color: #4F46E5; }
+.brandAccent { color: #4038D6; }
 .homeLink { font-size: 13px; font-weight: 700; color: #64748B; text-decoration: none; }
-.homeLink:hover { color: #4F46E5; }
+.homeLink:hover { color: #4038D6; }
 
 .content { max-width: 1040px; margin: 0 auto; padding: 48px 24px 100px; }
 .pageTitle { font-family: var(--font-display, system-ui, sans-serif); font-size: 36px; font-weight: 800; color: #0F172A; margin: 0 0 8px; }
@@ -23,7 +23,7 @@
 .cardImage { width: 100%; height: 180px; object-fit: cover; }
 .cardBody { padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .cardMeta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94A3B8; }
-.categoryBadge { background: #EEF2FF; color: #4F46E5; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.categoryBadge { background: #EEF2FF; color: #4038D6; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
 .cardTitle { font-family: var(--font-display, system-ui, sans-serif); font-size: 17px; font-weight: 700; color: #0F172A; line-height: 1.35; margin: 0; }
 .cardExcerpt { font-size: 13.5px; color: #64748B; line-height: 1.55; flex: 1; margin: 0; }
 .cardAuthor { font-size: 12px; color: #94A3B8; font-style: italic; }

@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Tick, Arrow } from './icons.jsx';
-import { scrollToSection } from '../scrollUtils';
 
 const COUNTRIES = [
-  'United States', 'United Kingdom', 'India', 'Canada', 'Australia',
-  'Germany', 'France', 'Singapore', 'United Arab Emirates', 'Other'
+  'Singapore', 'India', 'United States', 'United Kingdom', 'Canada',
+  'Australia', 'Germany', 'France', 'United Arab Emirates', 'Other',
 ];
+
+const CheckMark = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
 
 export default function Contact() {
   const [step, setStep] = useState('form'); // form | otp | done
@@ -24,67 +28,59 @@ export default function Contact() {
   };
 
   return (
-    <section className="cta-wrap" id="contact">
-      <div className="cta-grid">
-        <div>
-          <div className="section-eyebrow"><span className="mono">08</span><span>Create your account</span></div>
-          <h2 className="cta-title">
-            Ready to rank where the answers <em>actually live?</em>
-          </h2>
-          <p className="cta-sub">
-            Register with your corporate email and we'll send a one-time code to verify it. Then we
-            spin up your workspace and ingest your top three competitors.
-          </p>
-          <ul className="cta-list">
-            <li><Tick /> Full Premium plan, 14 days · everything unlocked</li>
-            <li><Tick /> Includes your free $10 audit credit</li>
-            <li><Tick /> Cancel from in-app, no email loop</li>
-          </ul>
-          <div className="cta-actions">
-            <a className="btn btn-dark btn-lg" href="#audit" onClick={(e) => scrollToSection('audit', e)}>Start free trial <Arrow className="btn-arrow" size={13} /></a>
-          </div>
-        </div>
-        <form className="cta-form" onSubmit={step === 'otp' ? verify : sendOtp}>
+    <section className="dark" id="cta">
+      <div className="wrap">
+        <div className="cta-box">
+          <span className="eyebrow">Get started</span>
+          <h2>Ready to show up in the answer, not just the search results?</h2>
+
           {step === 'done' ? (
             <div className="cta-sent">
-              <div className="cta-sent-mark"><Tick /></div>
+              <div className="cta-sent-mark"><CheckMark /></div>
               <h3>You're verified.</h3>
               <p>Welcome, {data.name || 'there'}. Workspace spinning up — check <span className="mono">{data.email}</span> for your login link.</p>
-              <button className="btn btn-ghost" type="button" onClick={() => { setStep('form'); setOtp(''); }}>Register another</button>
+              <button type="button" className="btn btn-ghost-dark" style={{ marginTop: 18 }} onClick={() => { setStep('form'); setOtp(''); }}>
+                Register another
+              </button>
             </div>
           ) : step === 'otp' ? (
-            <>
-              <h3>Verify your email</h3>
-              <p className="cta-otp-note">We sent a 6-digit code to <span className="mono">{data.email}</span>. Enter it below to continue.</p>
-              <div className="field"><label>One-time code</label>
-                <input className="otp-input" value={otp} onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} placeholder="••••••" inputMode="numeric" /></div>
-              <button type="submit" className="btn btn-primary btn-lg" style={{ justifyContent: 'center' }}>
-                Verify &amp; continue <Arrow className="btn-arrow" size={13} />
-              </button>
-              <button type="button" className="cta-otp-back" onClick={() => setStep('form')}>← Edit details</button>
-            </>
+            <form onSubmit={verify}>
+              <p className="cta-sub">We sent a 6-digit code to <span className="mono">{data.email}</span>. Enter it below to continue.</p>
+              <div className="form-row">
+                <input
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                  placeholder="••••••" inputMode="numeric" autoComplete="off"
+                />
+                <button type="submit" className="btn btn-primary">Verify &amp; continue</button>
+              </div>
+              <button type="button" className="cta-back" onClick={() => setStep('form')}>&larr; Edit details</button>
+            </form>
           ) : (
             <>
-              <h3>Create your account</h3>
-              <div className="field"><label>Corporate email</label>
-                <input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="you@company.com" /></div>
-              <div className="field"><label>Full name</label>
-                <input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Hannah Lo" /></div>
-              <div className="field"><label>Country</label>
-                <select className="cta-select" value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
-                  <option value="" disabled>Select your country</option>
-                  {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <button type="submit" className="btn btn-primary btn-lg" style={{ justifyContent: 'center' }}>
-                Send verification code <Arrow className="btn-arrow" size={13} />
-              </button>
-              <div className="cta-fine">
+              <p className="cta-sub">
+                Start your free AEO audit and see where your brand stands across ChatGPT, Gemini,
+                Perplexity, Copilot, and Google.
+              </p>
+              <form onSubmit={sendOtp}>
+                <div className="form-row">
+                  <input type="email" value={data.email} onChange={(e) => setData({ ...data, email: e.target.value })} placeholder="Work email" autoComplete="off" />
+                  <input value={data.name} onChange={(e) => setData({ ...data, name: e.target.value })} placeholder="Full name" autoComplete="off" />
+                  <select value={data.country} onChange={(e) => setData({ ...data, country: e.target.value })}>
+                    <option value="" disabled>Country</option>
+                    {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button type="submit" className="btn btn-primary">Start free audit</button>
+                </div>
+              </form>
+              <p className="cta-fine">
                 By registering you agree to our <a href="#">terms</a> and <a href="#">privacy policy</a>.
-              </div>
+              </p>
             </>
           )}
-        </form>
+
+          <p className="cta-trust">No credit card required. Cancel anytime.</p>
+        </div>
       </div>
     </section>
   );

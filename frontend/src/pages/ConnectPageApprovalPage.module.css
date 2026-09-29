@@ -11,7 +11,7 @@
   font-family: var(--font-display, system-ui, sans-serif); font-weight: 800; font-size: 15px;
   color: #1E293B; margin-bottom: 28px;
 }
-.brandAccent { color: #4F46E5; }
+.brandAccent { color: #4038D6; }
 
 .icon, .successIcon, .errorIcon { font-size: 40px; margin-bottom: 14px; }
 .successIcon { color: #10B981; }
@@ -26,7 +26,7 @@
 }
 
 .connectBtn {
-  width: 100%; border: none; background: linear-gradient(135deg, #4F46E5, #6366F1); color: white;
+  width: 100%; border: none; background: linear-gradient(135deg, #4038D6, #5B52F0); color: white;
   font-weight: 700; font-size: 14.5px; padding: 13px 20px; border-radius: 12px; cursor: pointer;
 }
 .connectBtn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -37,8 +37,8 @@
   padding: 14px 16px; border: 1.5px solid #E2E8F0; border-radius: 12px; background: white;
   font-size: 13.5px; font-weight: 600; color: #1E293B; cursor: pointer; transition: all 0.15s;
 }
-.pageOption:hover:not(:disabled) { border-color: #6366F1; background: #EEF2FF; }
+.pageOption:hover:not(:disabled) { border-color: #5B52F0; background: #EEF2FF; }
 .pageOption:disabled { opacity: 0.6; cursor: not-allowed; }
-.pageOptionAction { font-size: 12px; font-weight: 700; color: #4F46E5; white-space: nowrap; }
+.pageOptionAction { font-size: 12px; font-weight: 700; color: #4038D6; white-space: nowrap; }
 
 .errorText { font-size: 12.5px; color: #EF4444; margin-top: 14px; }

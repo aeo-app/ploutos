@@ -1,20 +1,20 @@
 {
   "files": {
-    "main.css": "/static/css/main.208116e2.css",
-    "main.js": "/static/js/main.afe466a3.js",
-    "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.72706333d4512aca83ae.md",
-    "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.175589911c60b5c18595.md",
-    "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.e0d2ed767e9916946d98.md",
+    "main.css": "/static/css/main.06300ccb.css",
+    "main.js": "/static/js/main.38c62ecc.js",
+    "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.5556d42a68c0b40192f5.md",
+    "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.1fadcd9c7fcd8c4d83d9.md",
+    "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.badc6d8e800d7e4eb756.md",
+    "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.df9f82899d21ce0992d1.md",
     "static/media/aeo-vs-seo-vs-geo-the-complete-guide.md": "/static/media/aeo-vs-seo-vs-geo-the-complete-guide.9d98a24759faa81bebb2.md",
-    "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.688aeb40ed2e6ca0e365.md",
-    "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.39952ad6bc079e1ba5c0.md",
-    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.641be1a33c89e7034fc4.md",
+    "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.a8df901aa9f8a04753c1.md",
+    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.e2ee09412b1cea253ceb.md",
     "index.html": "/index.html",
-    "main.208116e2.css.map": "/static/css/main.208116e2.css.map",
-    "main.afe466a3.js.map": "/static/js/main.afe466a3.js.map"
+    "main.06300ccb.css.map": "/static/css/main.06300ccb.css.map",
+    "main.38c62ecc.js.map": "/static/js/main.38c62ecc.js.map"
   },
   "entrypoints": [
-    "static/css/main.208116e2.css",
-    "static/js/main.afe466a3.js"
+    "static/css/main.06300ccb.css",
+    "static/js/main.38c62ecc.js"
   ]
 }

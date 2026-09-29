@@ -18,7 +18,8 @@
     "sitemap": "node scripts/generate-sitemap.js",
     "llms-txt": "node scripts/generate-llms-txt.js",
     "prerender": "node scripts/prerender/index.js",
-    "deploy": "npm run build && aws s3 sync build s3://www.aeo-app.ai --delete"
+    "deploy": "npm run build && aws s3 sync build s3://www.aeo-app.ai --delete",
+    "deploy-prod": "npm run build && aws s3 sync build s3://aeo-app.ai --delete"
   },
   "browserslist": {
     "production": [

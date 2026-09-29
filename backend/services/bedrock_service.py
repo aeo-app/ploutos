@@ -114,7 +114,12 @@ MAX_TOKENS = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
 # truncated mid-JSON. We split that into two calls instead, each comfortably
 # bounded well under any model's output ceiling.
 ANALYSIS_MAX_TOKENS = int(os.getenv("BEDROCK_ANALYSIS_MAX_TOKENS", "3000"))
-BACKLINK_MAX_TOKENS = int(os.getenv("BEDROCK_BACKLINK_MAX_TOKENS", "3500"))
+# The backlink deep-dive schema is the largest of the three (8 categories x
+# 3-5 named platforms each, plus a full replication_plan) — 3500 was too
+# tight and let the model truncate/omit the trailing `replication_plan` key
+# under budget pressure. Raised close to Nova Pro's ~5,000 output-token
+# ceiling (see note above) to give it room to finish every key.
+BACKLINK_MAX_TOKENS = int(os.getenv("BEDROCK_BACKLINK_MAX_TOKENS", "4800"))
 CONTENT_MAX_TOKENS = int(os.getenv("BEDROCK_CONTENT_MAX_TOKENS", "3500"))
 EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
 EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
@@ -1266,9 +1271,10 @@ characters inside any string value; use single quotes instead, since this must p
 JSON. Every platform/site named must be a REAL, currently-operating website you have genuine
 training knowledge of — never invent one.
 """
-    raw = _converse(CONTENT_SYSTEM_PROMPT, prompt, max_tokens=BACKLINK_MAX_TOKENS, usage_tracker=usage_tracker)
-    data = _parse_json(raw)
-    return BacklinkDeepDive(**data)
+    return _converse_and_validate(
+        CONTENT_SYSTEM_PROMPT, prompt, BacklinkDeepDive,
+        max_tokens=BACKLINK_MAX_TOKENS, usage_tracker=usage_tracker,
+    )
 
 
 # ── Shared prompt builder for content generation (used by both the blocking
