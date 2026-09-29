@@ -35,6 +35,7 @@ from db import (
     cancel_scheduled_post,
     delete_social_connection,
     get_page_invite,
+    get_poster,
     get_scheduled_post,
     get_social_connection,
     list_page_invites_for_user,
@@ -46,7 +47,6 @@ from db import (
     update_page_invite,
     update_scheduled_post_status,
 )
-from db.dynamo import get_poster
 from models.social_publish_models import (
     AvailablePageOption,
     CancelScheduledPostResponse,

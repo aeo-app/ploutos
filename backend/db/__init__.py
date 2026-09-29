@@ -1,4 +1,12 @@
 # db package
+#
+# This module is the ONLY place that maps a function name to which
+# physical table/module actually backs it. Every router and service in
+# the app imports from `db` directly (e.g. `from db import save_poster`),
+# never from db.dynamo/db.payments_dynamo/db.social_publishing_dynamo by
+# name — so moving save_poster (and everything else social-publishing-
+# related) into its own table below required changing exactly this one
+# file's import lines, and nothing in routers/ or services/ at all.
 from .dynamo import (
     save_analysis,
     get_analysis,
@@ -9,6 +17,27 @@ from .dynamo import (
     check_and_lock_domain,
     get_user_domain_lock,
     DomainMismatchError,
+    register_user,
+    list_all_users,
+    is_admin,
+    set_admin,
+    update_analysis_result,
+)
+from .payments_dynamo import (
+    save_payment_intent,
+    get_payment_intent,
+    update_payment_intent_status,
+    list_user_payments,
+    set_user_paid,
+    get_user_entitlement,
+    is_user_paid,
+    cancel_auto_renew,
+    set_renewal_status,
+    get_user_id_by_customer_id,
+    list_users_due_for_renewal,
+    create_payments_table_if_not_exists,
+)
+from .social_publishing_dynamo import (
     save_canva_pkce,
     get_canva_pkce,
     save_canva_connection,
@@ -32,28 +61,11 @@ from .dynamo import (
     save_poster,
     get_poster,
     list_posters,
-    register_user,
-    list_all_users,
-    is_admin,
-    set_admin,
-    update_analysis_result,
-)
-from .payments_dynamo import (
-    save_payment_intent,
-    get_payment_intent,
-    update_payment_intent_status,
-    list_user_payments,
-    set_user_paid,
-    get_user_entitlement,
-    is_user_paid,
-    cancel_auto_renew,
-    set_renewal_status,
-    get_user_id_by_customer_id,
-    list_users_due_for_renewal,
-    create_payments_table_if_not_exists,
+    create_social_publishing_table_if_not_exists,
 )
 
 __all__ = [
+    # SEO analyses, domain locking, user registry, admin role — db/dynamo.py
     "save_analysis",
     "get_analysis",
     "list_analyses",
@@ -63,6 +75,27 @@ __all__ = [
     "check_and_lock_domain",
     "get_user_domain_lock",
     "DomainMismatchError",
+    "register_user",
+    "list_all_users",
+    "is_admin",
+    "set_admin",
+    "update_analysis_result",
+    # payments — db/payments_dynamo.py, its own table
+    "save_payment_intent",
+    "get_payment_intent",
+    "update_payment_intent_status",
+    "list_user_payments",
+    "set_user_paid",
+    "get_user_entitlement",
+    "cancel_auto_renew",
+    "set_renewal_status",
+    "get_user_id_by_customer_id",
+    "list_users_due_for_renewal",
+    "is_user_paid",
+    "create_payments_table_if_not_exists",
+    # social media posting (Canva, per-platform connections, scheduled
+    # posts, page invites, posters) — db/social_publishing_dynamo.py, its
+    # own table
     "save_canva_pkce",
     "get_canva_pkce",
     "save_canva_connection",
@@ -86,22 +119,5 @@ __all__ = [
     "save_poster",
     "get_poster",
     "list_posters",
-    "register_user",
-    "list_all_users",
-    "is_admin",
-    "set_admin",
-    "update_analysis_result",
-    # payments — now db/payments_dynamo.py, its own table
-    "save_payment_intent",
-    "get_payment_intent",
-    "update_payment_intent_status",
-    "list_user_payments",
-    "set_user_paid",
-    "get_user_entitlement",
-    "cancel_auto_renew",
-    "set_renewal_status",
-    "get_user_id_by_customer_id",
-    "list_users_due_for_renewal",
-    "is_user_paid",
-    "create_payments_table_if_not_exists",
+    "create_social_publishing_table_if_not_exists",
 ]

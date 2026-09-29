@@ -37,13 +37,15 @@ async def lifespan(app: FastAPI):
             "(correct for EC2/ECS/Lambda; set creds for local dev)"
         )
 
-    # Auto-create DynamoDB tables in local dev mode — analyses table AND
-    # the separate payments table (db/payments_dynamo.py).
+    # Auto-create DynamoDB tables in local dev mode — analyses table, the
+    # payments table (db/payments_dynamo.py), and the social-publishing
+    # table (db/social_publishing_dynamo.py).
     if os.getenv("DYNAMODB_ENDPOINT_URL"):
         logger.info(f"[startup] Local DynamoDB at {os.getenv('DYNAMODB_ENDPOINT_URL')}")
-        from db import create_table_if_not_exists, create_payments_table_if_not_exists
+        from db import create_table_if_not_exists, create_payments_table_if_not_exists, create_social_publishing_table_if_not_exists
         create_table_if_not_exists()
         create_payments_table_if_not_exists()
+        create_social_publishing_table_if_not_exists()
 
     # Log active model and architecture
     model = os.getenv("BEDROCK_MODEL_ID", "us.amazon.nova-pro-v1:0")
