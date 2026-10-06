@@ -42,31 +42,26 @@ TABLE_NAME = os.getenv("APAC_PAYMENTS_TABLE", "apac_payments")
 AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
 GSI_NAME = "gsi_payment_intent_id"
 
-EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
-EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
-ROLE_ARN = os.getenv("ROLE_ARN")  # optional, for cross-account access
+MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
+MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
 # ── Singleton DynamoDB resource — intentionally a SEPARATE connection from
 # db.dynamo's, not shared. Mirrors its connection logic (local endpoint vs.
-# STS cross-account role) exactly, so the payments table could in principle
-# live in a different AWS account/region later without touching the
+# single-account direct credentials) exactly, so the payments table could
+# in principle live in a different AWS region later without touching the
 # analyses table's connection at all. ───────────────────────────────────────
 _dynamodb = None
 _table = None
-_creds_expiry = 0
 
 
 def _get_payments_table():
-    global _dynamodb, _table, _creds_expiry
+    global _dynamodb, _table
 
-    # See db.dynamo._get_table()'s identical fix — a cached client whose
-    # assumed-role credentials expire (commonly ~1 hour) and never refresh
-    # fails every subsequent call with "The provided token has expired",
-    # regardless of how long this process keeps running. This table backs
-    # every payment/entitlement check in the app, so this bug alone could
-    # make every user appear unpaid/locked out once credentials aged out.
-    needs_refresh = _table is None or (_creds_expiry and time.time() > _creds_expiry - 60)
-    if needs_refresh:
+    # Single AWS account for this service now — no more STS assume_role
+    # cross-account hop, so there are no temporary credentials to expire
+    # and refresh. Build the client once and cache it for the life of the
+    # process.
+    if _table is None:
         kwargs = dict(region_name=AWS_REGION)
 
         endpoint = os.getenv("DYNAMODB_ENDPOINT_URL")
@@ -74,21 +69,11 @@ def _get_payments_table():
             kwargs["endpoint_url"] = endpoint
             _dynamodb = boto3.resource("dynamodb", **kwargs)
         else:
-            sts = boto3.client(
-                "sts",
-                aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY,
-                region_name=AWS_REGION,
-            )
-            response = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="dynamodb-payments-session")
-            creds = response["Credentials"]
-            _creds_expiry = creds["Expiration"].timestamp()
             _dynamodb = boto3.resource(
                 "dynamodb",
                 region_name=AWS_REGION,
-                aws_access_key_id=creds["AccessKeyId"],
-                aws_secret_access_key=creds["SecretAccessKey"],
-                aws_session_token=creds["SessionToken"],
+                aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
             )
 
         _table = _dynamodb.Table(TABLE_NAME)

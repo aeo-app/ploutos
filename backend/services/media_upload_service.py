@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
-import time
 import uuid
 
 import boto3
@@ -24,46 +23,79 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-uploads")
-MEDIA_UPLOAD_REGION = os.getenv("MEDIA_UPLOAD_REGION", "ap-southeast-2")
-EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
-EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
-ROLE_ARN = os.getenv("MEDIA_UPLOAD_ROLE_ARN")
+BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-upload")
+MEDIA_UPLOAD_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
+MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
 _s3 = None
-_s3_creds_expiry = 0
 
 
 class MediaUploadError(Exception):
     pass
 
 
+# Error codes S3 returns when the problem is the BUCKET's own account, not
+# this request — a suspended/closed AWS account, a bucket that's been
+# disabled, or ownership moved elsewhere. These never clear on retry (valid
+# credentials for a perfectly healthy AWS account still get this if the
+# bucket itself lives in a disabled one), so they're worth telling apart
+# from an ordinary transient failure or a bad request.
+_BUCKET_LEVEL_ERROR_CODES = {"AllAccessDisabled", "NoSuchBucket", "InvalidAccessKeyId"}
+
+
+def _raise_clean_upload_error(action: str, e: ClientError) -> None:
+    """Logs the full AWS error (for whoever reads the server logs) and
+    raises a MediaUploadError with a short, non-technical message safe to
+    show a user — never the raw boto3/AWS text, which leaks internal
+    infrastructure details (bucket names, account state, S3 error codes)
+    into a product UI and reads as a cryptic, unactionable error to anyone
+    who isn't an AWS admin."""
+    error = e.response.get("Error", {})
+    code = error.get("Code", "")
+    logger.error(
+        f"[media_upload] S3 {action} failed: {error} "
+        f"(bucket={BUCKET_NAME!r} region={MEDIA_UPLOAD_REGION!r})"
+    )
+    if code in _BUCKET_LEVEL_ERROR_CODES:
+        # Almost always means MEDIA_UPLOAD_BUCKET points at a bucket whose
+        # owning AWS account is no longer reachable — e.g. after rotating
+        # which AWS account this app's services use (see
+        # MOVERSLY_AWS_ACCESS_KEY_ID above), a bucket created under the
+        # OLD account doesn't move with the credentials; it has to be
+        # recreated (or its contents copied) under the new one and
+        # MEDIA_UPLOAD_BUCKET/MEDIA_UPLOAD_REGION updated to match.
+        logger.critical(
+            f"[media_upload] '{code}' is an account/bucket-level failure, not a transient "
+            "one — retrying will not help. Check that MEDIA_UPLOAD_BUCKET "
+            f"({BUCKET_NAME!r} in {MEDIA_UPLOAD_REGION!r}) still exists and is owned by "
+            "the AWS account MOVERSLY_AWS_ACCESS_KEY_ID authenticates as."
+        )
+        raise MediaUploadError(
+            "Image storage is temporarily unavailable. Please try again shortly — "
+            "if this keeps happening, contact support."
+        )
+    raise MediaUploadError(error.get("Message") or str(e))
+
+
 def _get_s3_client():
-    """Mirrors db.dynamo._get_table()'s connection logic (local vs. STS
-    cross-account role), including the actual expiry check that logic
-    relies on — a cached client whose assumed-role credentials expire
-    (commonly ~1 hour) and never refresh fails every subsequent call with
-    "The provided token has expired", regardless of how long this process
-    keeps running."""
-    global _s3, _s3_creds_expiry
-    needs_refresh = _s3 is None or (_s3_creds_expiry and time.time() > _s3_creds_expiry - 60)
-    if needs_refresh:
+    """Mirrors db.dynamo._get_table()'s connection logic (local vs. single
+    AWS account). Single account for this service now — no more STS
+    assume_role cross-account hop, so there are no temporary credentials to
+    expire and refresh; the client is built once and cached for the life of
+    the process."""
+    global _s3
+    if _s3 is None:
         endpoint = os.getenv("S3_ENDPOINT_URL")  # for local dev against a fake S3 (e.g. moto/localstack)
         if endpoint:
             _s3 = boto3.client("s3", region_name=MEDIA_UPLOAD_REGION, endpoint_url=endpoint)
         else:
-            sts = boto3.client(
-                "sts", aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY, region_name=MEDIA_UPLOAD_REGION,
-            )
-            resp = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="media-upload-session")
-            creds = resp["Credentials"]
-            _s3_creds_expiry = creds["Expiration"].timestamp()
             _s3 = boto3.client(
                 "s3", region_name=MEDIA_UPLOAD_REGION,
-                aws_access_key_id=creds["AccessKeyId"], aws_secret_access_key=creds["SecretAccessKey"],
-                aws_session_token=creds["SessionToken"],
+                aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
             )
+            print(f"s3 client={_s3}, region={MEDIA_UPLOAD_REGION!r}")
     return _s3
 
 
@@ -81,8 +113,7 @@ def upload_image(image_bytes: bytes, filename: str, user_id: str) -> str:
             ContentType=content_type, ACL="public-read",
         )
     except ClientError as e:
-        logger.error(f"[media_upload] S3 put_object failed: {e.response['Error']}")
-        raise MediaUploadError(f"Could not upload image: {e.response['Error'].get('Message', e)}")
+        _raise_clean_upload_error("put_object", e)
 
     return f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/{key}"
 
@@ -119,5 +150,4 @@ def delete_image(image_url: str, user_id: str) -> None:
         client.delete_object(Bucket=BUCKET_NAME, Key=key)
         logger.info(f"[media_upload] deleted {key} for user={user_id}")
     except ClientError as e:
-        logger.error(f"[media_upload] S3 delete_object failed: {e.response['Error']}")
-        raise MediaUploadError(f"Could not delete image: {e.response['Error'].get('Message', e)}")
+        _raise_clean_upload_error("delete_object", e)

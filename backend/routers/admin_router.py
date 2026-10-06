@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -59,7 +60,16 @@ def _require_analysis(user_id: str, analysis_id: str, expected_type: str, label:
     return item
 
 
-def _to_calendar_detail(analysis_id: str, user_id: str, item: dict) -> AdminCalendarDetailResponse:
+def _to_calendar_detail(analysis_id: str, user_id: str, item: Optional[dict]) -> AdminCalendarDetailResponse:
+    # `item` can still be None here even right after a successful save — see
+    # the retries= note on get_analysis — if the GSI's propagation delay
+    # outlasts even the retry window. Treat that as "saved, but not yet
+    # visible" rather than crashing the request with an AttributeError.
+    if item is None:
+        raise HTTPException(
+            status_code=202,
+            detail=f"Calendar {analysis_id} was saved but isn't available to read back yet — try again in a moment.",
+        )
     return AdminCalendarDetailResponse(
         analysis_id=analysis_id, user_id=user_id, company_name=item.get("company_name", ""),
         market=item.get("market", ""), created_at=item.get("created_at", ""), status=item.get("status", ""),
@@ -67,7 +77,12 @@ def _to_calendar_detail(analysis_id: str, user_id: str, item: dict) -> AdminCale
     )
 
 
-def _to_blog_detail(analysis_id: str, user_id: str, item: dict) -> AdminBlogDetailResponse:
+def _to_blog_detail(analysis_id: str, user_id: str, item: Optional[dict]) -> AdminBlogDetailResponse:
+    if item is None:
+        raise HTTPException(
+            status_code=202,
+            detail=f"Blog post {analysis_id} was saved but isn't available to read back yet — try again in a moment.",
+        )
     return AdminBlogDetailResponse(
         analysis_id=analysis_id, user_id=user_id, company_name=item.get("company_name", ""),
         created_at=item.get("created_at", ""), status=item.get("status", ""),
@@ -254,7 +269,9 @@ async def create_calendar_for_user(user_id: str, req: CreateCalendarForUserReque
         status="partial" if result.failed_dates else "success", token_usage=token_usage,
     )
     logger.info(f"[admin] {admin_id} created calendar {analysis_id} for user {user_id}, industry={req.industry!r}, market={req.market!r}")
-    return _to_calendar_detail(analysis_id, user_id, get_analysis(user_id, analysis_id))
+    # retries= guards the GSI read-after-write race (see get_analysis's
+    # docstring) — we just put_item'd this exact analysis_id a moment ago.
+    return _to_calendar_detail(analysis_id, user_id, get_analysis(user_id, analysis_id, retries=3))
 
 
 # ── Blogs ────────────────────────────────────────────────────────────────────
@@ -371,7 +388,9 @@ async def create_blog_for_user(user_id: str, req: CreateBlogForUserRequest, admi
         request_data=gen_req.model_dump(), token_usage=token_usage,
     )
     logger.info(f"[admin] {admin_id} created blog {analysis_id} for user {user_id}, topic={req.topic!r}")
-    return _to_blog_detail(analysis_id, user_id, get_analysis(user_id, analysis_id))
+    # retries= guards the GSI read-after-write race (see get_analysis's
+    # docstring) — we just put_item'd this exact analysis_id a moment ago.
+    return _to_blog_detail(analysis_id, user_id, get_analysis(user_id, analysis_id, retries=3))
 
 
 # ── Social publishing (Facebook, Instagram — post/schedule on behalf of a

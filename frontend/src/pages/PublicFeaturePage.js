@@ -61,17 +61,17 @@ export function PublicFeaturePage({ slug }) {
   const feature = FEATURES[slug] || FEATURES['full-report'];
 
   return (
-    <main style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
+    <main style={{ minHeight: '100vh', background: '#F6F6FB', color: '#17153F', fontFamily: 'Instrument Sans, sans-serif' }}>
       <nav style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <a href="/" style={{ color: '#0f172a', fontWeight: 800, fontSize: 20, textDecoration: 'none' }}>aeo-app<span style={{ color: '#4f46e5' }}>.ai</span></a>
+        <a href="/" style={{ color: '#17153F', fontWeight: 800, fontSize: 20, textDecoration: 'none' }}>aeo-app<span style={{ color: '#4038d6' }}>.ai</span></a>
         <a href="/" style={{ color: '#475569', fontSize: 14, textDecoration: 'none' }}>Back to home</a>
       </nav>
 
       <section style={{ maxWidth: 900, margin: '0 auto', padding: '96px 28px 120px' }}>
-        <div style={{ color: '#4f46e5', fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 18 }}>{feature.eyebrow}</div>
+        <div style={{ color: '#4038d6', fontSize: 12, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 18 }}>{feature.eyebrow}</div>
         <h1 style={{ maxWidth: 760, margin: 0, fontSize: 'clamp(38px, 7vw, 72px)', lineHeight: 1.05, letterSpacing: '-0.04em' }}>{feature.title}</h1>
         <p style={{ maxWidth: 650, margin: '28px 0 36px', color: '#475569', fontSize: 19, lineHeight: 1.7 }}>{feature.description}</p>
-        <a href="/#audit" style={{ display: 'inline-block', padding: '14px 22px', borderRadius: 8, background: '#4f46e5', color: '#fff', fontWeight: 700, textDecoration: 'none' }}>Start with AEO-APP.ai</a>
+        <a href="/#audit" style={{ display: 'inline-block', padding: '14px 22px', borderRadius: 8, background: '#4038d6', color: '#fff', fontWeight: 700, textDecoration: 'none' }}>Start with AEO-APP.ai</a>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 14, marginTop: 72 }}>
           {feature.points.map((point) => (

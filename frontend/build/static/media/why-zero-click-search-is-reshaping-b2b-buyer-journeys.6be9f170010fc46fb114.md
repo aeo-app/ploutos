@@ -1,4 +1,7 @@
 ---
+title: "Why Zero-Click Search Is Reshaping B2B Buyer Journeys"
+excerpt: "Discover how AI chatbots and zero-click search are changing B2B buyer journeys. Learn the 4-part AEO framework to adapt and win AI recommendations."
+category: "AEO"
 meta_title: "Why Zero-Click Search Is Reshaping B2B Buyer Journeys"
 meta_description: "Discover how AI chatbots and zero-click search are changing B2B buyer journeys. Learn the 4-part AEO framework to adapt and win AI recommendations."
 featured_image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&q=80"

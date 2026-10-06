@@ -34,6 +34,7 @@ import { SignupPage }       from './pages/auth/SignupPage';
 import { SignupVerifyPage } from './pages/auth/SignupVerifyPage';
 import { LoginPage }        from './pages/auth/LoginPage';
 import { LoginVerifyPage }  from './pages/auth/LoginVerifyPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 
 // Landing page (entry point)
 import { LandingPage }      from './pages/landing/LandingPage';
@@ -61,6 +62,7 @@ const AUTH_SCREENS = {
   'landing':       LandingPage,
   'login':         LoginPage,
   'login-verify':  LoginVerifyPage,
+  'forgot-password': ForgotPasswordPage,
   'signup':        SignupPage,
   'signup-verify': SignupVerifyPage,
 };

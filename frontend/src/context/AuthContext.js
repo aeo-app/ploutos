@@ -4,7 +4,7 @@ import { getUserInfo } from '../api/authApi';
 const AuthCtx = createContext(null);
 
 /*
-  authScreen: 'landing' | 'signup' | 'signup-verify' | 'login' | null (= authenticated)
+  authScreen: 'landing' | 'signup' | 'signup-verify' | 'login' | 'login-verify' | 'forgot-password' | null (= authenticated)
 */
 const init = {
   authScreen:   'landing',  // start on the marketing landing page

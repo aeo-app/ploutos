@@ -23,8 +23,8 @@ function SonarPulse() {
 }
 
 const MODULES = [
-  { id: 'compete',  icon: '⚔',  title: 'Competitors',      desc: 'SEO visibility, DA estimates, rankings', color: '#4F46E5' },
-  { id: 'keywords', icon: '🔑', title: 'Keywords',          desc: 'Volume, intent & position estimates',     color: '#7C3AED' },
+  { id: 'compete',  icon: '⚔',  title: 'Competitors',      desc: 'SEO visibility, DA estimates, rankings', color: '#4038D6' },
+  { id: 'keywords', icon: '🔑', title: 'Keywords',          desc: 'Volume, intent & position estimates',     color: '#06B6D4' },
   { id: 'profile',  icon: '📋', title: 'Company Profile',   desc: 'LinkedIn + GBP ready-to-paste copy',      color: '#0891B2' },
   { id: 'da',       icon: '📈', title: 'Domain Authority',  desc: 'Gap analysis & backlink roadmap',          color: '#059669' },
   { id: 'contentStrategy', icon: '✍️', title: 'Content Strategy', desc: 'Competitor-informed, SEO-optimised content', color: '#DB2777' },

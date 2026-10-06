@@ -96,9 +96,28 @@ export function LoginPage() {
           </div>
 
           <div className={s.fieldWrap}>
-            <label className={s.fieldLabel}>
-              Password<span className={s.fieldRequired}>*</span>
-            </label>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+              <label className={s.fieldLabel}>
+                Password<span className={s.fieldRequired}>*</span>
+              </label>
+              <button
+                type="button"
+                className={s.switchLink}
+                style={{ fontSize: 12.5 }}
+                // onMouseDown (not onClick) + preventDefault: this sits right
+                // next to the email field, which has autoFocus. A click here
+                // blurs the email field first, which flips on its validation
+                // error and shifts this whole block down a line BEFORE the
+                // click's mouseup fires — so a fast click can land on
+                // whatever ended up under the original coordinates instead
+                // of this button. Handling on mousedown (and blocking its
+                // default focus-change behavior) runs before that reflow, so
+                // the navigation always fires regardless of layout shift.
+                onMouseDown={(e) => { e.preventDefault(); goScreen('forgot-password'); }}
+              >
+                Forgot password?
+              </button>
+            </div>
             <PasswordInput
               autoComplete="current-password"
               value={password}

@@ -19,21 +19,29 @@ class TokenUsage(BaseModel):
 
 class AnalysisMeta(BaseModel):
     """Lightweight summary row — used in list responses (no full result payload)."""
+    # analysis_id and analysis_type stay required: analysis_id IS the GSI
+    # key this row was looked up by (always present), and list_analyses'
+    # FilterExpression already excludes any row without analysis_type
+    # before it gets here. Every other field below defaults instead of
+    # being required: a handful of rows (notably ones carried over by the
+    # AWS-account migration) are missing one or more of these attributes,
+    # and one missing field on one row shouldn't 500 the whole list/get
+    # endpoint for a user — it should just show up blank for that row.
     analysis_id:   str
     analysis_type: str
-    company_name:  str
-    url:           str
-    market:        str
-    industry:      str
-    created_at:    str
-    status:        str
+    company_name:  str = ""
+    url:           str = ""
+    market:        str = ""
+    industry:      str = ""
+    created_at:    str = ""
+    status:        str = ""
     token_usage:   TokenUsage = TokenUsage()
 
 
 class AnalysisRecord(AnalysisMeta):
     """Full record including the result payload and original request."""
-    result:  Any              # deserialised analysis result (dict)
-    request: dict[str, Any]   # original AnalyseRequest fields
+    result:  Any            = None   # deserialised analysis result (dict)
+    request: dict[str, Any] = {}     # original AnalyseRequest fields
 
 
 class SavedAnalysisResponse(BaseModel):

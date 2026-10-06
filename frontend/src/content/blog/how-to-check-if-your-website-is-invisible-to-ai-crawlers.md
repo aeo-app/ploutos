@@ -1,4 +1,7 @@
 ---
+title: "How to Check If Your Website Is Invisible to AI Crawlers"
+excerpt: "Discover how to check if your website is invisible to AI crawlers like GPTBot and ClaudeBot. Learn the 5 essential technical checks to protect your AI search traffic."
+category: "AEO"
 meta_title: "How to Check If Your Website Is Invisible to AI Crawlers"
 meta_description: "Discover how to check if your website is invisible to AI crawlers like GPTBot and ClaudeBot. Learn the 5 essential technical checks to protect your AI search traffic."
 featured_image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=1200&q=80"

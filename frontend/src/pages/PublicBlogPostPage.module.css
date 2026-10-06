@@ -4,9 +4,9 @@
   border-bottom: 1px solid #EEF0F3; position: sticky; top: 0; background: #fff; z-index: 10;
 }
 .brand { font-family: var(--font-display, system-ui, sans-serif); font-weight: 800; font-size: 16px; color: #1E293B; text-decoration: none; }
-.brandAccent { color: #4F46E5; }
+.brandAccent { color: #4038D6; }
 .homeLink { font-size: 13px; font-weight: 700; color: #64748B; text-decoration: none; }
-.homeLink:hover { color: #4F46E5; }
+.homeLink:hover { color: #4038D6; }
 
 .content { max-width: 720px; margin: 0 auto; padding: 48px 24px 100px; }
 .loading, .error { color: #94A3B8; font-size: 14px; padding: 60px 0; text-align: center; }
@@ -18,7 +18,7 @@
 .image { width: 100%; max-height: 420px; object-fit: cover; border-radius: 12px; margin-bottom: 28px; }
 .meta { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #64748B; margin-bottom: 14px; }
 .categoryBadge {
-  background: #EEF2FF; color: #4F46E5; font-size: 11.5px; font-weight: 700;
+  background: #EEF2FF; color: #4038D6; font-size: 11.5px; font-weight: 700;
   padding: 3px 10px; border-radius: 999px;
 }
 .title { font-family: var(--font-display, system-ui, sans-serif); font-size: 34px; font-weight: 800; color: #0F172A; line-height: 1.25; margin: 0 0 28px; }
@@ -35,7 +35,7 @@
 .body pre code { background: none; color: inherit; padding: 0; }
 .body blockquote { border-left: 3px solid #C7D2FE; padding-left: 18px; color: #64748B; margin: 0 0 18px; }
 .body img { max-width: 100%; border-radius: 12px; }
-.body a { color: #4F46E5; }
+.body a { color: #4038D6; }
 .body table { border-collapse: collapse; width: 100%; margin-bottom: 18px; }
 .body th, .body td { border: 1px solid #E2E8F0; padding: 10px 16px; font-size: 15px; text-align: left; }
 .body th { background: #F8FAFC; font-weight: 700; }

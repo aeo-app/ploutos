@@ -53,10 +53,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
-from time import time
+from time import sleep, time
 
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.types import TypeDeserializer
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
@@ -73,39 +74,27 @@ TTL_DAYS = int(os.getenv("ANALYSIS_TTL_DAYS", "0"))
    # 0 = no expiry
 GSI_NAME = "gsi_analysis_id"
 
-EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
-EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
-EIGENAI_AWS_SESSION_TOKEN = os.getenv("EIGENAI_AWS_SESSION_TOKEN")
-ROLE_ARN = os.getenv("ROLE_ARN")  # optional, for cross-account access
+MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
+MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
 # ── Singleton DynamoDB resource ────────────────────────────────────────────────
 _dynamodb = None
 
 _table = None
 
-_creds_expiry = 0
-
 
 def _get_table():
-    global _dynamodb, _table, _creds_expiry
+    global _dynamodb, _table
 
-    # Refresh if never connected, OR if the assumed-role credentials are at
-    # or near expiry — _creds_expiry was previously tracked below but never
-    # actually read anywhere, so this cached connection (and its STS
-    # session) never refreshed once created, no matter how long the process
-    # kept running. Assumed-role sessions are commonly ~1 hour; any backend
-    # process alive longer than that would start failing every DB call with
-    # "The provided token has expired" once the cached credentials aged out.
-    # 60s buffer avoids a request starting right as credentials expire
-    # mid-flight. _creds_expiry stays 0/falsy for the local-endpoint branch
-    # below (no STS, no expiry concept), so this never spuriously triggers
-    # for local dev.
-    needs_refresh = _table is None or (_creds_expiry and time() > _creds_expiry - 60)
-    if needs_refresh:
+    # Single AWS account for this service now — no more STS assume_role
+    # cross-account hop, so there are no temporary credentials to expire
+    # and refresh. Build the client once and cache it for the life of the
+    # process, same as any other singleton client below.
+    if _table is None:
 
         kwargs = dict(region_name=AWS_REGION)
 
-        # ✅ 1. Local DynamoDB support (NO STS)
+        # ✅ 1. Local DynamoDB support
         endpoint = os.getenv("DYNAMODB_ENDPOINT_URL")
         if endpoint:
             kwargs["endpoint_url"] = endpoint
@@ -114,28 +103,15 @@ def _get_table():
             _dynamodb = boto3.resource("dynamodb", **kwargs)
 
         else:
-            # ✅ 2. Cross-account access via STS
-            sts = boto3.client(
-                "sts",
-                aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY,
-                region_name=AWS_REGION,
-            )
-
-            response = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="dynamodb-session")
-
-            creds = response["Credentials"]
-            _creds_expiry = creds["Expiration"].timestamp()
-
+            # ✅ 2. Single AWS account, direct long-lived credentials
             _dynamodb = boto3.resource(
                 "dynamodb",
                 region_name=AWS_REGION,
-                aws_access_key_id=creds["AccessKeyId"],
-                aws_secret_access_key=creds["SecretAccessKey"],
-                aws_session_token=creds["SessionToken"],
+                aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
             )
 
-            # logger.info("[dynamo] Using cross-account role")
+            # logger.info("[dynamo] Using MOVERSLY AWS account")
 
         _table = _dynamodb.Table(TABLE_NAME)
 
@@ -180,15 +156,82 @@ def _to_dynamo(obj: Any) -> Any:
     return obj
 
 
+# DynamoDB's low-level wire format for one attribute is a single-key dict
+# naming its type, e.g. {"S": "hello"}, {"N": "3"}, {"M": {...}}. The
+# resource API used everywhere in this module (table.get_item, etc.)
+# deserializes this automatically — but a handful of rows in this table
+# were written directly with the low-level client or typed into the AWS
+# console's raw item editor before that was true (e.g. some social
+# connections' `extra` map), so their nested values are still stuck in this
+# wire format one or more levels deep instead of plain Python values. A
+# dict with exactly one key matching a real DynamoDB type code is as close
+# to unambiguous as this gets — legitimate application data essentially
+# never takes this exact shape, so it's safe to treat it as an encoded
+# AttributeValue rather than a real field.
+_DYNAMO_TYPE_CODES = {"S", "N", "B", "BOOL", "NULL", "M", "L", "SS", "NS", "BS"}
+_type_deserializer = TypeDeserializer()
+
+
+def _is_raw_attribute_value(obj: Any) -> bool:
+    return isinstance(obj, dict) and len(obj) == 1 and next(iter(obj)) in _DYNAMO_TYPE_CODES
+
+
 def _from_dynamo(obj: Any) -> Any:
-    """Recursively convert Decimal back to int/float."""
+    """Recursively convert Decimal back to int/float, and defensively repair
+    any value still in DynamoDB's raw wire format (see
+    _is_raw_attribute_value above) instead of a plain Python value. Without
+    this, a field like a social connection's extra.label comes back as
+    {"S": "Acme Inc"} instead of "Acme Inc" — which then fails Pydantic
+    validation outright ("Input should be a valid string") instead of
+    returning the real value, taking down any endpoint that reads it."""
     if isinstance(obj, Decimal):
         return int(obj) if obj == obj.to_integral_value() else float(obj)
+    if _is_raw_attribute_value(obj):
+        try:
+            return _from_dynamo(_type_deserializer.deserialize(obj))
+        except (TypeError, ValueError):
+            pass  # not actually a raw AttributeValue after all — fall through and treat as a normal dict
     if isinstance(obj, dict):
         return {k: _from_dynamo(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_from_dynamo(i) for i in obj]
     return obj
+
+
+def _deserialize_json_field(value: Any, _max_attempts: int = 3) -> Any:
+    """Parses a `result`/`request` field stored as a JSON string back into
+    a dict/list. Handles two failure modes seen in migrated rows, on top of
+    the normal case:
+
+    1. Double-encoded JSON (`json.dumps()` called twice somewhere) — one
+       `json.loads()` just returns another JSON string instead of the dict,
+       so this loops (bounded) until it stops being a string.
+    2. A field that went through a CSV export/import step as part of the
+       AWS-account migration and came back with its CSV-quoting intact
+       instead of stripped: the whole value is wrapped in an extra pair of
+       literal `"` characters, and every embedded `"` was doubled to `""`
+       per CSV's own escaping rule — e.g. `"{""company_name"": ""Acme""}"`.
+       That's not valid JSON as-is (a bare `json.loads` raises), but
+       stripping the outer quotes and collapsing `""` back to `"` recovers
+       the original JSON text.
+
+    Falls back to returning whatever it has (possibly still the original
+    raw string) rather than raising, so one unparseable row's payload
+    doesn't take down the request — same spirit as the plain `_from_dynamo`
+    wire-format repair above, just for the JSON-text fields instead of the
+    DynamoDB-typed ones."""
+    for _ in range(_max_attempts):
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        candidate = text
+        if len(text) >= 2 and text[0] == '"' and text[-1] == '"' and '""' in text:
+            candidate = text[1:-1].replace('""', '"')
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            return value  # not valid JSON (or not this mangled-CSV shape either) — give up as-is
+    return value
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -268,18 +311,35 @@ def save_analysis(
         raise
 
 
-def get_analysis(user_id: str, analysis_id: str) -> Optional[dict]:
+def get_analysis(user_id: str, analysis_id: str, *, retries: int = 0) -> Optional[dict]:
     """
     Fetch a single analysis by user_id + analysis_id using the GSI.
     Returns the deserialised item dict, or None if not found.
+
+    `retries`: GSIs in DynamoDB only support EVENTUALLY consistent reads —
+    there is no ConsistentRead=True option for a GSI query, unlike the base
+    table. That means a caller that just put_item'd a brand-new analysis and
+    immediately turns around to query it back by analysis_id via this GSI
+    can race the index's own propagation and get zero items back, even
+    though the item is already durably in the table. Pass retries>0 (short
+    backoff, a few hundred ms total) ONLY at call sites doing exactly that
+    read-after-write; leave it at 0 (the default) for an ordinary "does this
+    id exist" lookup, where a real miss should return None immediately
+    rather than add latency to every genuine 404.
     """
     table = _get_table()
     try:
-        resp = table.query(
-            IndexName=GSI_NAME,
-            KeyConditionExpression=Key("analysis_id").eq(analysis_id),
-        )
-        items = resp.get("Items", [])
+        attempt = 0
+        while True:
+            resp = table.query(
+                IndexName=GSI_NAME,
+                KeyConditionExpression=Key("analysis_id").eq(analysis_id),
+            )
+            items = resp.get("Items", [])
+            if items or attempt >= retries:
+                break
+            sleep(0.3 * (attempt + 1))  # 0.3s, 0.6s, 0.9s, ...
+            attempt += 1
         if not items:
             return None
         item = _from_dynamo(items[0])
@@ -297,10 +357,7 @@ def get_analysis(user_id: str, analysis_id: str) -> Optional[dict]:
         # Deserialise JSON payload fields
         for key in ("result", "request"):
             if key in item and isinstance(item[key], str):
-                try:
-                    item[key] = json.loads(item[key])
-                except json.JSONDecodeError:
-                    pass
+                item[key] = _deserialize_json_field(item[key])
         return item
     except ClientError as e:
         logger.error(f"[dynamo] get_analysis failed: {e.response['Error']}")
@@ -449,7 +506,13 @@ def get_user_stats(user_id: str) -> dict:
             ProjectionExpression="analysis_type, #s, token_usage",
             ExpressionAttributeNames={"#s": "status"},
         )
-        items = resp.get("Items", [])
+        # Unlike list_analyses/get_analysis, this used the raw query response
+        # directly — skipping _from_dynamo meant a token_usage value still
+        # stuck in DynamoDB's raw wire format (e.g. {"N": "123"} instead of
+        # 123, from a migrated row written outside the resource API) reached
+        # int() below as a dict, not a number, raising a raw, cryptic
+        # TypeError instead of just counting as 0. _from_dynamo repairs that.
+        items = [_from_dynamo(i) for i in resp.get("Items", [])]
         counts: dict[str, int] = {}
         tokens_by_type: dict[str, dict] = {}
         totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "bedrock_call_count": 0}
@@ -459,11 +522,16 @@ def get_user_stats(user_id: str) -> dict:
             counts[t] = counts.get(t, 0) + 1
 
             usage = item.get("token_usage") or {}
+            if not isinstance(usage, dict):
+                usage = {}  # legacy/malformed row — count this item, but with zero token usage
             bucket = tokens_by_type.setdefault(
                 t, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "bedrock_call_count": 0}
             )
             for key in totals:
-                v = int(usage.get(key, 0) or 0)
+                try:
+                    v = int(usage.get(key, 0) or 0)
+                except (TypeError, ValueError):
+                    v = 0  # still unparseable even after _from_dynamo — don't let one bad row 500 the whole stats endpoint
                 bucket[key] += v
                 totals[key] += v
 

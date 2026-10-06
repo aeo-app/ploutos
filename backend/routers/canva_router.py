@@ -64,7 +64,7 @@ from services.canva_service import (
     upload_asset_from_url,
 )
 from services.image_generation_service import ImageGenerationError, generate_image_from_prompt
-from services.media_upload_service import upload_image
+from services.media_upload_service import MediaUploadError, upload_image
 from services.openai_image_service import OpenAIImageError
 from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai
 
@@ -436,8 +436,11 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
 
     try:
         image_url = upload_image(image_bytes, filename=f"{req.day_date}-post{req.post_number}.png", user_id=user_id)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Generated the image but could not store it: {e}")
+    except MediaUploadError as e:
+        # MediaUploadError's message is already a clean, user-safe string
+        # (see _raise_clean_upload_error) — no raw AWS/boto3 text to strip
+        # here, unlike the old bare `except Exception` this replaced.
+        raise HTTPException(status_code=502, detail=f"Generated the image but could not store it. {e}")
 
     # Same poster_id for the same day/post across regenerations (matches
     # the existing Canva-autofill path's behavior) — a repeat "Create

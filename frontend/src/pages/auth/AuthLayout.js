@@ -3,9 +3,9 @@ import { motion } from 'framer-motion';
 import s from './Auth.module.css';
 
 const FEATURES = [
-  { icon: '⚔', title: 'Competitor Intelligence', text: 'SEO scores, DA estimates & keyword rankings' },
-  { icon: '🔑', title: 'Keyword Volume',          text: 'Intent, competition & position data' },
-  { icon: '📈', title: 'Domain Authority',        text: 'Gap analysis & backlink roadmap' },
+  { icon: '⚔', title: 'Answer-Engine Ranking', text: 'See where you surface across ChatGPT, Perplexity, Claude & Gemini' },
+  { icon: '🔑', title: 'Citation Tracking',     text: 'Daily crawls of the sources every engine cites' },
+  { icon: '📈', title: 'Content Automation',    text: 'Audits, briefs & social posts shipped on a schedule' },
 ];
 
 function SearchIcon() {
@@ -30,8 +30,8 @@ export function AuthLayout({ children }) {
             <SearchIcon />
           </div>
           <div>
-            <div className={s.brandLogoText}>AEO<span style={{ color: '#C7D2FE' }}>Intel</span></div>
-            <div className={s.brandLogoSub}>SEO Intelligence Platform</div>
+            <div className={s.brandLogoText}>aeo-app<span style={{ color: '#B5AEFF' }}>.ai</span></div>
+            <div className={s.brandLogoSub}>Your AI Growth Hacker</div>
           </div>
         </div>
 
@@ -45,11 +45,11 @@ export function AuthLayout({ children }) {
 
         {/* Headline */}
         <h1 className={s.brandHeadline}>
-          SEO Intelligence<br/>
-          <span className={s.brandGrad}>for Asia-Pacific</span>
+          Rank in the answers,<br/>
+          <span className={s.brandGrad}>not just the links</span>
         </h1>
         <p className={s.brandDesc}>
-          Competitive analysis, keyword data, domain authority strategy and company profiles — powered by Claude AI.
+          Audit, track and automate your visibility across every AI model — ChatGPT, Claude, Perplexity and Gemini.
         </p>
 
         {/* Features */}

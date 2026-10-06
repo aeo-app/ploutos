@@ -12,12 +12,12 @@ AEO-APP.ai is an answer-engine-optimization (AEO) and SEO platform. It audits ho
 ## Blog posts
 
 - [AEO vs SEO vs GEO: The Complete Guide](https://www.aeo-app.ai/blog/aeo-vs-seo-vs-geo-the-complete-guide): A clear, honest breakdown of what SEO, AEO, and GEO actually mean, where the terms genuinely overlap and disagree, and what to actually do about each one.
-- [the-complete-guide-to-schema-markup-for-ai-search-visibility](https://www.aeo-app.ai/blog/the-complete-guide-to-schema-markup-for-ai-search-visibility)
-- [how-to-write-an-llmstxt-file-for-your-website](https://www.aeo-app.ai/blog/how-to-write-an-llmstxt-file-for-your-website)
-- [how-to-check-if-your-website-is-invisible-to-ai-crawlers](https://www.aeo-app.ai/blog/how-to-check-if-your-website-is-invisible-to-ai-crawlers)
-- [why-zero-click-search-is-reshaping-b2b-buyer-journeys](https://www.aeo-app.ai/blog/why-zero-click-search-is-reshaping-b2b-buyer-journeys)
-- [how-chatgpt-perplexity-and-gemini-choose-what-to-recommend](https://www.aeo-app.ai/blog/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend)
-- [how-to-add-faq-page-schema-in-10-minutes](https://www.aeo-app.ai/blog/how-to-add-faq-page-schema-in-10-minutes)
+- [The Complete Guide to Schema Markup for AI Search Visibility](https://www.aeo-app.ai/blog/the-complete-guide-to-schema-markup-for-ai-search-visibility): Discover how schema markup drives AI search visibility in tools like ChatGPT and Gemini. Learn page-by-page checklists and how to avoid schema errors.
+- [How to Write an llms.txt File for Your Website](https://www.aeo-app.ai/blog/how-to-write-an-llmstxt-file-for-your-website): Learn what an llms.txt file is, why businesses use it for AI search optimization, where to place it, and how to avoid setup errors.
+- [How to Check If Your Website Is Invisible to AI Crawlers](https://www.aeo-app.ai/blog/how-to-check-if-your-website-is-invisible-to-ai-crawlers): Discover how to check if your website is invisible to AI crawlers like GPTBot and ClaudeBot. Learn the 5 essential technical checks to protect your AI search traffic.
+- [Why Zero-Click Search Is Reshaping B2B Buyer Journeys](https://www.aeo-app.ai/blog/why-zero-click-search-is-reshaping-b2b-buyer-journeys): Discover how AI chatbots and zero-click search are changing B2B buyer journeys. Learn the 4-part AEO framework to adapt and win AI recommendations.
+- [How ChatGPT, Perplexity, and Gemini Choose What to Recommend](https://www.aeo-app.ai/blog/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend): Learn how AI answer engines like ChatGPT, Perplexity, and Gemini recommend businesses, and discover the 5 technical AEO factors keeping your site visible.
+- [How to Add FAQ Page Schema in 10 Minutes](https://www.aeo-app.ai/blog/how-to-add-faq-page-schema-in-10-minutes): Learn how to set up FAQ page schema quickly, avoid common JSON-LD errors, and keep structured data up to date across your entire site.
 
 ## Optional
 

@@ -30,11 +30,13 @@ async def lifespan(app: FastAPI):
         if not os.getenv(var):
             logger.warning(f"[startup] {var} not set — auth endpoints will fail")
 
-    # Warn about missing Bedrock config
-    if not os.getenv("AWS_ACCESS_KEY_ID") and not os.getenv("DYNAMODB_ENDPOINT_URL"):
+    # Warn about missing AWS config — single MOVERSLY AWS account for every
+    # service now (Bedrock, Cognito, DynamoDB, S3), no more per-service
+    # cross-account STS hop.
+    if not os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID") and not os.getenv("DYNAMODB_ENDPOINT_URL"):
         logger.warning(
-            "[startup] No explicit AWS credentials — relying on IAM role "
-            "(correct for EC2/ECS/Lambda; set creds for local dev)"
+            "[startup] MOVERSLY_AWS_ACCESS_KEY_ID / MOVERSLY_AWS_SECRET_ACCESS_KEY not set — "
+            "relying on IAM role (correct for EC2/ECS/Lambda; set creds for local dev)"
         )
 
     # Auto-create DynamoDB tables in local dev mode — analyses table AND
@@ -182,7 +184,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://api.aeo-app.ai",
-        "https://www.aeo-app.ai"
+        "https://www.aeo-app.ai",
+        "https://aeo-app.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],

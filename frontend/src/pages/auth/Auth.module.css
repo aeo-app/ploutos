@@ -35,12 +35,12 @@
 }
 .blob1 {
   width: 360px; height: 360px;
-  background: rgba(167,139,250,0.25);
+  background: rgba(6,182,212,0.22);
   top: -80px; left: -80px;
 }
 .blob2 {
   width: 280px; height: 280px;
-  background: rgba(99,102,241,0.2);
+  background: rgba(91,82,240,0.28);
   bottom: -60px; right: -40px;
 }
 
@@ -116,7 +116,7 @@
   position: relative; z-index: 1;
 }
 .brandGrad {
-  background: linear-gradient(90deg, #C7D2FE, #DDD6FE);
+  background: linear-gradient(90deg, #B5AEFF, #67E8F9);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

@@ -8,9 +8,9 @@
 // anything). That's likely why error messages looked wrong or generic in
 // production — the app was silently trying to call the tester's own
 // machine, not the real API.
-const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
-// const BASE_URL = "https://api.aeo-app.ai/api/v1";
-// 🔹 Error message mapping
+// const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+const BASE_URL = "https://api.aeo-app.com/api/v1";
+// 🔹 Error message mappingS
 // Matches routers/auth_router.py's _STATUS dict exactly — these are the
 // REAL Cognito exception codes the backend actually sends in
 // {"detail": {"code": "...", "message": "..."}}. Previously this mapping
@@ -173,7 +173,7 @@ export const fetchClient = async (
     // password never got the chance to show its real error at all; this
     // branch discarded the response body and threw "session expired"
     // before parseError() ever ran.
-    const isAuthEndpoint = ["/auth/login", "/auth/signup", "/auth/verify", "/auth/resend"].includes(url);
+    const isAuthEndpoint = ["/auth/login", "/auth/signup", "/auth/verify", "/auth/resend", "/auth/forgot-password", "/auth/reset-password"].includes(url);
     if (res.status === 401 && token && !isAuthEndpoint) {
       localStorage.removeItem("id_token");
       localStorage.removeItem("access_token");
@@ -296,6 +296,22 @@ export const authApi = {
   /** Resend verification code — { email } */
   resendCode: (payload) =>
     fetchClient("/auth/resend", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Send a password reset code to email — { email }. Matches the backend's
+   * POST /auth/forgot-password (routers/auth_router.py). */
+  forgotPassword: (payload) =>
+    fetchClient("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Complete a password reset with the code from email — { email, code, new_password }.
+   * Matches the backend's POST /auth/reset-password. */
+  resetPassword: (payload) =>
+    fetchClient("/auth/reset-password", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

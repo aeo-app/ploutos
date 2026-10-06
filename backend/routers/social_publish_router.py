@@ -17,8 +17,12 @@ publish) can treat all four platforms uniformly.
 
 Meta connections fetch every Facebook Page the authorizing user manages and
 save the Page token only after the authorizing user picks a specific Page in
-the page-picker UI. LinkedIn and Google Business retain their own connection
-flows.
+the page-picker UI. LinkedIn now works the same way — it posts as a
+Company Page the authorizing member administers, not their personal
+profile, so it fetches every Company Page they administer and saves the
+connection only after they pick one, same as Meta. Google Business retains
+its own connection flow (first location, no picker yet — see that
+service's module docstring).
 """
 from __future__ import annotations
 
@@ -151,8 +155,22 @@ async def meta_callback(
 # ── LinkedIn ─────────────────────────────────────────────────────────────────
 @router.get("/linkedin/connect", response_model=ConnectResponse, summary="Get the LinkedIn authorize URL")
 async def linkedin_connect(user_id: str = Depends(get_current_user_id)):
-    state = f"{user_id}:{secrets.token_urlsafe(24)}"
-    return ConnectResponse(authorize_url=li.build_authorize_url(state))
+    # Same one-time page-picker flow as Meta (see meta_connect above) — now
+    # that LinkedIn posts as a Company Page rather than the member's own
+    # profile, there can be more than one Page to choose between, so this
+    # goes through an invite/pages_ready round trip instead of connecting
+    # straight away.
+    invite_token = secrets.token_urlsafe(24)
+    save_page_invite(
+        invite_token=invite_token,
+        platform="linkedin",
+        requested_by_user_id=user_id,
+        requested_by_label="Your account",
+        return_to_app=True,
+    )
+    return ConnectResponse(
+        authorize_url=li.build_authorize_url(_invite_state(invite_token)),
+    )
 
 
 @router.get("/linkedin/callback", summary="LinkedIn OAuth redirect target")
@@ -166,31 +184,15 @@ async def linkedin_callback(
             f"error_description={error_description!r}, code_present={bool(code)}, state_present={bool(state)}"
         )
         return _redirect_result("error", reason=error_description or "Missing code or state from LinkedIn")
-    user_id, sep, _ = state.partition(":")
-    if not sep or not user_id:
-        return _redirect_result("error", reason="Malformed state parameter")
 
     is_invite, invite_token = _is_invite_state(state)
     if is_invite:
         return await _handle_linkedin_invite_callback(invite_token, code)
 
-    try:
-        tokens = li.exchange_code_for_token(code)
-        access_token = tokens["access_token"]
-
-        # No page-picker step here (unlike Meta) — posting to the member's
-        # own profile just needs to know who they are, not which of
-        # several pages to act as.
-        member = li.get_member_urn(access_token)
-        save_social_connection(
-            user_id=user_id, platform="linkedin", access_token=access_token,
-            refresh_token=tokens.get("refresh_token", ""),
-            extra={"person_urn": member["person_urn"], "label": member.get("name") or "LinkedIn profile"},
-        )
-        return _redirect_result("connected")
-    except Exception as e:
-        logger.error(f"[social-publish] LinkedIn OAuth callback failed: {e}", exc_info=True)
-        return _redirect_result("error", reason=str(e))
+    # LinkedIn connections must use a server-created invite state so the
+    # Company Page selection step cannot be skipped and state cannot be
+    # forged — mirrors meta_callback's fallback above.
+    return _redirect_result("error", reason="Invalid or expired LinkedIn connection state")
 
 
 # ── Google Business Profile ──────────────────────────────────────────────────
@@ -542,6 +544,16 @@ async def select_invite_page(invite_token: str, req: SelectInvitePageRequest):
             refresh_token=invite.get("oauth_refresh_token", ""),
             extra={"account_id": page["account_id"], "location_id": page["location_id"], "label": page["label"]},
         )
+    elif invite["platform"] == "linkedin":
+        # page["id"] is already the full "urn:li:organization:{id}" string
+        # (see list_organizations) — unlike Meta, every Page shares the
+        # same member-level access token, there's no separate per-Page
+        # token to swap in.
+        save_social_connection(
+            user_id=requester_id, platform="linkedin", access_token=access_token,
+            refresh_token=invite.get("oauth_refresh_token", ""),
+            extra={"organization_urn": page["id"], "label": page["label"]},
+        )
     else:
         raise HTTPException(status_code=422, detail=f"{invite['platform']} doesn't use a page-selection step.")
 
@@ -584,31 +596,36 @@ async def _handle_meta_invite_callback(invite_token: str, code: str):
 
 
 async def _handle_linkedin_invite_callback(invite_token: str, code: str):
-    """LinkedIn has no page-picker step — w_member_social posts as the
-    member themselves, so identifying them IS the whole connection. Goes
-    straight to approved, no intermediate 'pick a page' stage."""
+    """Fetches every Company Page the authorizing member administers and
+    hands them to the frontend's page-picker — same shape as
+    _handle_meta_invite_callback above. The member's own identity
+    (get_member_urn) is only used to label the invite/connection with a
+    human name; it is never the post author once a Page is picked."""
     invite = get_page_invite(invite_token)
     if not invite or invite["status"] != "pending":
         return _invite_redirect(invite_token, error=True)
     try:
         tokens = li.exchange_code_for_token(code)
         access_token = tokens["access_token"]
-        member = li.get_member_urn(access_token)
 
-        save_social_connection(
-            user_id=invite["requested_by_user_id"], platform="linkedin", access_token=access_token,
-            refresh_token=tokens.get("refresh_token", ""),
-            extra={"person_urn": member["person_urn"], "label": member.get("name") or "LinkedIn profile"},
-        )
+        organizations = li.list_organizations(access_token)
+        if not organizations:
+            update_page_invite(invite_token, status="pending")  # stays retryable
+            logger.warning(f"[social-publish] invite {invite_token}: no LinkedIn Company Pages found for this admin")
+            return _invite_redirect(
+                invite_token, error=True,
+                reason="No LinkedIn Company Pages were found for this account — make sure you administer at least one Page",
+            )
+
+        available = [{"id": org["id"], "label": org["label"]} for org in organizations]
         update_page_invite(
-            invite_token, status="approved",
-            selected_page={"id": member["person_urn"], "label": member.get("name") or "LinkedIn profile"},
+            invite_token, status="pages_ready", available_pages=available,
+            oauth_access_token=access_token, oauth_refresh_token=tokens.get("refresh_token", ""),
         )
-        logger.info(f"[social-publish] invite {invite_token} approved: LinkedIn profile connected to user {invite['requested_by_user_id']}")
         return _invite_redirect(invite_token)
     except Exception as e:
         logger.error(f"[social-publish] invite {invite_token} LinkedIn callback failed: {e}", exc_info=True)
-        return _invite_redirect(invite_token, error=True)
+        return _invite_redirect(invite_token, error=True, reason=str(e))
 
 
 async def _handle_youtube_invite_callback(invite_token: str, code: str):

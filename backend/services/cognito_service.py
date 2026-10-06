@@ -15,10 +15,12 @@ User Pool flow
 
 Environment variables required
 -------------------------------
-COGNITO_USER_POOL_ID   e.g. ap-southeast-1_AbCdEfGhI
-COGNITO_CLIENT_ID      App client ID (no secret = public client; with secret = confidential)
-COGNITO_CLIENT_SECRET  Optional — only if app client has a secret
-AWS_REGION             e.g. ap-southeast-1
+COGNITO_USER_POOL_ID           e.g. ap-southeast-1_AbCdEfGhI
+COGNITO_CLIENT_ID              App client ID (no secret = public client; with secret = confidential)
+COGNITO_CLIENT_SECRET          Optional — only if app client has a secret
+AWS_REGION                     e.g. ap-southeast-1
+MOVERSLY_AWS_ACCESS_KEY_ID     Single AWS account used for every AWS service in this app
+MOVERSLY_AWS_SECRET_ACCESS_KEY
 
 Cognito User Pool must be configured with:
   - Email as username (or username + email alias)
@@ -34,7 +36,6 @@ import hashlib
 import hmac
 import logging
 import os
-import time
 from typing import Any, Optional
 
 import boto3
@@ -53,52 +54,29 @@ CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "")
 CLIENT_SECRET = os.getenv("COGNITO_CLIENT_SECRET", "")   # optional
 AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
 
-EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
-EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
-EIGENAI_AWS_SESSION_TOKEN = os.getenv("EIGENAI_AWS_SESSION_TOKEN")
-ROLE_ARN = os.getenv("ROLE_ARN")  # optional, for cross-account access
+MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
+MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
 # ── Singleton client ───────────────────────────────────────────────────────────
 _idp: Any = None
-_creds_expiry = 0
 
 
 def _get_client():
-    global _idp, _creds_expiry
+    global _idp
 
-    # See db.dynamo._get_table()'s identical fix — a cached client whose
-    # assumed-role credentials expire (commonly ~1 hour) and never refresh
-    # fails every subsequent call with "The provided token has expired",
-    # regardless of how long this process keeps running. This client
-    # backs EVERY login/signup/token-refresh call in the app, so this bug
-    # alone could make every single auth attempt fail once credentials
-    # aged out on a long-running deployment.
-    needs_refresh = _idp is None or (_creds_expiry and time.time() > _creds_expiry - 60)
-    if needs_refresh:
-        # 1. Create STS client (uses Account A credentials automatically)
-        sts = boto3.client(
-            "sts",
-            aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION,
-        )
-
-        # 2. Assume role in Account
-        response = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="cognito-session")
-
-        creds = response["Credentials"]
-        _creds_expiry = creds["Expiration"].timestamp()
-
-        # 3. Create Cognito client using temporary credentials
+    # Single AWS account for this service now — no more STS assume_role
+    # cross-account hop, so there are no temporary credentials to expire
+    # and refresh. Build the client once and cache it for the life of the
+    # process.
+    if _idp is None:
         _idp = boto3.client(
             "cognito-idp",
             region_name=AWS_REGION,
-            aws_access_key_id=creds["AccessKeyId"],
-            aws_secret_access_key=creds["SecretAccessKey"],
-            aws_session_token=creds["SessionToken"],
+            aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
         )
 
-        logger.info(f"[cognito] cross-account client ready — pool={POOL_ID} region={AWS_REGION}")
+        logger.info(f"[cognito] client ready — pool={POOL_ID} region={AWS_REGION}")
 
     return _idp
 
