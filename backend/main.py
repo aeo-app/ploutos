@@ -184,8 +184,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://api.aeo-app.ai",
-        "https://www.aeo-app.ai",
-        "https://aeo-app.com",
+        "https://www.aeo-app.ai"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -201,6 +200,7 @@ from routers.admin_router import router as admin_router
 from routers.blog_router import router as blog_router
 from routers.social_publish_router import router as social_publish_router
 from routers.article_router import router as article_router
+from routers.aeo_router import router as aeo_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
@@ -211,6 +211,7 @@ app.include_router(admin_router)
 app.include_router(blog_router)
 app.include_router(social_publish_router)
 app.include_router(article_router)
+app.include_router(aeo_router)
 
 
 @app.get("/", tags=["Health"])

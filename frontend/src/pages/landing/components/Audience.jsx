@@ -22,7 +22,7 @@ export default function Audience() {
               aria-label="SME owner running their shop/storefront, phone or laptop in hand"
             />
             <span className="tag">Growth-minded SMEs</span>
-            <h3>Ready to go, right now.</h3>
+            <h3>Singapore &amp; India, today.</h3>
             <p>
               Built for teams without a dedicated marketing hire. You choose the prompts that
               matter to your business — AEO-APP.AI runs the audit, fixes what it can, and keeps
@@ -40,11 +40,12 @@ export default function Audience() {
               aria-label="Agency team reviewing multiple client dashboards together"
             />
             <span className="tag">Agencies &amp; multi-brand portfolios</span>
-            <h3>Built for agencies, available today.</h3>
+            <h3>Coming soon.</h3>
             <p>
-              Onboard multiple client domains under one agency account. The Scale plan tracks, fixes and publishes for every brand you manage, at a cost-effective per-domain rate — instead of paying for a separate tool per client.
+              Multi-domain, multi-client support is on our roadmap. If you manage several brands
+              and want early access, talk to us.
             </p>
-            <span className="pill">See the Scale plan</span>
+            <span className="pill">Roadmap</span>
           </div>
         </div>
       </div>

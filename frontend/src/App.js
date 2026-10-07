@@ -5,16 +5,17 @@ import { AppProvider, useApp }   from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PaymentProvider } from './context/PaymentContext';
 import { AppShell }              from './components/layout/AppShell';
+import { AeoProvider }           from './aeo/AeoContext';
+import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage } from './aeo/pages/AnalyticsPages';
+import { DomainAuthorityAeoPage, CompanyAeoPage } from './aeo/pages/DomainCompanyPages';
+import { StrategyAeoPage, BlogsAeoPage, CalendarAeoPage } from './aeo/pages/ContentPages';
 import { Toasts }                from './components/ui/Toast';
 import { authApi } from './api/authApi';
 import { CompleteProfilePage } from './pages/auth/CompleteProfilePage';
 
 // App pages
-import { HomePage }            from './pages/HomePage';
 import { CompetitorsPage }     from './pages/CompetitorsPage';
 import { KeywordsPage }        from './pages/KeywordsPage';
-import { ProfilePage }         from './pages/ProfilePage';
-import { DomainAuthorityPage } from './pages/DomainAuthorityPage';
 import { FullReportPage }      from './pages/FullReportPage';
 import { ContentStrategyPage } from './pages/ContentStrategyPage';
 import { RelocationCalendarPage } from './pages/RelocationCalendarPage';
@@ -43,13 +44,22 @@ import { AnimatePresence, motion } from 'framer-motion';
 
 /* ── App page router ─────────────────────────────────────── */
 const APP_PAGES = {
-  home:     HomePage,
+  // AEO dashboard
+  home:           DashboardPage,
+  aeoPrompts:     PromptsPage,
+  aeoCompetitors: CompetitorsAeoPage,
+  aeoEngines:     EnginesPage,
+  da:             DomainAuthorityAeoPage,
+  profile:        CompanyAeoPage,
+  aeoStrategy:    StrategyAeoPage,
+  aeoBlogs:       BlogsAeoPage,
+  aeoCalendar:    CalendarAeoPage,
+  // Original tools, still reachable from "More tools"
   compete:  CompetitorsPage,
   keywords: KeywordsPage,
-  profile:  ProfilePage,
-  da:       DomainAuthorityPage,
   report:   FullReportPage,
   contentStrategy: ContentStrategyPage,
+  publishCalendar: RelocationCalendarPage,
   relocationCalendar: RelocationCalendarPage,
   blogs: BlogsPage,
   history: HistoryPage,
@@ -75,7 +85,7 @@ const pageVariants = {
 
 function AppRouter() {
   const { state } = useApp();
-  const Page = APP_PAGES[state.page] || HomePage;
+  const Page = APP_PAGES[state.page] || DashboardPage;
   return (
     <AnimatePresence mode="wait">
       <motion.div key={state.page} variants={pageVariants} initial="initial" animate="animate" exit="exit">
@@ -164,7 +174,9 @@ function Root() {
       {(profile) => (
         <PaymentProvider>
           <AppProvider>
-            <AdminAwareRoot profile={profile} />
+            <AeoProvider>
+              <AdminAwareRoot profile={profile} />
+            </AeoProvider>
             <Toasts />
           </AppProvider>
         </PaymentProvider>

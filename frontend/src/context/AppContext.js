@@ -8,9 +8,9 @@ const init = {
   page: 'home',
   isAdmin: false,
   request: { company_name: '', url: '', market: 'Singapore', industry: '' },
-  results:  { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null },
-  loading:  { competitors: false, keywords: false, profile: false, domainAuthority: false, fullReport: false, contentStrategy: false, relocationCalendar: false },
-  errors:   { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null },
+  results:  { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null, aeoPrompts: null },
+  loading:  { competitors: false, keywords: false, profile: false, domainAuthority: false, fullReport: false, contentStrategy: false, relocationCalendar: false, aeoPrompts: false },
+  errors:   { competitors: null, keywords: null, profile: null, domainAuthority: null, fullReport: null, contentStrategy: null, relocationCalendar: null, aeoPrompts: null },
   toasts: [],
   // Set (to a feature key, e.g. "competitors") whenever an API call returns
   // 402 Payment Required — payment is triggered by attempting to access
@@ -63,6 +63,8 @@ export function AppProvider({ children }) {
   const setAdmin       = useCallback((val) => dispatch({ type: 'SET_ADMIN', val }), []);
 
   const clearPaymentRequired = useCallback(() => dispatch({ type: 'CLEAR_PAYMENT_REQUIRED' }), []);
+  // For features that aren't run through runApi (keyed AEO content, locked rows).
+  const requirePayment = useCallback((key) => dispatch({ type: 'SET_PAYMENT_REQUIRED', key }), []);
 
   const runApi = useCallback(async (key, fn, req) => {
     dispatch({ type: 'SET_LOADING', key, val: true });
@@ -91,7 +93,7 @@ export function AppProvider({ children }) {
   return (
     <Ctx.Provider value={{
       state, setPage, setRequest, clearAll, toast, dismissToast, runApi,
-      setLoadingKey, setResultKey, setErrorKey, clearPaymentRequired, setAdmin,
+      setLoadingKey, setResultKey, setErrorKey, clearPaymentRequired, requirePayment, setAdmin,
     }}>
       {children}
     </Ctx.Provider>

@@ -23,8 +23,8 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-upload")
-MEDIA_UPLOAD_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-uploads")
+MEDIA_UPLOAD_REGION = os.getenv("MEDIA_UPLOAD_REGION", "ap-southeast-2")
 MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
 MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
@@ -95,7 +95,6 @@ def _get_s3_client():
                 aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
             )
-            print(f"s3 client={_s3}, region={MEDIA_UPLOAD_REGION!r}")
     return _s3
 
 
