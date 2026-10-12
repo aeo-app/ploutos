@@ -23,8 +23,8 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-upload")
-MEDIA_UPLOAD_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-uploads")
+MEDIA_UPLOAD_REGION = os.getenv("MEDIA_UPLOAD_REGION", "ap-southeast-2")
 MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
 MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
@@ -95,7 +95,6 @@ def _get_s3_client():
                 aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
             )
-            print(f"s3 client={_s3}, region={MEDIA_UPLOAD_REGION!r}")
     return _s3
 
 
@@ -108,14 +107,57 @@ def upload_image(image_bytes: bytes, filename: str, user_id: str) -> str:
 
     client = _get_s3_client()
     try:
-        client.put_object(
-            Bucket=BUCKET_NAME, Key=key, Body=image_bytes,
-            ContentType=content_type, ACL="public-read",
-        )
+        try:
+            client.put_object(
+                Bucket=BUCKET_NAME, Key=key, Body=image_bytes,
+                ContentType=content_type, ACL="public-read",
+            )
+        except ClientError as e:
+            # Buckets with "Block public access" / ACLs disabled reject the
+            # public-read ACL — store privately instead; the app shows these
+            # through short-lived signed links (see signed_view_url).
+            if e.response.get("Error", {}).get("Code") in ("AccessControlListNotSupported", "AccessDenied", "InvalidRequest"):
+                client.put_object(Bucket=BUCKET_NAME, Key=key, Body=image_bytes, ContentType=content_type)
+            else:
+                raise
     except ClientError as e:
         _raise_clean_upload_error("put_object", e)
 
     return f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/{key}"
+
+
+def read_own_image(image_url: str) -> bytes | None:
+    """Bytes of an image stored in OUR bucket (None if the URL isn't ours)."""
+    key = _key_from_url(image_url)
+    if not key:
+        return None
+    return _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=key)["Body"].read()
+
+
+def read_user_image(image_url: str, user_id: str):
+    """(bytes, content_type, filename) for an image THIS user owns, else None."""
+    key = _key_from_url(image_url)
+    if not key or not key.startswith(f"uploads/{user_id}/"):
+        return None
+    obj = _get_s3_client().get_object(Bucket=BUCKET_NAME, Key=key)
+    name = key.rsplit("/", 1)[-1]
+    ctype = obj.get("ContentType") or mimetypes.guess_type(name)[0] or "image/jpeg"
+    return obj["Body"].read(), ctype, name
+
+
+def signed_view_url(image_url: str, user_id: str, expires: int = 6 * 3600) -> str | None:
+    """A short-lived signed GET link for an image THIS user uploaded, so it
+    displays even when the bucket is not publicly readable. None if the URL
+    isn't one of this user's uploads."""
+    key = _key_from_url(image_url)
+    if not key or not key.startswith(f"uploads/{user_id}/"):
+        return None
+    try:
+        return _get_s3_client().generate_presigned_url(
+            "get_object", Params={"Bucket": BUCKET_NAME, "Key": key}, ExpiresIn=expires)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[media_upload] presign failed: {e}")
+        return None
 
 
 def _key_from_url(image_url: str) -> str | None:

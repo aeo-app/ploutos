@@ -28,15 +28,26 @@ const COUNTRY_OPTIONS = [
   ['JP', 'Japan'], ['CN', 'China'], ['HK', 'Hong Kong'], ['CH', 'Switzerland'],
 ];
 
+// Details typed into the landing page's "Start free audit" form.
+function readPrefill() {
+  try {
+    const raw = sessionStorage.getItem('aeo_signup_prefill');
+    if (!raw) return {};
+    sessionStorage.removeItem('aeo_signup_prefill');
+    return JSON.parse(raw) || {};
+  } catch (_) { return {}; }
+}
+
 export function SignupPage() {
   const { login, goScreen, setPending } = useAuth();
-  const [name,            setName]            = useState('');
-  const [email,           setEmail]           = useState('');
+  const [prefill]                                  = useState(readPrefill);
+  const [name,            setName]            = useState(prefill.name || '');
+  const [email,           setEmail]           = useState(prefill.email || '');
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [companyName,     setCompanyName]     = useState('');
   const [domain,          setDomain]          = useState('');
-  const [country,         setCountry]         = useState('');
+  const [country,         setCountry]         = useState(prefill.country || '');
   const [error,           setError]           = useState('');
   const [loading,         setLoading]         = useState(false);
   const [touched,         setTouched]         = useState({

@@ -1,5 +1,6 @@
 import React from 'react';
 import s from './PlanCards.module.css';
+import { formatPlanAmount } from '../../utils/geo';
 
 const CHECK = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -28,7 +29,7 @@ export function PlanCards({ plans, selectedPlanId, currentPlanId, onSelect, disa
       <style>{CARD_STYLES}</style>
       <div className="aeo-pricing__grid">
         {plans.map(plan => {
-          const price = Math.round(parseFloat(plan.amount));
+          const price = formatPlanAmount(plan.amount, plan.currency);
           const symbol = CURRENCY_SYMBOLS[plan.currency] || `${plan.currency} `;
           const isSelected = selectedPlanId === plan.plan_id;
           const isCurrent = currentPlanId === plan.plan_id;

@@ -48,6 +48,9 @@ class CreatePaymentIntentRequest(BaseModel):
     # so a malicious client can't alter what they're charged. See Airwallex's
     # own integration guidance: "Always decide how much to charge on the server."
     plan_id: PlanId = Field(..., example="growth")
+    # The visitor's country as the browser sees it. Only used to choose the
+    # currency (SGD / INR / USD); the amount itself is still decided server-side.
+    country: Optional[str] = Field(default=None, max_length=100)
 
 
 class PaymentIntentResponse(BaseModel):

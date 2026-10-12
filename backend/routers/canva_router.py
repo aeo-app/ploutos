@@ -14,6 +14,7 @@ import logging
 import os
 import secrets
 import uuid
+from typing import Optional
 
 import requests
 from datetime import datetime, timezone
@@ -82,7 +83,19 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 FRONTEND_RETURN_PATH = f"{FRONTEND_URL}/?canva="
 
 
-def _record_to_poster_response(item: dict) -> PosterResponse:
+def _record_to_poster_response(item: Optional[dict]) -> PosterResponse:
+    # `item` can be None even right after a successful save_poster() —
+    # get_poster looks the record up through a GSI query, and DynamoDB GSIs
+    # only support eventually consistent reads (no ConsistentRead=True
+    # option like the base table has), so a read-right-after-write can
+    # briefly miss. Every save-then-read call site below now passes
+    # retries= to absorb that, but if it's still None after retrying,
+    # surface a clean, specific error instead of crashing on item["poster_id"].
+    if item is None:
+        raise HTTPException(
+            status_code=202,
+            detail="The poster was saved but isn't available to read back yet — try again in a moment.",
+        )
     return PosterResponse(
         poster_id=item["poster_id"],
         day_date=item["day_date"],
@@ -360,7 +373,7 @@ async def _auto_generate_poster(user_id: str, req: AutoGeneratePosterRequest) ->
         thumbnail_url=design["thumbnail_url"], image_field_values=used_images, text_field_values=text_fields,
     )
     logger.info(f"[canva] auto-generated poster {poster_id} for user={user_id} using template={template['id']}")
-    return _record_to_poster_response(get_poster(user_id, poster_id))
+    return _record_to_poster_response(get_poster(user_id, poster_id, retries=3))
 
 
 @router.post(
@@ -399,7 +412,7 @@ async def create_poster(req: CreatePosterRequest, user_id: str = Depends(get_cur
         image_field_values=used_images,
         text_field_values=req.text_fields,
     )
-    saved = get_poster(user_id, poster_id)
+    saved = get_poster(user_id, poster_id, retries=3)
     return _record_to_poster_response(saved)
 
 
@@ -463,7 +476,7 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
         brand_template_id="", design_id="", edit_url="", thumbnail_url="",
     )
     logger.info(f"[canva] generated poster {poster_id} via OpenAI for user={user_id}, day={req.day_date} post={req.post_number}")
-    return _record_to_poster_response(get_poster(user_id, poster_id))
+    return _record_to_poster_response(get_poster(user_id, poster_id, retries=3))
 
 
 @router.post(
@@ -502,7 +515,7 @@ async def edit_poster_in_canva(req: EditInCanvaRequest, admin_id: str = Depends(
         source="canva", design_id=design["design_id"], edit_url=design["edit_url"], thumbnail_url=design["thumbnail_url"],
     )
     logger.info(f"[canva] admin={admin_id} sent poster {req.poster_id} to Canva for editing, design={design['design_id']}")
-    return _record_to_poster_response(get_poster(admin_id, req.poster_id))
+    return _record_to_poster_response(get_poster(admin_id, req.poster_id, retries=3))
 
 
 @router.post(
@@ -560,7 +573,7 @@ async def sync_poster_from_canva(req: EditInCanvaRequest, admin_id: str = Depend
         thumbnail_url="",
     )
     logger.info(f"[canva] admin={admin_id} synced poster {req.poster_id} back from Canva design={poster['design_id']}")
-    return _record_to_poster_response(get_poster(admin_id, req.poster_id))
+    return _record_to_poster_response(get_poster(admin_id, req.poster_id, retries=3))
 
 
 @router.post(
@@ -599,7 +612,7 @@ async def regenerate_poster(poster_id: str, req: RegeneratePosterRequest, user_i
         image_field_values=used_images,
         text_field_values=text_fields,
     )
-    saved = get_poster(user_id, poster_id)
+    saved = get_poster(user_id, poster_id, retries=3)
     return _record_to_poster_response(saved)
 
 

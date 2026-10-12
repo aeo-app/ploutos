@@ -6,11 +6,12 @@ import { UnlockModal } from '../payment/UnlockModal';
 import { PagePickerModal } from '../canva/PagePickerModal';
 import { historyApi } from '../../api/historyApi';
 import { consumeRememberedPage } from '../../utils/oauthReturn';
-import s from './AppShell.module.css';
+import '../../aeo/aeo.css';
 
 const FEATURE_LABEL = {
   competitors: 'competitor analysis', keywords: 'keyword data', profile: 'company profiles',
   domainAuthority: 'domain authority strategy', fullReport: 'the full report',
+  aeoPrompts: 'the full prompt list', aeoStrategy: 'content strategies', aeoBlog: 'blog drafts', aeoSocial: 'social posts',
 };
 
 // Backend analysis_type (snake_case, saved to DynamoDB) -> frontend result
@@ -23,6 +24,7 @@ const ANALYSIS_TYPE_TO_RESULT_KEY = {
   full_report: 'fullReport',
   content_strategy: 'contentStrategy',
   relocation_social_calendar: 'relocationCalendar',
+  aeo_prompts: 'aeoPrompts',
 };
 
 export function AppShell({ children, profile, onEnterAdminView }) {
@@ -42,7 +44,7 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     import('../../api/socialPublishApi').then(({ socialPublishApi }) => {
       socialPublishApi.status()
         .then(d => {
-          const lost = (d?.platforms || []).filter(p => p?.needs_reconnect);
+          const lost = (d?.platforms || []).filter(p => p?.needs_reconnect && ['facebook', 'instagram'].includes(p.platform));
           setDisconnectedPlatforms(lost);
         })
         .catch(() => {}); // non-critical — silently skip if the status check itself fails
@@ -119,13 +121,13 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     if (state.request.company_name) return; // already filled (this session or by the user)
 
     if (profile?.company_name && profile?.domain) {
-      setRequest({ company_name: profile.company_name, url: profile.domain, market: profile.country || 'Singapore' });
+      setRequest({ company_name: profile.company_name, url: profile.domain, market: profile.country || 'Global' });
       // Still pull industry from history. Country from the profile is the
       // authoritative value for the sidebar and currency selection.
       historyApi.list({ limit: 1 })
         .then(data => {
           const latest = data?.items?.[0];
-          if (latest) setRequest({ market: profile.country || latest.market || 'Singapore', industry: latest.industry || '' });
+          if (latest) setRequest({ market: profile.country || latest.market || 'Global', industry: latest.industry || '' });
         })
         .catch(err => console.warn("[AppShell] market/industry prepopulation failed:", err?.message || err));
       return;
@@ -138,7 +140,7 @@ export function AppShell({ children, profile, onEnterAdminView }) {
           setRequest({
             company_name: latest.company_name || '',
             url: latest.url || '',
-            market: latest.market || 'Singapore',
+            market: latest.market || 'Global',
             industry: latest.industry || '',
           });
         }
@@ -180,28 +182,23 @@ export function AppShell({ children, profile, onEnterAdminView }) {
   }, []);
 
   return (
-    <div className={s.shell}>
+    <div className="ae-app ae-shell">
       <Sidebar open={open} onClose={() => setOpen(false)} />
-      <div className={s.main}>
+      <div className="ae-main">
         <TopBar onMenu={() => setOpen(v => !v)} onEnterAdminView={onEnterAdminView} />
         {disconnectedPlatforms.length > 0 && !bannerDismissed && (
-          <div className={s.reconnectBanner}>
+          <div className="ae-banner">
             <span>
               ⚠ {disconnectedPlatforms.map(p => p.platform).join(', ')} connection{disconnectedPlatforms.length > 1 ? 's have' : ' has'} expired
               or been revoked — posts to {disconnectedPlatforms.length > 1 ? 'these platforms' : 'this platform'} will fail until you reconnect.
             </span>
-            <div className={s.reconnectBannerActions}>
-              <button
-                type="button" className={s.reconnectBannerLink}
-                onClick={() => { setPage('relocationCalendar'); setBannerDismissed(true); }}
-              >
-                Go reconnect
-              </button>
-              <button type="button" className={s.reconnectBannerClose} onClick={() => setBannerDismissed(true)} aria-label="Dismiss">✕</button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="ae-btn sm" onClick={() => { setPage('publishCalendar'); setBannerDismissed(true); }}>Go reconnect</button>
+              <button type="button" className="ae-btn sm" onClick={() => setBannerDismissed(true)} aria-label="Dismiss">✕</button>
             </div>
           </div>
         )}
-        <main className={s.content}>{children}</main>
+        <main className="ae-body">{children}</main>
       </div>
 
       {state.paymentRequiredFor && (

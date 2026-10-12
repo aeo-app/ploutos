@@ -73,30 +73,43 @@ PAYMENT_CURRENCY = "SGD"
 # wrong place for a constant a service module also depends on.
 PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))
 
+# Pricing is shown in three currencies only: Singapore -> SGD, India -> INR,
+# everywhere else -> USD.
+DEFAULT_CURRENCY = "USD"
 COUNTRY_CURRENCIES = {
     "SG": "SGD", "Singapore": "SGD",
     "IN": "INR", "India": "INR",
-    "US": "USD", "United States": "USD", "United States of America": "USD",
-    "GB": "GBP", "United Kingdom": "GBP",
-    "AU": "AUD", "Australia": "AUD",
-    "NZ": "NZD", "New Zealand": "NZD",
-    "CA": "CAD", "Canada": "CAD",
-    "AE": "AED", "United Arab Emirates": "AED",
-    "MY": "MYR", "Malaysia": "MYR",
-    "ID": "IDR", "Indonesia": "IDR",
-    "PH": "PHP", "Philippines": "PHP",
-    "TH": "THB", "Thailand": "THB",
-    "JP": "JPY", "Japan": "JPY",
-    "CN": "CNY", "China": "CNY",
-    "HK": "HKD", "Hong Kong": "HKD",
-    "CH": "CHF", "Switzerland": "CHF",
 }
+
+# Last-resort list prices per plan/currency. The live Airwallex catalog and
+# AIRWALLEX_PRODUCT_PRICES_JSON are consulted first and always win — these
+# only apply when neither has a price for the currency. PLACEHOLDER amounts
+# for USD and INR: confirm them (or create the matching Prices in Airwallex)
+# before going live, because this is what a customer is charged.
+DEFAULT_PRICES: dict[str, dict[str, str]] = {
+    "starter": {"SGD": "50.00", "USD": "39.00", "INR": "3299.00"},
+    "growth":  {"SGD": "150.00", "USD": "119.00", "INR": "9999.00"},
+    "scale":   {"SGD": "500.00", "USD": "389.00", "INR": "32999.00"},
+}
+
+# Headers set by common CDNs / proxies with the visitor's ISO country code.
+_GEO_HEADERS = ("cloudfront-viewer-country", "cf-ipcountry", "x-vercel-ip-country", "x-appengine-country", "x-country-code")
+
+
+def viewer_country_from_headers(headers) -> str | None:
+    """The visitor's country as reported by the CDN/proxy in front of the API, if any."""
+    for h in _GEO_HEADERS:
+        v = (headers.get(h) or "").strip().upper()
+        if len(v) == 2 and v.isalpha() and v not in ("XX", "T1"):
+            return v
+    return None
 
 
 def currency_for_country(country: str | None) -> str:
-    """Resolve a registered country to its payment currency."""
+    """Resolve a country to its payment currency (SGD / INR, otherwise USD)."""
     value = (country or "").strip()
-    return COUNTRY_CURRENCIES.get(value) or PAYMENT_CURRENCY
+    return COUNTRY_CURRENCIES.get(value) or COUNTRY_CURRENCIES.get(value.upper()) or DEFAULT_CURRENCY
+
 
 PLANS: dict[str, dict] = {
     "starter": {
@@ -225,6 +238,10 @@ def get_plan_price(plan_id: str, currency: str | None = None) -> str:
         logger.warning(f"[airwallex] {plan_id}/{currency_code} = {env_price} (source: AIRWALLEX_PRODUCT_PRICES_JSON fallback — NOT the live catalog)")
         return env_price
 
+    default_price = DEFAULT_PRICES.get(plan_id, {}).get(currency_code)
+    if default_price is not None:
+        logger.warning(f"[airwallex] {plan_id}/{currency_code} = {default_price} (source: hardcoded DEFAULT_PRICES — NOT the live catalog)")
+        return default_price
     if currency_code == PAYMENT_CURRENCY:
         logger.warning(f"[airwallex] {plan_id}/{currency_code} = {plan['amount']} (source: hardcoded local PLANS default — NOT the live catalog)")
         return plan["amount"]

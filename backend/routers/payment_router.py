@@ -39,9 +39,11 @@ from models.payment_models import CreatePaymentIntentRequest
 from services.airwallex_service import (
     AirwallexError,
     PAID_ACCESS_DAYS,
+    DEFAULT_CURRENCY,
     PAYMENT_CURRENCY,
     PLANS,
     currency_for_country,
+    viewer_country_from_headers,
     get_plan,
     create_customer as awx_create_customer,
     create_payment_intent as awx_create_payment_intent,
@@ -77,6 +79,7 @@ def _compute_paid_until() -> str | None:
 
 @router.get("/api/v1/payment/plans", summary="List available plans (Starter/Growth/Scale)")
 async def list_plans(
+    request: Request,
     country: str | None = Query(default=None, max_length=100),
     authorization: str | None = Header(default=None, alias="Authorization"),
     access_token: str | None = Header(default=None, alias="X-Access-Token"),
@@ -88,12 +91,13 @@ async def list_plans(
     checkout pricing, so the UI and actual plan charges can never drift.
     """
     registered_country = _country_from_authorization(authorization, access_token)
-    currency = currency_for_country(registered_country or country)
+    # Where the visitor is right now wins (CDN header, then the browser's hint); the registered country is the fallback.
+    currency = currency_for_country(viewer_country_from_headers(request.headers) or country or registered_country)
     try:
         localized_plans = _localized_plans(currency)
     except LookupError as exc:
-        logger.warning("[payment] %s; falling back to %s", exc, PAYMENT_CURRENCY)
-        currency = PAYMENT_CURRENCY
+        logger.warning("[payment] %s; falling back to %s", exc, DEFAULT_CURRENCY)
+        currency = DEFAULT_CURRENCY
         localized_plans = _localized_plans(currency)
     return {
         "currency": currency,
@@ -120,6 +124,7 @@ def _localized_plans(currency: str) -> list[dict]:
 
 @router.post("/api/v1/payment/create-intent", summary="Create an Airwallex PaymentIntent for a chosen plan")
 async def create_intent(
+    request: Request,
     req: CreatePaymentIntentRequest,
     user_id: str = Depends(get_current_user_id),
     authorization: str = Header(..., alias="Authorization"),
@@ -133,13 +138,13 @@ async def create_intent(
     frontend needs to mount the Airwallex Drop-in Element.
     """
     try:
-        currency = currency_for_country(_country_from_authorization(authorization, access_token))
+        currency = currency_for_country(viewer_country_from_headers(request.headers) or req.country or _country_from_authorization(authorization, access_token))
         plan = get_plan(req.plan_id, currency)
     except KeyError:
         raise HTTPException(status_code=400, detail=f"Unknown plan_id '{req.plan_id}'. Valid: {list(PLANS)}")
     except LookupError as exc:
-        logger.warning("[payment] %s; falling back to %s", exc, PAYMENT_CURRENCY)
-        currency = PAYMENT_CURRENCY
+        logger.warning("[payment] %s; falling back to %s", exc, DEFAULT_CURRENCY)
+        currency = DEFAULT_CURRENCY
         plan = get_plan(req.plan_id, currency)
 
     # Reuse an existing Airwallex customer for this user if one already
@@ -175,7 +180,7 @@ async def create_intent(
     amount = plan["amount"]  # our own authoritative, correctly-formatted price string —
                               # don't derive it from Airwallex's response, which may
                               # echo the number back reformatted (e.g. "79.00" -> 79.0)
-    currency = intent.get("currency", currency_for_country(_country_from_authorization(authorization, access_token)))
+    currency = intent.get("currency", currency)
     description = f"{plan['name']} plan"  # clean receipt/transaction text — the
                                             # marketing blurb ("For founders...")
                                             # is exposed separately via /payment/plans

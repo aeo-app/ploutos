@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { adminApi } from '../api/adminApi';
+import { adminApi, adminAeoApi } from '../api/adminApi';
 import { withTokenExpiry } from '../api/authApi';
 import { useAuth } from '../context/AuthContext';
 import { Card, Badge, SectionHeader, Empty, ErrorCard, SkeletonCard, StatTile } from '../components/ui/UI';
@@ -11,18 +11,26 @@ import s from './AdminDashboardPage.module.css';
  * This is read-only navigation: clicking a user hands off to the Calendars
  * or Blogs page (via onSelectUser) rather than editing anything here.
  */
-export function AdminDashboardPage({ onSelectUser }) {
+export function AdminDashboardPage({ onSelectUser, onReview }) {
   const { goScreen, logout } = useAuth();
   const authCtx = { goScreen, logout };
 
   const [users, setUsers] = useState(null);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
+  const [attention, setAttention] = useState([]);
 
   useEffect(() => {
     withTokenExpiry(adminApi.listUsers(), authCtx)
       .then(d => setUsers(d?.users || []))
       .catch(e => { if (e?.code !== 'TokenExpired') setError(e.message || 'Could not load users.'); });
+    // eslint-disable-next-line
+  }, []);
+
+  useEffect(() => {
+    withTokenExpiry(adminAeoApi.overview(), authCtx)
+      .then(d => setAttention((d?.users || []).filter(u => u.blog_requests > 0)))
+      .catch(() => {});
     // eslint-disable-next-line
   }, []);
 
@@ -66,6 +74,18 @@ export function AdminDashboardPage({ onSelectUser }) {
             <StatTile icon="👤" label="Registered users" value={totalUsers} />
             <StatTile icon="💳" label="Paid accounts" value={totalPaid} color="var(--c-success)" />
           </div>
+
+          {attention.length > 0 && (
+            <Card className={s.companyCard} style={{ marginBottom: 16, borderColor: '#fde68a' }}>
+              <div className={s.companyCardHead}>Blog reviews requested by customers</div>
+              {attention.map(u => (
+                <button key={u.user_id} type="button" className={s.userRow} onClick={() => onReview?.(u)}>
+                  <div><div className={s.userName}>{u.company_name || u.email}</div><div className={s.userEmail}>{u.domain}</div></div>
+                  <div className={s.userMeta}><Badge variant="warning">{u.blog_requests} to review</Badge></div>
+                </button>
+              ))}
+            </Card>
+          )}
 
           <input
             className={s.searchInput}

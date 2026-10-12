@@ -1137,16 +1137,27 @@ def save_poster(
         raise
 
 
-def get_poster(user_id: str, poster_id: str) -> Optional[dict]:
+def get_poster(user_id: str, poster_id: str, *, retries: int = 0) -> Optional[dict]:
     """Looks up a poster by its poster_id via the shared GSI (same pattern as
-    get_analysis) — the router only knows the poster_id, not its SK."""
+    get_analysis) — the router only knows the poster_id, not its SK.
+
+    `retries`: same eventual-consistency caveat as get_analysis — this GSI
+    query can briefly miss a row that was just put_item'd in the same
+    request. Pass retries>0 only at call sites reading back a poster they
+    just saved; leave at 0 for an ordinary lookup."""
     table = _get_table()
     try:
-        resp = table.query(
-            IndexName=GSI_NAME,
-            KeyConditionExpression=Key("analysis_id").eq(poster_id),
-        )
-        items = resp.get("Items", [])
+        attempt = 0
+        while True:
+            resp = table.query(
+                IndexName=GSI_NAME,
+                KeyConditionExpression=Key("analysis_id").eq(poster_id),
+            )
+            items = resp.get("Items", [])
+            if items or attempt >= retries:
+                break
+            sleep(0.3 * (attempt + 1))
+            attempt += 1
         if not items:
             return None
         item = _from_dynamo(items[0])
@@ -1379,3 +1390,133 @@ def create_table_if_not_exists() -> None:
         logger.info(f"[dynamo] TTL enabled on 'expires_at' ({TTL_DAYS} days)")
 
     logger.info(f"[dynamo] Table '{TABLE_NAME}' created with GSI '{GSI_NAME}'")
+
+# ── AEO dashboard: saved state + generated content ───────────────────────────
+# Two kinds of per-user item, both under the user's own PK and deliberately
+# WITHOUT `analysis_id` / `analysis_type` attributes, so they never appear in
+# the analysis GSI, history lists or stats:
+#   SK = "AEO_STATE"                      one small document — custom prompts and
+#                                         competitors, selected prompts, manual
+#                                         social links, blog/post approvals
+#   SK = "AEO_CONTENT#<kind>#<digest>"    one generated asset per (kind, prompt),
+#                                         stored as a JSON string — strategy,
+#                                         blog drafts, social posts — so reloading
+#                                         the page doesn't re-run Bedrock
+# DynamoDB items cap at 400 KB; the state document is size-checked before it is
+# written rather than left to fail with a cryptic ValidationException.
+
+AEO_STATE_MAX_BYTES = 300_000
+_AEO_DEFAULT_STATE = {
+    "custom_prompts": [], "custom_competitors": [], "hidden_competitors": [], "hidden_prompts": [], "selected_prompts": [],
+    "social_links": {}, "blog_state": {}, "post_state": {},
+}
+
+
+class AeoStateTooLargeError(ValueError):
+    pass
+
+
+def _aeo_state_sk() -> str:
+    return "AEO_STATE"
+
+
+def _aeo_content_sk(kind: str, key: str) -> str:
+    import hashlib
+    if not re.fullmatch(r"[a-z_]{1,30}", kind):
+        raise ValueError(f"Invalid AEO content kind: {kind!r}")
+    return f"AEO_CONTENT#{kind}#{hashlib.sha1(key.strip().lower().encode('utf-8')).hexdigest()[:20]}"
+
+
+def get_aeo_state(user_id: str) -> dict:
+    table = _get_table()
+    try:
+        item = table.get_item(Key={"PK": _pk(user_id), "SK": _aeo_state_sk()}).get("Item")
+        state = _from_dynamo(item.get("state")) if item else None
+        return {**{k: (v.copy() if hasattr(v, "copy") else v) for k, v in _AEO_DEFAULT_STATE.items()}, **(state or {})}
+    except ClientError as e:
+        logger.error(f"[dynamo] get_aeo_state failed: {e.response['Error']}")
+        raise
+
+
+def save_aeo_state(user_id: str, state: dict) -> dict:
+    if len(json.dumps(state, default=str)) > AEO_STATE_MAX_BYTES:
+        raise AeoStateTooLargeError("Saved dashboard data is too large — remove some items and try again.")
+    table = _get_table()
+    try:
+        table.put_item(Item=_to_dynamo({
+            "PK": _pk(user_id), "SK": _aeo_state_sk(), "user_id": user_id,
+            "state": state, "updated_at": _now_iso(),
+        }))
+        return state
+    except ClientError as e:
+        logger.error(f"[dynamo] save_aeo_state failed: {e.response['Error']}")
+        raise
+
+
+def get_aeo_content(user_id: str, kind: str, key: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        item = table.get_item(Key={"PK": _pk(user_id), "SK": _aeo_content_sk(kind, key)}).get("Item")
+        if not item:
+            return None
+        raw = item.get("data")
+        return json.loads(raw) if isinstance(raw, str) else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_aeo_content failed: {e.response['Error']}")
+        raise
+    except json.JSONDecodeError:
+        return None
+
+
+def save_aeo_content(user_id: str, kind: str, key: str, data: dict) -> None:
+    table = _get_table()
+    try:
+        table.put_item(Item={
+            "PK": _pk(user_id), "SK": _aeo_content_sk(kind, key), "user_id": user_id,
+            "content_kind": kind, "data": json.dumps(data, default=str), "updated_at": _now_iso(),
+        })
+    except ClientError as e:
+        logger.error(f"[dynamo] save_aeo_content failed: {e.response['Error']}")
+        raise
+
+
+# ── AEO content — admin (team) access ────────────────────────────────────────
+_AEO_CONTENT_PREFIX = "AEO_CONTENT#"
+
+
+def list_aeo_content(user_id: str) -> list[dict]:
+    """Every generated/edited AEO asset for one user: [{sk, kind, data, updated_at}]."""
+    table = _get_table()
+    out: list[dict] = []
+    try:
+        kwargs = {"KeyConditionExpression": Key("PK").eq(_pk(user_id)) & Key("SK").begins_with(_AEO_CONTENT_PREFIX)}
+        while True:
+            resp = table.query(**kwargs)
+            for it in resp.get("Items", []):
+                try:
+                    data = json.loads(it.get("data")) if isinstance(it.get("data"), str) else None
+                except json.JSONDecodeError:
+                    data = None
+                if data is not None:
+                    out.append({"sk": it["SK"], "kind": it.get("content_kind", ""), "data": data, "updated_at": it.get("updated_at", "")})
+            if "LastEvaluatedKey" not in resp or len(out) >= 400:
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        return out
+    except ClientError as e:
+        logger.error(f"[dynamo] list_aeo_content failed: {e.response['Error']}")
+        raise
+
+
+def save_aeo_content_by_sk(user_id: str, sk: str, kind: str, data: dict) -> None:
+    if not sk.startswith(_AEO_CONTENT_PREFIX) or not re.fullmatch(r"[a-z_]{1,30}", kind):
+        raise ValueError("Invalid AEO content reference")
+    table = _get_table()
+    try:
+        table.put_item(Item={
+            "PK": _pk(user_id), "SK": sk, "user_id": user_id,
+            "content_kind": kind, "data": json.dumps(data, default=str), "updated_at": _now_iso(),
+        })
+    except ClientError as e:
+        logger.error(f"[dynamo] save_aeo_content_by_sk failed: {e.response['Error']}")
+        raise

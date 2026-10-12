@@ -212,10 +212,24 @@ def upload_asset_from_url(access_token: str, image_url: str, name: str) -> str:
     """Fetches an image from a URL (e.g. one we already host) and uploads it
     as a Canva asset — Canva's upload API takes raw bytes, not a remote URL,
     so the fetch happens on our side first."""
-    img_resp = requests.get(image_url, timeout=REQUEST_TIMEOUT)
-    if not img_resp.ok:
-        raise CanvaError(f"Could not fetch image to upload: {image_url} ({img_resp.status_code})")
-    return upload_asset_from_bytes(access_token, img_resp.content, name)
+    content = None
+    # Our own storage bucket may not be publicly readable (a plain GET then
+    # returns an XML error, which Canva rejects as "file format could not be
+    # detected") — read those objects straight from S3 with our credentials.
+    try:
+        from services.media_upload_service import read_own_image
+        content = read_own_image(image_url)
+    except Exception:  # noqa: BLE001
+        content = None
+    if content is None:
+        img_resp = requests.get(image_url, timeout=REQUEST_TIMEOUT)
+        if not img_resp.ok:
+            raise CanvaError(f"Could not fetch image to upload: {image_url} ({img_resp.status_code})")
+        ctype = (img_resp.headers.get("Content-Type") or "").lower()
+        if not ctype.startswith("image/"):
+            raise CanvaError("The poster image could not be read from storage (it is not publicly accessible).")
+        content = img_resp.content
+    return upload_asset_from_bytes(access_token, content, name)
 
 
 # ── Designs ──────────────────────────────────────────────────────────────────

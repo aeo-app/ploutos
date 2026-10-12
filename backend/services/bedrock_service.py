@@ -116,59 +116,37 @@ MAX_TOKENS = int(os.getenv("BEDROCK_MAX_TOKENS", "4096"))
 ANALYSIS_MAX_TOKENS = int(os.getenv("BEDROCK_ANALYSIS_MAX_TOKENS", "3000"))
 BACKLINK_MAX_TOKENS = int(os.getenv("BEDROCK_BACKLINK_MAX_TOKENS", "3500"))
 CONTENT_MAX_TOKENS = int(os.getenv("BEDROCK_CONTENT_MAX_TOKENS", "3500"))
-EIGENAI_AWS_ACCESS_KEY_ID = os.getenv("EIGENAI_AWS_ACCESS_KEY_ID")
-EIGENAI_AWS_SECRET_ACCESS_KEY = os.getenv("EIGENAI_AWS_SECRET_ACCESS_KEY")
-EIGENAI_AWS_SESSION_TOKEN = os.getenv("EIGENAI_AWS_SESSION_TOKEN")
-ROLE_ARN = os.getenv("ROLE_ARN")  # optional, for cross-account access
+MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
+MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
 # ── Singleton Bedrock client ───────────────────────────────────────────────────
 _bedrock: Any = None
 
-
 def _get_client():
-    global _bedrock, _creds_expiry
+    global _bedrock
 
-    if (
-        _bedrock is None
-        or _creds_expiry is None
-        or time.time() > _creds_expiry - 60  # refresh 1 min before expiry
-    ):
-        logger.info("[bedrock] refreshing STS credentials...")
-
-        sts = boto3.client(
-            "sts",
-            aws_access_key_id=EIGENAI_AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=EIGENAI_AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION,
-        )
-
-        response = sts.assume_role(
-            RoleArn=ROLE_ARN,
-            RoleSessionName="bedrock-session",
-        )
-
-        creds = response["Credentials"]
-        _creds_expiry = creds["Expiration"].timestamp()
+    if _bedrock is None:
+        logger.info("[bedrock] initializing client using same AWS account credentials...")
 
         _bedrock = boto3.client(
             "bedrock-runtime",
             region_name=AWS_REGION,
-            aws_access_key_id=creds["AccessKeyId"],
-            aws_secret_access_key=creds["SecretAccessKey"],
-            aws_session_token=creds["SessionToken"],
+            aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY,
             config=Config(
                 connect_timeout=10,
-                # Long-form generations can legitimately take 30-60s+; this is
-                # a ceiling against a hung connection, not a normal-case limit.
-                read_timeout=int(os.getenv("BEDROCK_READ_TIMEOUT_SECONDS", "90")),
-                retries={"max_attempts": 0},  # we do our own backoff below,
-                                               # so we can log/react per attempt
+                read_timeout=int(
+                    os.getenv("BEDROCK_READ_TIMEOUT_SECONDS", "90")
+                ),
+                retries={"max_attempts": 0},
             ),
         )
 
-        logger.info(f"[bedrock] refreshed. expires at {_creds_expiry}")
+        logger.info("[bedrock] client initialized successfully")
 
     return _bedrock
+
+
 
 
 # ── Retry / backoff for transient Bedrock errors ───────────────────────────────

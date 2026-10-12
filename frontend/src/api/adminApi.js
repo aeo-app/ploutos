@@ -1,4 +1,5 @@
 import { ApiError } from "./authApi";
+import { fetchImageBlob } from "./downloadImage";
 import { BASE, checkAuthTokens, getAuthHeaders } from "./seoApi";
 
 async function req(method, path, body) {
@@ -20,6 +21,9 @@ async function req(method, path, body) {
     if (res.status === 403) {
       throw new ApiError("AdminRequired", data?.detail || "Admin access required.");
     }
+    if (res.status === 428) {
+      throw new ApiError("CanvaNotConnected", data?.detail || "Canva is not connected yet.");
+    }
     if (!res.ok) {
       throw new ApiError(data?.code || "ServerError", data?.detail || data?.message || `Request failed (${res.status})`);
     }
@@ -30,13 +34,14 @@ async function req(method, path, body) {
   }
 }
 
-async function uploadReq(path, file) {
+async function uploadReq(path, file, fields) {
   try {
     checkAuthTokens();
     const headers = getAuthHeaders();
     delete headers["Content-Type"]; // let the browser set the multipart boundary itself
     const form = new FormData();
     form.append("file", file);
+    Object.entries(fields || {}).forEach(([k, v]) => form.append(k, v));
     const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
@@ -94,4 +99,22 @@ export const adminApi = {
     req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled/${encodeURIComponent(scheduleId)}/retry`),
   socialCancelScheduled: (userId, scheduleId) =>
     req("DELETE", `/admin/users/${encodeURIComponent(userId)}/social-publish/scheduled/${encodeURIComponent(scheduleId)}`),
+};
+
+// ── AEO dashboard: team review of blogs and social posts ─────────────────────
+export const adminAeoApi = {
+  overview: () => req("GET", "/admin/aeo/overview"),
+  workspace: (userId) => req("GET", `/admin/aeo/users/${encodeURIComponent(userId)}`),
+  saveContent: (userId, body) => req("PUT", `/admin/aeo/users/${encodeURIComponent(userId)}/content`, body),
+  aiBlog: (userId, body) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/blog/ai-draft`, body),
+  aiSocial: (userId, prompt) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/social/ai-generate`, { prompt }),
+  aiStrategy: (userId, prompt) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/strategy/ai-generate`, { prompt }),
+  flag: (userId, body) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/flag`, body),
+  generateImage: (userId, body) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/post-image/generate`, body),
+  uploadImage: (userId, key, file) => uploadReq(`/admin/aeo/users/${encodeURIComponent(userId)}/post-image/upload`, file, { key }),
+  imageUrl: (userId, url) => req("POST", "/admin/aeo/image-url", { user_id: userId, url }),
+  downloadBlob: (userId, url) => fetchImageBlob("/admin/aeo/image-download", { user_id: userId, url }),
+  canvaEdit: (userId, key) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/post-image/canva-edit`, { key }),
+  canvaSync: (userId, key) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/post-image/canva-sync`, { key }),
+  socialStatus: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/status`),
 };

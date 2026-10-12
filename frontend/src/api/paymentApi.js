@@ -1,5 +1,6 @@
 import { ApiError } from "./authApi"; // shared ApiError class
 import { BASE, checkAuthTokens } from "./seoApi";
+import { getBrowserCountry } from "../utils/geo";
 
 function getPaymentAuthHeaders() {
   checkAuthTokens();
@@ -69,9 +70,9 @@ async function post(path, body) {
 }
 
 export const paymentApi = {
-  getPlans: () => get("/payment/plans"),
+  getPlans: () => get(`/payment/plans?country=${encodeURIComponent(getBrowserCountry())}`),
   /** @param {string} planId - "starter" | "growth" | "scale" */
-  createIntent: (planId) => post("/payment/create-intent", { plan_id: planId }),
+  createIntent: (planId) => post("/payment/create-intent", { plan_id: planId, country: getBrowserCountry() }),
   /** @param {string} [paymentIntentId] - if provided, also live-polls Airwallex before returning status */
   getStatus: (paymentIntentId) =>
     get(`/payment/status${paymentIntentId ? `?payment_intent_id=${encodeURIComponent(paymentIntentId)}` : ""}`),

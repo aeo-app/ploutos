@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BASE } from '../../../api/seoApi';
+import { getBrowserCountry, formatPlanAmount } from '../../../utils/geo';
 import { JsonLd } from '../../../components/JsonLd';
 import { buildSoftwareApplicationSchema } from '../schema';
 import { scrollToSection } from '../scrollUtils';
@@ -65,39 +66,27 @@ const FALLBACK_PLANS = [
   },
 ];
 
+// Offline/error rendering follows the same rule as the server: India -> INR, Singapore -> SGD, otherwise USD.
+const FALLBACK_AMOUNTS = { SGD: ['50', '150', '500'], USD: ['39', '119', '389'], INR: ['3299', '9999', '32999'] };
+const localizedFallback = (country) => {
+  const currency = country === 'IN' ? 'INR' : country === 'SG' ? 'SGD' : 'USD';
+  return FALLBACK_PLANS.map((p, i) => ({ ...p, currency, amount: FALLBACK_AMOUNTS[currency][i] }));
+};
+
 export default function Pricing({ onStartTrial, initialPlans }) {
   const [plans, setPlans] = useState(initialPlans || null);
-
-  const getBrowserCountry = () => {
-    if (typeof window === 'undefined') return '';
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-    const timezoneCountry = {
-      'Asia/Singapore': 'SG',
-      'Asia/Kolkata': 'IN',
-      'Asia/Calcutta': 'IN',
-      'America/New_York': 'US',
-      'America/Los_Angeles': 'US',
-      'Europe/London': 'GB',
-      'Australia/Sydney': 'AU',
-      'Pacific/Auckland': 'NZ',
-    }[timezone];
-    if (timezoneCountry) return timezoneCountry;
-
-    const locale = window.navigator.language || '';
-    return locale.match(/[-_]([A-Z]{2})$/i)?.[1]?.toUpperCase() || '';
-  };
 
   useEffect(() => {
     if (initialPlans) return;
     const country = getBrowserCountry();
-    const query = country ? `?country=${encodeURIComponent(country)}` : '';
+    const query = `?country=${encodeURIComponent(country)}`;
 
     fetch(`${BASE}/payment/plans${query}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
-      .then((data) => setPlans(data.plans || FALLBACK_PLANS))
+      .then((data) => setPlans(data.plans || localizedFallback(country)))
       .catch((err) => {
         console.error('[Pricing] Could not load plans from', `${BASE}/payment/plans`, '—', err.message);
-        setPlans(FALLBACK_PLANS);
+        setPlans(localizedFallback(country));
       });
     // eslint-disable-next-line
   }, []);
@@ -125,7 +114,7 @@ export default function Pricing({ onStartTrial, initialPlans }) {
                   <p className="desc">{plan.blurb}</p>
                   <div className="amount">
                     <span className="cur">{symbol}</span>
-                    <span className="num">{Math.round(parseFloat(plan.amount))}</span>
+                    <span className="num">{formatPlanAmount(plan.amount, plan.currency)}</span>
                     <span className="per">/mo</span>
                   </div>
                   <div className="billed">billed annually</div>

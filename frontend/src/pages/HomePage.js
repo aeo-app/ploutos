@@ -29,7 +29,6 @@ const MODULES = [
   { id: 'da',       icon: '📈', title: 'Domain Authority',  desc: 'Gap analysis & backlink roadmap',          color: '#059669' },
   { id: 'contentStrategy', icon: '✍️', title: 'Content Strategy', desc: 'Competitor-informed, SEO-optimised content', color: '#DB2777' },
   { id: 'relocationCalendar', icon: '📅', title: 'Social Media Calendar', desc: 'A month of relocation posts, streamed day by day', color: '#0D9488' },
-  { id: 'report',   icon: '⚡',  title: 'Full Report',       desc: 'All 4 analyses in one call',              color: '#D97706' },
 ];
 
 export function HomePage() {

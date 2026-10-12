@@ -54,7 +54,7 @@ export function LandingPage({ initialPlans, initialPosts } = {}) {
       <Faq />
       <Proof />
       <Blog initialPosts={initialPosts} />
-      <Contact />
+      <Contact onStart={handleGetStarted} />
       <Footer />
     </div>
   );
