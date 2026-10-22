@@ -79,7 +79,11 @@ def generate_image_from_prompt(prompt: str, *, width: int | None = None, height:
     client = _get_client()
     body = {
         "taskType": "TEXT_IMAGE",
-        "textToImageParams": {"text": prompt[:512]},  # Titan caps the prompt length
+        # Titan caps the prompt length, so a compact realism directive goes first and the scene is trimmed to fit.
+        "textToImageParams": {
+            "text": ("Realistic real-world photograph, natural lighting, true-to-life, professional camera. " + prompt)[:512],
+            "negativeText": "cartoon, illustration, anime, vector, clip art, 3d render, painting, drawing, text, watermark, logo",
+        },
         "imageGenerationConfig": {
             "numberOfImages": 1,
             "height": height or IMAGE_HEIGHT,

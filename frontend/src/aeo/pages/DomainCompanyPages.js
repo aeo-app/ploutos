@@ -4,6 +4,7 @@ import { seoApi } from '../../api/seoApi';
 import { aeoApi } from '../../api/aeoApi';
 import { useAeo } from '../AeoContext';
 import { copyToClipboard, hostOf } from '../utils';
+import { BrandKitCard } from '../BrandKit';
 
 function RunCard({ title, text, label, loading, onRun }) {
   return (
@@ -151,6 +152,7 @@ export function CompanyAeoPage() {
 
   return (
     <>
+      <BrandKitCard />
       <div className="ae-grid2">
         <section className="ae-card">
           <div className="ae-row" style={{ alignItems: 'baseline' }}><h2>Website</h2>{domain && <a href={`https://${domain}`} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700 }}>{domain} ↗</a>}</div>

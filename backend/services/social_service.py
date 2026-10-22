@@ -243,7 +243,7 @@ Return a JSON object with EXACTLY this shape:
         "instagram": "string", "facebook": "string", "linkedin": "string",
         "google_business": "string — NEVER a testimonial, see rules"
       }},
-      "visual_suggestion": "string — background idea + text overlay idea + icon idea, all in one string",
+      "visual_suggestion": "string — a realistic real-world photograph: subject, setting, people/objects, lighting and composition, all in one string (never a cartoon or illustration; keep text out of the image)",
       "cta": "string — the exact call-to-action text, matching cta_style",
       "hashtags": ["string", "..."],
       "carousel_slides": null

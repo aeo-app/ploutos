@@ -104,6 +104,9 @@ class GeneratePosterRequest(BaseModel):
     visual_suggestion: str = Field(..., min_length=1, description="Used as the image generation prompt — unchanged in meaning, just now sent to OpenAI instead of Bedrock/Canva")
     caption: str = Field("", description="Stored as metadata on the poster record — not burned into the image itself, since there is no text-overlay/autofill step in this flow")
     cta: str = Field("", description="Same as caption — stored as metadata only")
+    company_name: str = Field("", max_length=200, description="Used so the photo shows this company's real line of business")
+    industry: str = Field("", max_length=120)
+    keywords: list[str] = Field(default_factory=list, max_length=20)
 
 
 class EditInCanvaRequest(BaseModel):

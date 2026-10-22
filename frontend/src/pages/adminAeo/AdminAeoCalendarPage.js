@@ -5,14 +5,14 @@ import { downloadImage } from '../../api/downloadImage';
 import { CHANNELS, channelState, hkey } from '../../aeo/utils';
 import { Badge, Card, Empty, SectionHeader, SkeletonCard } from '../../components/ui/UI';
 import { useApp } from '../../context/AppContext';
-import { AdminImg, CustomerList, UserHeader, promptsOf, useAdminCall, useWorkspace } from './shared';
+import { AdminImg, AdminVideo, CustomerList, UserHeader, promptsOf, useAdminCall, useWorkspace } from './shared';
 import s from './AdminAeo.module.css';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const brandVisual = (post, brand) => (post.visual && post.visual.trim())
-  || `A clean, on-brand social image for ${brand} illustrating: ${(post.title || post.text || '').replace(/\s+/g, ' ').slice(0, 160)}`;
+  || `A realistic, real-world photograph for ${brand} showing: ${(post.title || post.text || '').replace(/\s+/g, ' ').slice(0, 160)}`;
 
-function PostEditor({ userId, brand, prompt, ch, i, post, st, onChange, onFlag, onSaveDoc, saving, dirty, justSaved, saveError }) {
+function PostEditor({ userId, brand, brandOk, prompt, ch, i, post, st, onChange, onFlag, onSaveDoc, saving, dirty, justSaved, saveError }) {
   const call = useAdminCall();
   const { toast } = useApp();
   const fileRef = useRef(null);
@@ -25,7 +25,43 @@ function PostEditor({ userId, brand, prompt, ch, i, post, st, onChange, onFlag, 
   const approved = !!st.approved;
   const img = st.img;
 
+  const vid = st.vid;
+  const needBrand = () => {
+    if (brandOk) return false;
+    toast({ type: 'info', message: 'This customer has not added their logo and contact phone number yet. Images and Shorts need them — they are printed on every one.' });
+    return true;
+  };
+  const genShort = async () => {
+    if (needBrand()) return;
+    setBusy('short');
+    try {
+      const { job_id } = await adminAeoApi.startShort(userId, { key, title: post.title || '', text: (post.text || '').slice(0, 1500), visual: brandVisual(post, brand) });
+      const until = Date.now() + 9 * 60 * 1000;
+      while (Date.now() < until) {
+        await new Promise(r => setTimeout(r, 4000));
+        const stt = await adminAeoApi.shortStatus(userId, job_id);
+        if (stt.status === 'done') { onFlag(key, (stt.entry || {})[key] || { vid: stt.video_url, vthumb: stt.thumb_url }); toast({ type: 'success', message: 'Short created. The customer will see it.' }); setBusy(''); return; }
+        if (stt.status === 'error') throw new Error(stt.error || 'Could not create the video.');
+      }
+      throw new Error('The video is taking longer than usual. Please try again in a few minutes.');
+    } catch (e) { if (e?.code !== 'TokenExpired') toast({ type: 'error', message: e?.message || 'Could not create the video.' }); }
+    setBusy('');
+  };
+  const uploadShort = async (f) => {
+    if (!f) return;
+    setBusy('upv');
+    const r = await call(adminAeoApi.uploadShort(userId, key, f));
+    setBusy('');
+    if (r?.entry) { onFlag(key, r.entry); toast({ type: 'success', message: 'Short uploaded. The customer will see it.' }); }
+  };
+  const removeShort = async () => {
+    setBusy('rm');
+    const r = await call(adminAeoApi.flag(userId, { section: 'post', key, vid: '' }));
+    setBusy('');
+    if (r?.entry) onFlag(key, r.entry);
+  };
   const gen = async () => {
+    if (needBrand()) return;
     setBusy('gen');
     const r = await call(adminAeoApi.generateImage(userId, { key, visual: brandVisual(post, brand), brand }));
     setBusy('');
@@ -121,6 +157,20 @@ function PostEditor({ userId, brand, prompt, ch, i, post, st, onChange, onFlag, 
           </>
         )}
       </div>
+      {ch.id === 'yt' ? (
+      <div>
+        {vid ? <AdminVideo userId={userId} src={vid} thumb={st.vthumb} /> : <div className={s.imgBox} style={{ aspectRatio: '9 / 16', maxWidth: 320 }}><span>No Short video yet</span></div>}
+        {(!approved || open) && (
+          <div className={s.imgBtns}>
+            <button type="button" className={`${s.btn} ${s.sm} ${s.primary}`} disabled={!!busy} onClick={genShort}>{busy === 'short' ? 'Creating… (1–2 min)' : vid ? '↻ Create new Short' : '🎬 Create Short video'}</button>
+            <button type="button" className={`${s.btn} ${s.sm}`} disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === 'upv' ? 'Uploading…' : '⬆ Upload Short'}</button>
+            {vid && <button type="button" className={`${s.btn} ${s.sm}`} disabled={!!busy} onClick={removeShort}>Remove</button>}
+            <input ref={fileRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/*" hidden onChange={e => { uploadShort(e.target.files?.[0]); e.target.value = ''; }} />
+          </div>
+        )}
+        <p className={s.note} style={{ margin: '8px 0 0' }}>YouTube posts are vertical Shorts (9:16, up to 3 minutes). Generated Shorts carry the customer's logo and contact details.</p>
+      </div>
+      ) : (
       <div>
         {img ? (
           <div className={s.imgFull}>
@@ -162,6 +212,7 @@ function PostEditor({ userId, brand, prompt, ch, i, post, st, onChange, onFlag, 
         )}
         {(!approved || open) && st.cd && <p className={s.note} style={{ margin: '8px 0 0' }}>Finished editing in Canva? Click “Get edited image” to update this post for you and the customer. Image changes are saved automatically.</p>}
       </div>
+      )}
     </div>
   );
 }
@@ -260,11 +311,11 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
           );
         })}
       </div>
-      {channelState(ch, conn[ch.platform]).key !== 'on' && <div className={s.banner} style={{ marginBottom: 12 }}>{ch.live ? `${ch.name} is not connected for this customer yet` : `${ch.name} publishing is still being set up`} — posts can be prepared and approved now, and published once the connection is ready.</div>}
+      {channelState(ch, conn[ch.platform]).key !== 'on' && <div className={s.banner} style={{ marginBottom: 12 }}>{ch.name} is not connected for this customer yet — posts can be prepared and approved now, and published once they connect it.</div>}
       {dirtyCount > 0 && <div className={s.banner} style={{ marginBottom: 12 }}>You have {dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}. They are not visible to the customer until you save.</div>}
       <div className={s.main}>
         {posts.map((p, i) => (
-          <PostEditor key={`${channel}${i}`} userId={userId} brand={brand} prompt={prompt} ch={ch} i={i} post={p}
+          <PostEditor key={`${channel}${i}`} userId={userId} brand={brand} brandOk={ws.brand_complete !== false} prompt={prompt} ch={ch} i={i} post={p}
             st={ps[hkey('post', prompt, ch.id, i)] || {}}
             onChange={np => setChannels(c => ({ ...c, [channel]: c[channel].map((x, j) => (j === i ? np : x)) }))}
             onFlag={setEntry} onSaveDoc={() => saveDoc('edited')} saving={saving}
@@ -327,6 +378,7 @@ export function AdminAeoCalendarPage({ selectedUser, onSelectUser }) {
           {ws && (
             <>
               <UserHeader ws={ws} />
+              {ws.brand_complete === false && <div className={s.banner}>This customer has not added their <b>logo and contact phone number</b> yet (Company Profile / Social Media Calendar → Brand kit). Images and Shorts can't be created until they do, because both are printed on every one.</div>}
               <NewCalendar ws={ws} userId={ws.user.user_id} existing={prompts.filter(p => ws.content.some(c => c.kind === 'social' && c.prompt === p))}
                 onCreated={(p) => { setPrompt(p); reload(); setTick(t => t + 1); }} />
               {prompts.length === 0 && <Empty icon="🧭" title="No prompts selected yet" body="This customer has not chosen prompts to work on. Create a calendar from any prompt above." />}

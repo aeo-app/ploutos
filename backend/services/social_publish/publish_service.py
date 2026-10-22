@@ -82,7 +82,8 @@ def _get_valid_google_token(user_id: str, platform: str, conn: dict) -> str:
         return conn["access_token"]
 
 
-def publish_to_platform(user_id: str, platform: str, image_url: str, caption: str, cta_url: str | None = None) -> dict:
+def publish_to_platform(user_id: str, platform: str, image_url: str, caption: str, cta_url: str | None = None,
+                        video_url: str | None = None, title: str | None = None) -> dict:
     """Returns {"platform", "success", "post_id"?, "error"?} — never raises,
     so a caller publishing to several platforms in one request/job can
     always get a result for every platform, including whichever ones fail."""
@@ -109,15 +110,25 @@ def publish_to_platform(user_id: str, platform: str, image_url: str, caption: st
             )
         elif platform == "youtube":
             token = _get_valid_google_token(user_id, "youtube", conn)
-            image_bytes = requests.get(image_url, timeout=30).content
-            video_bytes = yt.generate_short_video_from_image(image_bytes)
+            if video_url:
+                # A real Short (generated or uploaded by the user): read it from OUR bucket — and only
+                # if it belongs to this user — then upload it as-is. No image-to-video conversion.
+                from services.media_upload_service import read_user_image
+                got = read_user_image(video_url, user_id)
+                if not got:
+                    raise ValueError("That video could not be found. Create or upload the Short again.")
+                video_bytes = got[0]
+            else:
+                image_bytes = requests.get(image_url, timeout=30).content
+                video_bytes = yt.generate_short_video_from_image(image_bytes)
             # YouTube has no separate "caption" field the way an image
             # post does — the caption becomes the video's description,
             # and its first line (or a truncated version of the whole
             # thing) doubles as the title, since a title is required and
             # a calendar post was never written with one in mind.
-            title = (caption.strip().splitlines() or [caption])[0][:100] or "New post"
-            post_id = yt.upload_video(token, video_bytes, title=title, description=caption)
+            title = ((title or "").strip() or (caption.strip().splitlines() or [caption])[0])[:100] or "New post"
+            description = caption if video_url is None or "#shorts" in caption.lower() else f"{caption}\n\n#Shorts"
+            post_id = yt.upload_video(token, video_bytes, title=title, description=description)
         else:
             raise ValueError(f"Unhandled platform: {platform}")
 
@@ -132,5 +143,6 @@ def publish_to_platform(user_id: str, platform: str, image_url: str, caption: st
         return result
 
 
-def publish_to_platforms(user_id: str, platforms: list[str], image_url: str, caption: str, cta_url: str | None = None) -> list[dict]:
-    return [publish_to_platform(user_id, p, image_url, caption, cta_url) for p in platforms]
+def publish_to_platforms(user_id: str, platforms: list[str], image_url: str, caption: str, cta_url: str | None = None,
+                         video_url: str | None = None, title: str | None = None) -> list[dict]:
+    return [publish_to_platform(user_id, p, image_url, caption, cta_url, video_url=video_url, title=title) for p in platforms]

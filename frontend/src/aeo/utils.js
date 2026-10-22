@@ -4,21 +4,19 @@ export const ENG_SHORT = ['GPT', 'PPLX', 'GEM', 'AIO'];
 export const INTENT = { Commercial: ['#eef0ff', '#3730a3'], Informational: ['#e0f2fe', '#075985'], Transactional: ['#fff1e6', '#9a3412'] };
 
 export const CHANNELS = [
-  { id: 'fb',  name: 'Facebook',        abbr: 'f',  bg: '#e0ecff', fg: '#1d4ed8', day: 0, aspect: '1.91', time: '9:00 AM',  platform: 'facebook', live: true },
-  { id: 'ig',  name: 'Instagram',       abbr: 'IG', bg: '#fce7f3', fg: '#9d174d', day: 2, aspect: '1',    time: '12:30 PM', platform: 'instagram', live: true },
-  { id: 'li',  name: 'LinkedIn',        abbr: 'in', bg: '#dbeafe', fg: '#1e3a8a', day: 1, aspect: '1.91', time: '8:30 AM',  platform: 'linkedin', live: false },
-  { id: 'yt',  name: 'YouTube',         abbr: 'YT', bg: '#fee2e2', fg: '#991b1b', day: 3, aspect: '1.778', time: '7:00 PM', platform: 'youtube', live: false },
-  { id: 'gbp', name: 'Google Business', abbr: 'G',  bg: '#fef3c7', fg: '#92400e', day: 4, aspect: '1.333', time: '10:00 AM', platform: 'google_business', live: false },
+  { id: 'fb',  name: 'Facebook',        abbr: 'f',  bg: '#e0ecff', fg: '#1d4ed8', day: 0, aspect: '1.91', time: '9:00 AM',  platform: 'facebook' },
+  { id: 'ig',  name: 'Instagram',       abbr: 'IG', bg: '#fce7f3', fg: '#9d174d', day: 2, aspect: '1',    time: '12:30 PM', platform: 'instagram' },
+  { id: 'li',  name: 'LinkedIn',        abbr: 'in', bg: '#dbeafe', fg: '#1e3a8a', day: 1, aspect: '1.91', time: '8:30 AM',  platform: 'linkedin' },
+  { id: 'yt',  name: 'YouTube',         abbr: 'YT', bg: '#fee2e2', fg: '#991b1b', day: 3, aspect: '1.778', time: '7:00 PM', platform: 'youtube' },
+  { id: 'gbp', name: 'Google Business', abbr: 'G',  bg: '#fef3c7', fg: '#92400e', day: 4, aspect: '1.333', time: '10:00 AM', platform: 'google_business' },
 ];
-/** Channels we can already publish to (Meta). The rest are still being set up — customers see "In progress", never an error. */
-export const channelState = (c, st, manual) => {
-  if (!c.live) return { key: 'progress', label: '◐ In progress', color: '#4f46e5', note: 'We are finishing this connection. You can write and approve posts now.' };
+/** Connection state of one channel for the customer. A connection that did not complete shows as "in progress", never as an error. */
+export const channelState = (c, st, inProgress) => {
   if (st?.connected && !st?.needs_reconnect) return { key: 'on', label: '● Connected', color: '#059669' };
   if (st?.needs_reconnect) return { key: 'reconnect', label: '● Reconnect needed', color: '#b45309' };
-  if (manual) return { key: 'link', label: '● Link saved, not connected', color: '#b45309' };
-  return { key: 'off', label: '○ Not connected yet', color: '#64748b' };
+  if (inProgress) return { key: 'progress', label: '◐ In progress', color: '#4f46e5' };
+  return { key: 'off', label: '○ Not connected', color: '#64748b' };
 };
-export const LIVE_PLATFORMS = CHANNELS.filter(c => c.live).map(c => c.platform);
 
 export const SOCIAL_HELP = {
   li:  { label: 'LinkedIn', placeholder: 'https://linkedin.com/company/your-page' },

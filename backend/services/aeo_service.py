@@ -391,9 +391,46 @@ _CHANNEL_RULES = {
     "fb": "Facebook: 250-500 characters, conversational, one clear CTA.",
     "ig": "Instagram: caption under 300 characters plus a hashtag line; `visual` describes the image or carousel.",
     "li": "LinkedIn: 300-700 characters, professional, insight-led, no emojis.",
-    "yt": "YouTube: `title` under 90 characters, `text` is a 2-3 sentence description, `duration` like '6:30'.",
+    "yt": "YouTube Short (vertical video, 15-30 seconds): `title` under 90 characters with a hook, `text` is a 2-3 sentence description, `visual` describes the video scenes, `duration` like '0:20'.",
     "gbp": "Google Business Profile: under 300 characters, local and practical. NEVER include testimonials or ratings.",
 }
+
+
+def clean_keywords(values, limit: int = 20) -> list[str]:
+    out, seen = [], set()
+    for v in values or []:
+        k = re.sub(r"\s+", " ", str(v or "")).strip().strip("#,;")[:80]
+        if len(k) >= 2 and k.lower() not in seen:
+            seen.add(k.lower())
+            out.append(k)
+    return out[:limit]
+
+
+def suggest_site_keywords(
+    company_name: str, url: str, market: str, industry: str, n: int = 10, usage_tracker: TokenUsageTracker | None = None,
+) -> list[str]:
+    """The top `n` keywords a customer of this business would search for, taken from what
+    the company's own website says. Used when the user has not entered any keywords."""
+    prompt = f"""
+Company: {company_name}   Website: {url}   Market: {market}   Industry: {industry}
+{_site_block(url, company_name)}
+
+List the {n} most relevant search keywords for this business — what real customers in {market} type when they
+want exactly what this company sells. Base them ONLY on the website content above (its real products, services,
+locations and audience). Short phrases (2-5 words), no brand-name-only keywords, no duplicates, most valuable first.
+Return ONE JSON object: {{"keywords": ["...", "..."]}} with exactly {n} items."""
+    kws: list[str] = []
+    try:
+        d = _parse_json(_converse(_SYSTEM, prompt, max_tokens=700, usage_tracker=usage_tracker))
+        kws = clean_keywords(d.get("keywords"), n)
+    except Exception as e:  # noqa: BLE001 — fall back to what the page itself says
+        logger.info(f"[aeo] keyword suggestion fell back to page headings: {e}")
+    if len(kws) < n:
+        summary = _site_summary(url)
+        m = re.search(r"Headings: (.*)", summary or "")
+        heads = [h.strip() for h in (m.group(1).split("|") if m else [])]
+        kws = clean_keywords(kws + heads, n)
+    return kws
 
 
 def generate_aeo_social(
@@ -401,18 +438,23 @@ def generate_aeo_social(
 ) -> AeoSocialResponse:
     n_posts = 1 if limited else POSTS_PER_CHANNEL
     rules = "\n".join(f"- {_CHANNEL_RULES[c]}" for c in CHANNELS)
+    keywords = clean_keywords(req.keywords) or suggest_site_keywords(
+        req.company_name, req.url, req.market, req.industry, usage_tracker=usage_tracker)
+    kw_block = (f'KEYWORDS this calendar is built around (spread them across the posts, one or two per post, naturally in the '
+                f'text and hashtags — never stuffed): {json.dumps(keywords, ensure_ascii=False)}') if keywords else ""
     prompt = f"""
 Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
 {_site_block(req.url, req.company_name)}
 Target AI prompt: "{req.prompt}"
+{kw_block}
 
 Write {n_posts} social posts for EACH of these channels, each post supporting the idea that
-{req.company_name} is the answer to that prompt. Vary the angle across the posts
+{req.company_name} is the answer to that prompt and targeting the keywords above. Vary the angle across the posts
 (for example: direct answer, checklist/tips, proof-point to be collected, myth vs fact).
 {rules}
 
 Return ONE JSON object: {{"channels": {{"fb": [post, ...], "ig": [...], "li": [...], "yt": [...], "gbp": [...]}}}}
-where post = {{"text": "...", "cta": "short button label", "tags": "#a #b", "visual": "what the image shows",
+where post = {{"text": "...", "cta": "short button label", "tags": "#a #b", "visual": "a realistic photograph: the real-world subject, setting, people or objects, lighting and composition (never a cartoon or illustration; no text in the image)",
 "title": "YouTube only, else empty", "duration": "YouTube only, else empty"}}.
 Exactly {n_posts} post(s) per channel. Do NOT invent client names, quotes, numbers or reviews."""
     raw = _converse(_SYSTEM, prompt, max_tokens=2500 if limited else 7000, usage_tracker=usage_tracker)
@@ -422,7 +464,7 @@ Exactly {n_posts} post(s) per channel. Do NOT invent client names, quotes, numbe
         posts = []
         for p in ((d.get("channels") or {}).get(c) or [])[:n_posts]:
             _text = str(p.get("text", ""))[:2000]
-            _visual = str(p.get("visual", "")).strip()[:300] or f"A clean, on-brand image for {req.company_name} illustrating: {' '.join(_text.split())[:160]}"
+            _visual = str(p.get("visual", "")).strip()[:300] or f"A realistic, real-world photograph for {req.company_name} showing: {' '.join(_text.split())[:160]}"
             posts.append(AeoSocialPost(
                 text=_text, cta=str(p.get("cta", ""))[:60], tags=str(p.get("tags", ""))[:200],
                 visual=_visual, title=str(p.get("title", ""))[:120], duration=str(p.get("duration", ""))[:10],
@@ -430,7 +472,7 @@ Exactly {n_posts} post(s) per channel. Do NOT invent client names, quotes, numbe
         if len(posts) < n_posts:
             raise RuntimeError(f"Only {len(posts)} {c} posts were generated — please try again.")
         channels[c] = posts
-    return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited)
+    return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited, keywords=keywords)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { socialPublishApi } from '../api/socialPublishApi';
-import { rememberPageBeforeOAuthRedirect } from '../utils/oauthReturn';
+import { rememberPageBeforeOAuthRedirect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
+import { useConnectProgress } from './useConnectProgress';
 import { useAeo, usePromptRows } from './AeoContext';
-import { ENG_SHORT, INTENT, SOCIAL_HELP, SOCIAL_ORDER, CHANNELS, engCell, isReal, promptVis, num } from './utils';
+import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num } from './utils';
 
 export function EngCell({ x, j }) {
   const c = engCell(x, j);
@@ -161,27 +162,31 @@ export function CompetitorsMini() {
 
 /* ── Social channels ─────────────────────────────────────────────────────── */
 export function SocialChannelsCard() {
-  const { saved, linkSocial, unlinkSocial } = useAeo();
   const { setPage, state, toast } = useApp();
   const [status, setStatus] = useState({});
   const [connecting, setConnecting] = useState(null);
+  const progress = useConnectProgress();
   const GROUP = { facebook: 'meta', instagram: 'meta', linkedin: 'linkedin', google_business: 'google_business', youtube: 'youtube' };
   const connect = async (ch) => {
     setConnecting(ch.id);
+    const group = GROUP[ch.platform] || ch.platform;
     try {
-      const { authorize_url } = await socialPublishApi.connect(GROUP[ch.platform] || ch.platform);
+      const { authorize_url } = await socialPublishApi.connect(group);
+      if (!authorize_url) throw new Error('no authorize url');
       rememberPageBeforeOAuthRedirect(state.page);
+      rememberConnectAttempt(group);
       window.location.href = authorize_url;
-    } catch (e) { toast({ type: 'info', message: 'We could not open the connection just now. Please try again in a moment.' }); setConnecting(null); }
+    } catch (e) {
+      // Not an error the customer can act on — show the connection as in progress.
+      markConnectInProgress(platformsOfGroup(group));
+      toast({ type: 'info', message: `Your ${ch.name} connection is in progress. We are finishing the setup — try again a little later.` });
+      setConnecting(null);
+    }
   };
   const disconnect = async (ch) => {
     try { await socialPublishApi.disconnect(ch.platform); setStatus(m => ({ ...m, [ch.platform]: { ...m[ch.platform], connected: false } })); }
-    catch (e) { toast({ type: 'error', message: e.message || 'Could not disconnect.' }); }
+    catch (e) { toast({ type: 'info', message: 'We could not disconnect just now. Please try again in a moment.' }); }
   };
-  const [editing, setEditing] = useState(null);
-  const [draft, setDraft] = useState('');
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let off = false;
@@ -189,17 +194,10 @@ export function SocialChannelsCard() {
       if (off) return;
       const m = {}; (d?.platforms || []).forEach(p => { m[p.platform] = p; });
       setStatus(m);
+      Object.values(m).forEach(p => { if (p.connected && !p.needs_reconnect) clearConnectInProgress(p.platform); });
     }).catch(() => {});
     return () => { off = true; };
   }, []);
-
-  const save = async () => {
-    if (!draft.trim()) return;
-    setBusy(true);
-    const r = await linkSocial(editing, draft.trim());
-    setBusy(false);
-    if (r.ok) { setEditing(null); setDraft(''); setErr(''); } else setErr(r.message || 'That link was not accepted.');
-  };
 
   return (
     <section className="ae-card" style={{ gap: 12 }}>
@@ -207,44 +205,24 @@ export function SocialChannelsCard() {
       {SOCIAL_ORDER.map(id => {
         const ch = CHANNELS.find(c => c.id === id);
         const st = status[ch.platform];
-        const manual = saved.social_links[id];
-        const connected = st?.connected;
-        const linked = connected || manual;
-        const handle = connected ? (st.account_label || 'Connected account') : manual || (!ch.live ? 'Connection being set up' : 'Not linked yet');
-        const inProgress = !ch.live && !connected;
-        const statusTxt = inProgress ? 'In progress' : connected ? (st.needs_reconnect ? 'Reconnect needed' : 'Connected for posting') : manual ? 'Link saved · not connected for posting' : 'Not connected';
-        const statusColor = inProgress ? '#4f46e5' : connected ? (st.needs_reconnect ? '#b45309' : '#059669') : manual ? '#4f46e5' : '#b45309';
-        const isEd = editing === id;
+        const cs = channelState(ch, st, !!progress[ch.platform]);
+        const connected = cs.key === 'on';
+        const handle = connected ? (st.account_label || 'Connected account') : cs.key === 'progress' ? 'Connection being set up' : 'Not connected yet';
         return (
           <div key={id} className="ae-social">
             <div className="ae-social-top">
               <div className="ae-ico" style={{ background: ch.bg, color: ch.fg }}>{ch.abbr}</div>
               <div className="ae-col" style={{ minWidth: 0 }}>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{SOCIAL_HELP[id].label}</span>
-                <span style={{ fontSize: 12, color: linked || inProgress ? 'var(--ae-faint)' : '#b45309', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{handle}</span>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{ch.name}</span>
+                <span style={{ fontSize: 12, color: 'var(--ae-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{handle}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: statusColor }}>{statusTxt}</span>
-                {ch.live && (!connected || st?.needs_reconnect) && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : st?.needs_reconnect ? 'Reconnect' : 'Connect account'}</button>}
-                {connected && !st?.needs_reconnect && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
-                <button className="ae-btn sm" onClick={() => { setEditing(isEd ? null : id); setDraft(manual || ''); setErr(''); }}>
-                  {isEd ? 'Close' : manual ? 'Edit link' : 'Add page link'}
-                </button>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: cs.color }}>{cs.label.replace(/^[●○◐] /, '')}</span>
+                {!connected && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : cs.key === 'reconnect' ? 'Reconnect' : cs.key === 'progress' ? 'Try again' : 'Connect account'}</button>}
+                {connected && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
               </div>
             </div>
-            {isEd && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#f8f8fd', border: '1px dashed #d6d5ea', borderRadius: 12, padding: 12 }}>
-                <span style={{ fontSize: 12, color: '#4a4966' }}>Paste your {SOCIAL_HELP[id].label} page URL. We check that it is a genuine {SOCIAL_HELP[id].label} address before saving it.</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <input className="ae-input" style={{ padding: '9px 12px' }} value={draft} onChange={e => { setDraft(e.target.value); setErr(''); }}
-                    onKeyDown={e => { if (e.key === 'Enter') save(); else if (e.key === 'Escape') setEditing(null); }} placeholder={SOCIAL_HELP[id].placeholder} />
-                  <button className="ae-btn primary" disabled={busy} onClick={save}>Save link</button>
-                  {manual && <button className="ae-btn" onClick={() => { unlinkSocial(id); setEditing(null); }}>Remove</button>}
-                  <button className="ae-btn" onClick={() => setEditing(null)}>Cancel</button>
-                </div>
-                {err && <span className="ae-err">{err}</span>}
-              </div>
-            )}
+            {cs.key === 'progress' && <span className="ae-note" style={{ color: '#3730a3' }}>This connection is in progress. You can keep writing and approving {ch.name} posts — we will publish them once it is ready.</span>}
           </div>
         );
       })}

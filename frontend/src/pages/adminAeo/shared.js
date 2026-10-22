@@ -110,3 +110,20 @@ export function UserHeader({ ws, right }) {
     </div>
   );
 }
+
+/** A customer's Short — signed link first so it plays even when the bucket is private. */
+export function AdminVideo({ userId, src, thumb }) {
+  const [url, setUrl] = useState('');
+  const [poster, setPoster] = useState('');
+  useEffect(() => {
+    let off = false;
+    const sign = async (u, set) => {
+      if (!u) return;
+      try { const r = await adminAeoApi.imageUrl(userId, u); if (!off) set(r?.url || u); } catch { if (!off) set(u); }
+    };
+    setUrl(''); sign(src, setUrl); sign(thumb, setPoster);
+    return () => { off = true; };
+  }, [userId, src, thumb]);
+  if (!url) return <span className={s.muted}>Loading video…</span>;
+  return <video src={url} poster={poster || undefined} controls playsInline preload="metadata" style={{ width: '100%', maxWidth: 320, aspectRatio: '9 / 16', background: '#000', borderRadius: 10 }} />;
+}

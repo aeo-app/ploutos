@@ -70,7 +70,8 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 
-SCOPES = "https://www.googleapis.com/auth/youtube.upload"
+# upload = post videos/Shorts; readonly = look up the connected channel (channels.list mine=true).
+SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 
 REQUEST_TIMEOUT = int(os.getenv("SOCIAL_PUBLISH_TIMEOUT_SECONDS", "20"))
 UPLOAD_TIMEOUT = int(os.getenv("YOUTUBE_UPLOAD_TIMEOUT_SECONDS", "120"))  # a real video upload needs more than the standard 20s

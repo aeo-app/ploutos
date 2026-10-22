@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Callable
 
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
 
 from core.security import get_current_user_id, require_paid_access
 from db import (
@@ -62,6 +63,14 @@ from services.aeo_service import (
     run_site_checks,
 )
 from services.bedrock_service import TokenUsageTracker
+from services import brand_service as brand_svc
+from services.aeo_service import _safe_get, clean_keywords, suggest_site_keywords
+from services.brand_overlay import normalise_logo, validate_logo
+from services.media_upload_service import MediaUploadError, signed_view_url, upload_image
+from services.site_contact_service import analyse_site
+from services import short_jobs
+from services.media_upload_service import upload_video
+from services.shorts_service import ShortError, check_uploaded_short, to_mp4
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/aeo", tags=["AEO Dashboard"])
@@ -176,10 +185,145 @@ def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user
 def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id)):
     _enforce_domain(user_id, req.url, req.company_name)
     limited = not is_user_paid(user_id)
-    return _cached_or_generate(
+    res = _cached_or_generate(
         user_id, "social", req.prompt + ("|free" if limited else ""), req.refresh, AeoSocialResponse,
         lambda t: generate_aeo_social(req, usage_tracker=t, limited=limited),
     )
+    # The calendar is built around keywords — the user's own, or the top 10 taken from their website
+    # when they gave none. Remember them so the user can see and edit them.
+    try:
+        kws = clean_keywords(getattr(res, "keywords", []))
+        if kws:
+            st = get_aeo_state(user_id)
+            if not (st.get("calendar_keywords") or []):
+                st["calendar_keywords"] = kws
+                save_aeo_state(user_id, AeoState(**st).model_dump())
+    except Exception as e:  # noqa: BLE001 — never fail a generation over this
+        logger.info(f"[aeo] could not remember calendar keywords: {e}")
+    return res
+
+
+class KeywordSuggestRequest(BaseModel):
+    company_name: str = Field(..., min_length=1, max_length=200)
+    url: str = Field(..., min_length=3, max_length=300)
+    market: str = "Global"
+    industry: str = "General"
+
+
+@router.post("/keywords/suggest", summary="Top 10 keywords for this business, taken from its own website")
+def keywords_suggest(req: KeywordSuggestRequest, user_id: str = Depends(get_current_user_id)):
+    _enforce_domain(user_id, req.url, req.company_name)
+    kws = suggest_site_keywords(req.company_name, req.url, req.market, req.industry, usage_tracker=TokenUsageTracker())
+    if not kws:
+        raise HTTPException(status_code=502, detail="We could not read enough from your website yet. Add your own keywords instead.")
+    return {"keywords": kws}
+
+
+# ── Brand kit: logo + contact details printed on every generated image / Short ────────────────
+def _brand_view(user_id: str) -> dict:
+    b = brand_svc.get_brand(user_id)
+    missing = brand_svc.missing_fields(b)
+    view = {k: b.get(k, "") for k in ("phone", "email", "website", "address")}
+    view.update(logo_url=b.get("logo_url", ""), business=b.get("business") or {}, socials=b.get("socials") or {}, detected=bool(b.get("detected_at")))
+    view["logo_view_url"] = (signed_view_url(b["logo_url"], user_id) if b.get("logo_url") else "") or ""
+    return {"brand": view, "missing": missing, "complete": not missing}
+
+
+@router.get("/brand", summary="The saved logo + contact details, and what is still missing")
+def get_brand_kit(user_id: str = Depends(get_current_user_id)):
+    return _brand_view(user_id)
+
+
+class BrandUpdate(BaseModel):
+    phone: str = Field(..., max_length=40)
+    email: str = Field(default="", max_length=120)
+    website: str = Field(default="", max_length=140)
+    address: str = Field(default="", max_length=200)
+
+
+@router.put("/brand", summary="Save the contact details printed on every generated image")
+def put_brand_kit(req: BrandUpdate, user_id: str = Depends(get_current_user_id)):
+    try:
+        fields = dict(
+            phone=brand_svc.clean_phone(req.phone), email=brand_svc.clean_email(req.email),
+            website=brand_svc.clean_website(req.website), address=" ".join(req.address.split())[:200],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    brand_svc.save_brand(user_id, **fields)
+    return _brand_view(user_id)
+
+
+def _store_logo(user_id: str, data: bytes) -> None:
+    ok, msg, _ = validate_logo(data)
+    if not ok:
+        raise HTTPException(status_code=422, detail=msg)
+    try:
+        url = upload_image(normalise_logo(data), "logo.png", user_id)
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    brand_svc.save_brand(user_id, logo_url=url)
+
+
+@router.post("/brand/logo", summary="Upload the company logo")
+async def upload_brand_logo(file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    data = await file.read()
+    if not data or len(data) > 8_000_000:
+        raise HTTPException(status_code=422, detail="Choose a logo image under 8 MB (PNG, JPG or WebP).")
+    _store_logo(user_id, data)
+    return _brand_view(user_id)
+
+
+class BrandDetectRequest(BaseModel):
+    url: str = Field(..., min_length=3, max_length=300)
+    company_name: str = Field(default="", max_length=200)
+
+
+@router.post("/brand/detect", summary="Read the company website for phone, email, address, social links and a logo")
+def detect_brand(req: BrandDetectRequest, user_id: str = Depends(get_current_user_id)):
+    _enforce_domain(user_id, req.url, req.company_name or "Company")
+    found = analyse_site(req.url)
+    cur = brand_svc.get_brand(user_id)
+    fill: dict = {}
+    # Fill in only what the customer has not already entered themselves.
+    if not str(cur.get("phone") or "").strip() and found["phones"]:
+        try:
+            fill["phone"] = brand_svc.clean_phone(found["phones"][0])
+        except ValueError:
+            pass
+    if not str(cur.get("email") or "").strip() and found["emails"]:
+        fill["email"] = found["emails"][0]
+    if not str(cur.get("website") or "").strip():
+        try:
+            fill["website"] = brand_svc.clean_website(req.url)
+        except ValueError:
+            pass
+    if not str(cur.get("address") or "").strip() and found["address"]:
+        fill["address"] = found["address"][:200]
+    brand_svc.save_brand(
+        user_id, business={"title": found["title"], "description": found["description"]}, socials=found["socials"],
+        detected_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), **fill,
+    )
+    out = _brand_view(user_id)
+    out["found"] = {k: found[k] for k in ("phones", "emails", "address", "socials", "logo_candidates", "pages_read")}
+    out["filled"] = sorted(fill)
+    return out
+
+
+class BrandLogoFromSite(BaseModel):
+    image_url: str = Field(..., min_length=8, max_length=600)
+
+
+@router.post("/brand/logo-from-site", summary="Use a logo found on the company website")
+def logo_from_site(req: BrandLogoFromSite, user_id: str = Depends(get_current_user_id)):
+    try:
+        r = _safe_get(req.image_url, timeout=8.0)
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=422, detail="We could not download that logo. Upload it instead.")
+    if not r.ok or not (r.headers.get("content-type", "").lower().startswith("image/")):
+        raise HTTPException(status_code=422, detail="That link is not an image. Upload your logo instead.")
+    _store_logo(user_id, r.content)
+    return _brand_view(user_id)
 
 
 class SocialPostEdit(BaseModel):
@@ -209,6 +353,51 @@ def edit_social_post(req: SocialPostEdit, user_id: str = Depends(get_current_use
     doc.pop("cached", None)
     save_aeo_content(user_id, "social", key, doc)
     return {"ok": True, "post": cur}
+
+
+# ── YouTube Shorts: generate a vertical video, or upload your own ───────────────────────────
+class ShortRequest(BaseModel):
+    title: str = Field(default="", max_length=200)
+    text: str = Field(default="", max_length=3000)
+    visual: str = Field(default="", max_length=900)
+    company_name: str = Field(default="", max_length=200)
+    industry: str = Field(default="", max_length=120)
+    keywords: list[str] = Field(default_factory=list, max_length=20)
+
+
+@router.post("/short-video", summary="Start creating a YouTube Short (vertical video) for a post; poll GET /short-video/{job_id}")
+def start_short(req: ShortRequest, background: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
+    params = req.model_dump()
+    params["keywords"] = clean_keywords(params.get("keywords"))
+    job_id = short_jobs.start_job(user_id, params)          # 422 when the logo / phone number are missing
+    background.add_task(short_jobs.run_job, user_id, job_id, params)
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.get("/short-video/{job_id}", summary="Progress of a Short being created")
+def short_status(job_id: str, user_id: str = Depends(get_current_user_id)):
+    if not job_id.isalnum() or len(job_id) > 64:
+        raise HTTPException(status_code=422, detail="Bad job id")
+    return short_jobs.job_status(user_id, job_id)
+
+
+@router.post("/short-upload", summary="Upload your own YouTube Short (vertical or square video, up to 3 minutes)")
+async def upload_short(file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    data = await file.read()
+    try:
+        info = check_uploaded_short(data)
+        video = to_mp4(data)
+        video_url = upload_video(video, user_id)
+        thumb_url = upload_image(info["thumbnail"], "short-thumb.jpg", user_id)
+    except ShortError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {
+        "video_url": video_url, "thumb_url": thumb_url, "duration": round(info["duration"], 1),
+        "video_view_url": signed_view_url(video_url, user_id) or video_url,
+        "thumb_view_url": signed_view_url(thumb_url, user_id) or thumb_url,
+    }
 
 
 # ── Website checks ───────────────────────────────────────────────────────────
@@ -256,6 +445,8 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
             if name:
                 comps.append({"name": name, "domain": str((c or {}).get("domain", "")).strip()[:120]})
         changes["custom_competitors"] = comps[:25]
+    if "calendar_keywords" in changes:
+        changes["calendar_keywords"] = clean_keywords(changes["calendar_keywords"], 20)
     if "hidden_prompts" in changes:
         changes["hidden_prompts"] = _clean_str_list(changes["hidden_prompts"], 80, 200)
     if "hidden_competitors" in changes:
@@ -263,11 +454,11 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
     for key in ("blog_state", "post_state"):
         if key in changes:
             # Only the few fields the UI uses, with bounded sizes — this is user-writable storage.
-            allowed = {"drafted": bool, "approved": bool, "pending": bool, "img": str, "v": int}
+            allowed = {"drafted": bool, "approved": bool, "pending": bool, "img": str, "v": int, "published": bool, "pub_at": str, "vid": str, "vthumb": str}
             cleaned = {}
             for k, v in list(changes[key].items())[:800]:
                 if isinstance(v, dict):
-                    cleaned[str(k)[:420]] = {f: v[f] for f, t in allowed.items() if f in v and isinstance(v[f], t) and (f != "img" or len(v[f]) <= 600)}
+                    cleaned[str(k)[:420]] = {f: v[f] for f, t in allowed.items() if f in v and isinstance(v[f], t) and (f not in ("img", "vid", "vthumb") or len(v[f]) <= 600) and (f != "pub_at" or len(v[f]) <= 40)}
             # Fields owned by our team can't be set (or wiped) from the user's side.
             existing = state.get(key) or {}
             for k, v in existing.items():
@@ -281,10 +472,11 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
                 # A screen that was open before our team changed an image must not put the old one back.
                 if isinstance(v.get("v"), int) and k in cleaned and int(cleaned[k].get("v") or 0) < v["v"]:
                     cleaned[k]["v"] = v["v"]
-                    if "img" in v:
-                        cleaned[k]["img"] = v["img"]
-                    else:
-                        cleaned[k].pop("img", None)
+                    for f in ("img", "vid", "vthumb"):
+                        if f in v:
+                            cleaned[k][f] = v[f]
+                        else:
+                            cleaned[k].pop(f, None)
             changes[key] = cleaned
     state.update(changes)
     try:

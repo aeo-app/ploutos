@@ -98,31 +98,38 @@ def _get_s3_client():
     return _s3
 
 
+def _put_object(key: str, body: bytes, content_type: str) -> None:
+    """Stores one object: public-read where the bucket allows it, else privately (the app then
+    shows it through short-lived signed links — see signed_view_url)."""
+    client = _get_s3_client()
+    try:
+        try:
+            client.put_object(Bucket=BUCKET_NAME, Key=key, Body=body, ContentType=content_type, ACL="public-read")
+        except ClientError as e:
+            # Buckets with "Block public access" / ACLs disabled reject the
+            # public-read ACL — store privately instead.
+            if e.response.get("Error", {}).get("Code") in ("AccessControlListNotSupported", "AccessDenied", "InvalidRequest"):
+                client.put_object(Bucket=BUCKET_NAME, Key=key, Body=body, ContentType=content_type)
+            else:
+                raise
+    except ClientError as e:
+        _raise_clean_upload_error("put_object", e)
+
+
 def upload_image(image_bytes: bytes, filename: str, user_id: str) -> str:
     """Uploads an image and returns its public URL. Keyed under the user's
     id so files are trivially attributable/cleanable per account."""
     ext = os.path.splitext(filename)[1] or ".jpg"
     content_type = mimetypes.guess_type(filename)[0] or "image/jpeg"
     key = f"uploads/{user_id}/{uuid.uuid4()}{ext}"
+    _put_object(key, image_bytes, content_type)
+    return f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/{key}"
 
-    client = _get_s3_client()
-    try:
-        try:
-            client.put_object(
-                Bucket=BUCKET_NAME, Key=key, Body=image_bytes,
-                ContentType=content_type, ACL="public-read",
-            )
-        except ClientError as e:
-            # Buckets with "Block public access" / ACLs disabled reject the
-            # public-read ACL — store privately instead; the app shows these
-            # through short-lived signed links (see signed_view_url).
-            if e.response.get("Error", {}).get("Code") in ("AccessControlListNotSupported", "AccessDenied", "InvalidRequest"):
-                client.put_object(Bucket=BUCKET_NAME, Key=key, Body=image_bytes, ContentType=content_type)
-            else:
-                raise
-    except ClientError as e:
-        _raise_clean_upload_error("put_object", e)
 
+def upload_video(video_bytes: bytes, user_id: str) -> str:
+    """Uploads an MP4 (a YouTube Short) and returns its URL, keyed under the user's id like images."""
+    key = f"uploads/{user_id}/{uuid.uuid4()}.mp4"
+    _put_object(key, video_bytes, "video/mp4")
     return f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/{key}"
 
 

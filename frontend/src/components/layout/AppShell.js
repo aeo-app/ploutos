@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { UnlockModal } from '../payment/UnlockModal';
 import { PagePickerModal } from '../canva/PagePickerModal';
 import { historyApi } from '../../api/historyApi';
-import { consumeRememberedPage } from '../../utils/oauthReturn';
+import { consumeRememberedPage, consumeConnectAttempt, markConnectInProgress, clearConnectInProgress } from '../../utils/oauthReturn';
 import '../../aeo/aeo.css';
 
 const FEATURE_LABEL = {
@@ -92,14 +92,18 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('social_publish');
     if (!result) return;
+    const attempted = consumeConnectAttempt();
     if (result === 'connected') {
+      if (attempted.length) clearConnectInProgress(attempted);
       toast({ type: 'success', message: '✓ Social account connected.' });
     } else if (result === 'pages_ready') {
       const token = params.get('invite_token');
       if (token) setPagePickerToken(token);
     } else if (result === 'error') {
-      const reason = params.get('reason');
-      toast({ type: 'error', message: reason ? `Could not connect: ${reason}` : 'Could not connect that social account. Please try again.' });
+      // The customer can't fix a refused connection themselves, so show it as "in progress" rather than an error.
+      if (attempted.length) markConnectInProgress(attempted);
+      console.warn('[social connect]', params.get('reason') || 'connection did not complete');
+      toast({ type: 'info', message: 'Your connection is in progress. We are finishing the setup — you can try again a little later.' });
     }
     const returnPage = consumeRememberedPage();
     if (returnPage) setPage(returnPage);

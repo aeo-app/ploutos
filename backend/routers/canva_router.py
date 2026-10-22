@@ -66,6 +66,8 @@ from services.canva_service import (
 )
 from services.image_generation_service import ImageGenerationError, generate_image_from_prompt
 from services.media_upload_service import MediaUploadError, upload_image
+from services import brand_service as brand_svc
+from services.brand_overlay import apply_brand_bar
 from services.openai_image_service import OpenAIImageError
 from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai
 
@@ -442,10 +444,18 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
     a calendar is created; it only runs when this endpoint is actually
     hit, i.e. when the user clicks "Create Poster" for one specific day.
     """
+    # A logo and a contact phone number are required — they are printed on every generated image.
+    brand, logo_bytes = brand_svc.require_brand(user_id)
+    scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
     try:
-        image_bytes = generate_image_via_openai(req.visual_suggestion, width=1080, height=1080)
+        image_bytes = generate_image_via_openai(scene, width=1080, height=1080)
     except OpenAIImageError as e:
         raise HTTPException(status_code=502, detail=f"Could not generate an image for this poster: {e}")
+    try:
+        image_bytes = apply_brand_bar(image_bytes, brand, logo_bytes)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[canva] brand bar failed for user={user_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail="Generated the image but could not add your logo and contact details. Please try again.")
 
     try:
         image_url = upload_image(image_bytes, filename=f"{req.day_date}-post{req.post_number}.png", user_id=user_id)

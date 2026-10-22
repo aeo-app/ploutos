@@ -22,7 +22,7 @@ import re
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from core.security import require_admin
@@ -51,6 +51,11 @@ from services.bedrock_service import TokenUsageTracker
 from services.canva_service import CanvaError, create_design_with_asset, create_export_job, poll_export_job, upload_asset_from_url
 from services.media_upload_service import MediaUploadError, read_own_image, read_user_image, signed_view_url, upload_image
 from services.openai_image_service import OpenAIImageError
+from services import brand_service as brand_svc
+from services import short_jobs
+from services.media_upload_service import upload_video
+from services.shorts_service import ShortError, check_uploaded_short, to_mp4
+from services.brand_overlay import apply_brand_bar
 from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai
 
 logger = logging.getLogger(__name__)
@@ -157,6 +162,7 @@ def workspace(user_id: str, admin_id: str = Depends(require_admin)):
         "user": {"user_id": user_id, "email": u.get("email", ""), "full_name": u.get("full_name", ""),
                  "company_name": u.get("company_name", ""), "domain": u.get("domain", ""), "is_paid": is_user_paid(user_id)},
         "state": state, "content": content,
+        "brand_complete": not brand_svc.missing_fields(state.get("brand") or {}),
     }
 
 
@@ -273,7 +279,7 @@ class AiSocialRequest(BaseModel):
 def ai_social(user_id: str, req: AiSocialRequest, admin_id: str = Depends(require_admin)):
     b = _business(user_id)
     try:
-        r = generate_aeo_social(AeoSocialRequest(**b, prompt=req.prompt), usage_tracker=TokenUsageTracker(), limited=False)
+        r = generate_aeo_social(AeoSocialRequest(**b, prompt=req.prompt, keywords=list(get_aeo_state(user_id).get('calendar_keywords') or [])), usage_tracker=TokenUsageTracker(), limited=False)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Could not generate this right now: {e}")
     doc = json.loads(r.model_dump_json())
@@ -290,6 +296,7 @@ class FlagRequest(BaseModel):
     team: Optional[Literal["", "edited", "verified"]] = None
     pending: Optional[bool] = None
     img: Optional[str] = Field(default=None, max_length=600)   # "" removes the image
+    vid: Optional[str] = Field(default=None, max_length=600)    # "" removes the Short video
 
 
 @router.post("/users/{user_id}/flag", summary="Mark a blog/post as team-edited or verified, clear a review request, set/remove an image")
@@ -311,6 +318,10 @@ def set_flag(user_id: str, req: FlagRequest, admin_id: str = Depends(require_adm
             cur["img"] = req.img
         else:
             cur.pop("img", None)
+        cur["v"] = int(cur.get("v") or 0) + 1
+    if req.vid is not None and req.section == "post" and not req.vid:
+        cur.pop("vid", None)
+        cur.pop("vthumb", None)
         cur["v"] = int(cur.get("v") or 0) + 1
     st[bucket][req.key] = cur
     return {"ok": True, "entry": cur, "state": _save_state(user_id, st)[bucket]}
@@ -336,11 +347,18 @@ def _attach_image(user_id: str, key: str, url: str) -> dict:
 def generate_image(user_id: str, req: GenImageRequest, admin_id: str = Depends(require_admin)):
     if not _KEY_RE.match(req.key):
         raise HTTPException(status_code=422, detail="Bad key")
-    brief = f"{req.visual.strip()}. Square social-media image{' for ' + req.brand if req.brand else ''}. No text, no logos, no watermarks."
+    # The customer's logo + contact number are required and are printed on every generated image.
+    brand, logo_bytes = brand_svc.require_brand(user_id)
+    biz = _business(user_id)
+    brief = brand_svc.build_photo_prompt(req.brand or biz["company_name"], biz["industry"], brand, req.visual, (get_aeo_state(user_id).get("calendar_keywords") or []))
     try:
         data = generate_image_via_openai(brief, width=1080, height=1080)
     except OpenAIImageError as e:
         raise HTTPException(status_code=502, detail=f"Could not generate an image: {e}")
+    try:
+        data = apply_brand_bar(data, brand, logo_bytes)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Generated the image but could not add the logo and contact details: {e}")
     try:
         url = upload_image(data, filename=f"aeo-{req.key}.png", user_id=user_id)
     except MediaUploadError as e:
@@ -360,6 +378,64 @@ async def upload_post_image(user_id: str, key: str = Form(...), file: UploadFile
     except MediaUploadError as e:
         raise HTTPException(status_code=502, detail=str(e))
     return {"image_url": url, "entry": _attach_image(user_id, key, url)}
+
+
+def _attach_video(user_id: str, key: str, video_url: str, thumb_url: str) -> dict:
+    st = get_aeo_state(user_id)
+    cur = dict(st["post_state"].get(key) or {})
+    cur.update({"vid": video_url, "vthumb": thumb_url, "v": int(cur.get("v") or 0) + 1,
+                "team": cur.get("team") or "edited", "by": "team", "at": _now()})
+    st["post_state"][key] = cur
+    _save_state(user_id, st)
+    return cur
+
+
+class ShortGenRequest(BaseModel):
+    key: str
+    title: str = Field(default="", max_length=200)
+    text: str = Field(default="", max_length=3000)
+    visual: str = Field(default="", max_length=900)
+
+
+@router.post("/users/{user_id}/short-video", summary="Start creating a YouTube Short for a customer's post; poll GET .../short-video/{job_id}")
+def admin_start_short(user_id: str, req: ShortGenRequest, background: BackgroundTasks, admin_id: str = Depends(require_admin)):
+    if not _KEY_RE.match(req.key):
+        raise HTTPException(status_code=422, detail="Bad key")
+    biz = _business(user_id)
+    params = {"key": req.key, "title": req.title, "text": req.text, "visual": req.visual,
+              "company_name": biz["company_name"], "industry": biz["industry"],
+              "keywords": list(get_aeo_state(user_id).get("calendar_keywords") or [])}
+    job_id = short_jobs.start_job(user_id, params)      # 422 when the customer's logo / phone number are missing
+    background.add_task(short_jobs.run_job, user_id, job_id, params,
+                        lambda done: _attach_video(user_id, req.key, done["video_url"], done["thumb_url"]))
+    return {"job_id": job_id, "status": "running"}
+
+
+@router.get("/users/{user_id}/short-video/{job_id}", summary="Progress of a Short being created for a customer")
+def admin_short_status(user_id: str, job_id: str, admin_id: str = Depends(require_admin)):
+    if not job_id.isalnum() or len(job_id) > 64:
+        raise HTTPException(status_code=422, detail="Bad job id")
+    out = short_jobs.job_status(user_id, job_id)
+    if out.get("status") == "done":
+        out["entry"] = (get_aeo_state(user_id)["post_state"] or {})
+    return out
+
+
+@router.post("/users/{user_id}/short-upload", summary="Upload a Short (vertical or square video) for a customer's post")
+async def admin_upload_short(user_id: str, key: str = Form(...), file: UploadFile = File(...), admin_id: str = Depends(require_admin)):
+    if not _KEY_RE.match(key):
+        raise HTTPException(status_code=422, detail="Bad key")
+    data = await file.read()
+    try:
+        info = check_uploaded_short(data)
+        video_url = upload_video(to_mp4(data), user_id)
+        thumb_url = upload_image(info["thumbnail"], "short-thumb.jpg", user_id)
+    except ShortError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"video_url": video_url, "thumb_url": thumb_url, "duration": round(info["duration"], 1),
+            "entry": _attach_video(user_id, key, video_url, thumb_url)}
 
 
 class SignRequest(BaseModel):

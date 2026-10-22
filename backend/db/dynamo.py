@@ -46,6 +46,7 @@ Attributes stored per item
 from __future__ import annotations
 
 import json
+import time
 import logging
 import os
 import re
@@ -1409,6 +1410,7 @@ AEO_STATE_MAX_BYTES = 300_000
 _AEO_DEFAULT_STATE = {
     "custom_prompts": [], "custom_competitors": [], "hidden_competitors": [], "hidden_prompts": [], "selected_prompts": [],
     "social_links": {}, "blog_state": {}, "post_state": {},
+    "brand": {}, "calendar_keywords": [],
 }
 
 
@@ -1520,3 +1522,34 @@ def save_aeo_content_by_sk(user_id: str, sk: str, kind: str, data: dict) -> None
     except ClientError as e:
         logger.error(f"[dynamo] save_aeo_content_by_sk failed: {e.response['Error']}")
         raise
+
+
+# ── YouTube Short generation jobs (a Short takes a minute or two, so it runs in the background) ─────
+def _short_job_sk(job_id: str) -> str:
+    return f"AEO_SHORTJOB#{job_id}"
+
+
+def save_short_job(user_id: str, job_id: str, data: dict) -> None:
+    table = _get_table()
+    try:
+        table.put_item(Item={
+            "PK": _pk(user_id), "SK": _short_job_sk(job_id), "user_id": user_id,
+            "data": json.dumps(data, default=str), "updated_at": _now_iso(),
+            "ttl": int(time.time()) + 3 * 24 * 3600,   # honoured if the table has TTL enabled on "ttl"
+        })
+    except ClientError as e:
+        logger.error(f"[dynamo] save_short_job failed: {e.response['Error']}")
+        raise
+
+
+def get_short_job(user_id: str, job_id: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        item = table.get_item(Key={"PK": _pk(user_id), "SK": _short_job_sk(job_id)}).get("Item")
+        raw = item.get("data") if item else None
+        return json.loads(raw) if isinstance(raw, str) else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_short_job failed: {e.response['Error']}")
+        raise
+    except json.JSONDecodeError:
+        return None

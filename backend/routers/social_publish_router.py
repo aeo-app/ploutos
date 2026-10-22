@@ -356,6 +356,25 @@ async def upload_media(user_id: str = Depends(get_current_user_id), file: Upload
     return UploadMediaResponse(image_url=url)
 
 
+@router.post("/uploads/video", summary="Upload your own YouTube Short (vertical or square video, up to 3 minutes)")
+async def upload_short_video(user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+    from services.media_upload_service import signed_view_url, upload_video
+    from services.shorts_service import ShortError, check_uploaded_short, to_mp4
+
+    data = await file.read()
+    try:
+        info = check_uploaded_short(data)
+        video_url = upload_video(to_mp4(data), user_id)
+        thumb_url = upload_image(info["thumbnail"], "short-thumb.jpg", user_id)
+    except ShortError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"video_url": video_url, "thumb_url": thumb_url, "duration": round(info["duration"], 1),
+            "video_view_url": signed_view_url(video_url, user_id) or video_url,
+            "thumb_view_url": signed_view_url(thumb_url, user_id) or thumb_url}
+
+
 @router.delete("/uploads", summary="Delete a previously uploaded image, if it's yours and not needed anymore")
 async def delete_uploaded_image(image_url: str = Query(...), force: bool = Query(False), user_id: str = Depends(get_current_user_id)):
     from services.media_upload_service import delete_image
@@ -720,8 +739,9 @@ def _invite_redirect(invite_token: str, error: bool = False, reason: str | None 
 # ── Publish now ──────────────────────────────────────────────────────────────
 @router.post("/publish", response_model=PublishResponse, summary="Post a poster (Canva or your own upload) directly to one or more platforms, right now")
 async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_id)):
-    image_url = _resolve_image_url(user_id, req.poster_id, req.image_url)
-    results = publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url)
+    image_url = req.video_url if req.video_url else _resolve_image_url(user_id, req.poster_id, req.image_url)
+    results = publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url,
+                                   video_url=req.video_url, title=req.title)
 
     # Previously nothing was persisted here at all — an immediate "post
     # now" left no trace once the response was received, so there was no

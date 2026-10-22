@@ -151,6 +151,7 @@ class AeoBlogDraftResponse(BaseModel):
 class AeoSocialRequest(AnalyseRequest):
     prompt: str = Field(..., min_length=3, max_length=300)
     refresh: bool = False
+    keywords: list[str] = Field(default_factory=list, max_length=20)   # empty -> top 10 are taken from the website
 
 
 class AeoSocialPost(BaseModel):
@@ -168,6 +169,7 @@ class AeoSocialResponse(BaseModel):
     cached: bool = False
     limited: bool = False            # True for the free preview (1 post per channel)
     team: str = ""                   # "" | "edited" | "verified"
+    keywords: list[str] = Field(default_factory=list)   # the keywords this calendar was built around
 
 
 # ── Saved dashboard state (custom prompts/competitors, selection, links, approvals) ──
@@ -181,6 +183,8 @@ class AeoState(BaseModel):
     social_links: dict[str, str] = Field(default_factory=dict)                      # platform -> normalised link
     blog_state: dict[str, dict] = Field(default_factory=dict)                       # "<prompt>|<idx>" -> {drafted, approved, pending}
     post_state: dict[str, dict] = Field(default_factory=dict)                       # "<prompt>|<channel>|<idx>" -> {approved, img, v}
+    brand: dict = Field(default_factory=dict)                                       # logo_url, phone, email, website, address (server-owned; see /aeo/brand)
+    calendar_keywords: list[str] = Field(default_factory=list, max_length=20)       # keywords the social calendar is built around
 
 
 class AeoStatePatch(BaseModel):
@@ -190,6 +194,7 @@ class AeoStatePatch(BaseModel):
     hidden_competitors: Optional[list[str]] = Field(default=None, max_length=60)
     hidden_prompts: Optional[list[str]] = Field(default=None, max_length=80)
     selected_prompts: Optional[list[str]] = Field(default=None, max_length=20)
+    calendar_keywords: Optional[list[str]] = Field(default=None, max_length=20)
     blog_state: Optional[dict[str, dict]] = None
     post_state: Optional[dict[str, dict]] = None
 

@@ -54,6 +54,7 @@ export const socialPublishApi = {
   disconnect: (platform) => req("POST", `/social-publish/${platform}/disconnect`),
   /** @param {File} file - a browser File object, e.g. from an <input type="file"> */
   uploadMedia: (file) => uploadReq("/social-publish/uploads", file),
+  uploadVideo: (file) => uploadReq("/social-publish/uploads/video", file),
   /** @param {string} imageUrl, @param {boolean} force - force=true overrides the "still used by a published post" safety check */
   deleteUploadedImage: (imageUrl, force = false) => req("DELETE", `/social-publish/uploads?image_url=${encodeURIComponent(imageUrl)}${force ? '&force=true' : ''}`),
   /** @param {object} payload - {poster_id?, image_url?, caption, platforms: [...], cta_url?} — exactly one of poster_id/image_url */

@@ -8,7 +8,7 @@ import { seoApi } from '../api/seoApi';
 import { usePayment } from '../context/PaymentContext';
 
 const Ctx = createContext(null);
-const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {} };
+const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], brand: {} };
 
 export function AeoProvider({ children }) {
   const { state, runApi, toast, requirePayment } = useApp();
@@ -17,6 +17,7 @@ export function AeoProvider({ children }) {
   const rawAnalysis = state.results.aeoPrompts || null;
 
   const [saved, setSaved] = useState(EMPTY);
+  const [brand, setBrandState] = useState({ loaded: false, complete: false, missing: [], data: {} });
   const [savedLoaded, setSavedLoaded] = useState(false);
   // Competitors the customer removed stay out of every screen (the table, share of voice, domain authority bars).
   const hiddenKey = (saved.hidden_competitors || []).join('\u0001').toLowerCase() + '\u0002' + (saved.hidden_prompts || []).join('\u0001').toLowerCase();
@@ -47,6 +48,7 @@ export function AeoProvider({ children }) {
   useEffect(() => {
     let off = false;
     aeoApi.teamIndex().then(d => { if (!off && d) setTeam({ blogs: d.blogs || [], social: d.social || [], strategy: d.strategy || [] }); }).catch(() => {});
+    aeoApi.getBrand().then(d => { if (!off && d) setBrandState({ loaded: true, complete: !!d.complete, missing: d.missing || [], data: d.brand || {}, found: null }); }).catch(() => { if (!off) setBrandState(b => ({ ...b, loaded: true })); });
     aeoApi.getState()
       .then(d => { if (!off) setSaved({ ...EMPTY, ...d }); })
       .catch(e => console.warn('[aeo] state load failed:', e?.message || e))
@@ -173,6 +175,8 @@ export function AeoProvider({ children }) {
         company_name: r.company_name, url: r.url, market: r.market || 'Global', industry: r.industry || 'General', refresh, ...payloadKey,
       }), { goScreen, logout });
       setContent(c => ({ ...c, [kind]: { ...c[kind], [key]: data } }));
+      // The server remembers the keywords it built the calendar around (top 10 from the website when none were given).
+      if (kind === 'social' && data?.keywords?.length && !(savedRef.current.calendar_keywords || []).length) setSaved(s => ({ ...s, calendar_keywords: data.keywords }));
       return data;
     } catch (e) {
       if (e.code === 'PaymentRequired') requirePayment(kind === 'strategy' ? 'aeoStrategy' : kind === 'blog' ? 'aeoBlog' : 'aeoSocial');
@@ -185,7 +189,9 @@ export function AeoProvider({ children }) {
   }, [state.request, goScreen, logout, toast, requirePayment]);
 
   const loadStrategy = (prompt, refresh) => generate('strategy', prompt, { prompt }, aeoApi.strategy, refresh);
-  const loadSocial   = (prompt, refresh) => generate('social', prompt, { prompt }, aeoApi.socialPosts, refresh);
+  const loadSocial   = async (prompt, refresh) => {
+    return generate('social', prompt, { prompt, keywords: savedRef.current.calendar_keywords || [] }, aeoApi.socialPosts, refresh);
+  };
   const loadBlogDraft = (prompt, topic, refresh) =>
     generate('blog', `${prompt}|${topic.title}`, { prompt, type: topic.type, title: topic.title, words: topic.words || 1000 }, aeoApi.blogDraft, refresh);
 
@@ -240,12 +246,29 @@ export function AeoProvider({ children }) {
   }, [isPaid, state.results.aeoPrompts, state.results.domainAuthority, state.results.profile]);
   useEffect(() => { if (!isPaid) unlockedOnce.current = false; }, [isPaid]);
 
+  /* ── Brand kit (logo + contact details) ────────────────── */
+  const applyBrand = (d) => { if (d) setBrandState(b => ({ ...b, loaded: true, complete: !!d.complete, missing: d.missing || [], data: d.brand || {}, ...(d.found ? { found: d.found } : {}) })); return d; };
+  const brandCall = async (promise) => applyBrand(await withTokenExpiry(promise, { goScreen, logout }));
+  const saveBrand = (b) => brandCall(aeoApi.saveBrand(b));
+  const uploadLogo = (file) => brandCall(aeoApi.uploadLogo(file));
+  const detectBrand = () => brandCall(aeoApi.detectBrand(state.request.url, state.request.company_name));
+  const adoptSiteLogo = (u) => brandCall(aeoApi.logoFromSite(u));
+
+  /* ── Calendar keywords ─────────────────────────────────── */
+  const setCalendarKeywords = (list) => patch({ calendar_keywords: list });
+  const suggestKeywords = async () => {
+    const r = state.request;
+    const d = await withTokenExpiry(aeoApi.suggestKeywords({ company_name: r.company_name, url: r.url, market: r.market || 'Global', industry: r.industry || 'General' }), { goScreen, logout });
+    return d?.keywords || [];
+  };
+
   const value = useMemo(() => ({
     analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
     loadStrategy, loadSocial, loadBlogDraft, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setPostState, setPostStates,
+    brand, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, suggestKeywords,
     // eslint-disable-next-line
-  }), [analysis, prev, lastRun, saved, savedLoaded, team, content, busy, state.loading.aeoPrompts, runAnalysis, generate, patch]);
+  }), [analysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

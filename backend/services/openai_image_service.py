@@ -37,6 +37,26 @@ class OpenAIImageError(Exception):
     pass
 
 
+# Every generated post image is a realistic, real-world photograph — never a
+# cartoon, illustration, vector or 3D render. Applied centrally here so every
+# caller (customer calendar, admin calendar, poster flow) gets the same look.
+# Set IMAGE_STYLE_REALISTIC=0 to switch the wrapper off.
+REALISTIC_STYLE = (
+    "Style: a realistic, real-world photograph taken with a professional camera "
+    "(natural lighting, true-to-life colours and textures, real people, places and objects, "
+    "shallow depth of field, editorial / stock-photography quality). "
+    "Avoid cartoon, comic, anime, illustration, vector art, clip-art, flat design, "
+    "3D render, painting and AI-looking plastic skin. No text, captions, logos or watermarks in the image."
+)
+
+
+def realistic_prompt(prompt: str) -> str:
+    """Appends the realism style directive to a scene description."""
+    if os.getenv("IMAGE_STYLE_REALISTIC", "1") == "0":
+        return prompt
+    return f"{prompt.strip()}\n\n{REALISTIC_STYLE}"
+
+
 def _closest_supported_size(width: int | None, height: int | None) -> str:
     """gpt-image-1 only accepts a fixed set of sizes — maps an arbitrary
     requested width/height to the closest one rather than failing the
@@ -71,10 +91,12 @@ def generate_image_from_prompt(prompt: str, *, width: int | None = None, height:
     size = _closest_supported_size(width, height)
     body = {
         "model": OPENAI_IMAGE_MODEL,
-        "prompt": prompt,
+        "prompt": realistic_prompt(prompt),
         "size": size,
         "n": 1,
     }
+    if OPENAI_IMAGE_MODEL.startswith("gpt-image"):
+        body["quality"] = os.getenv("OPENAI_IMAGE_QUALITY", "high")  # low | medium | high | auto
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
 
     try:
