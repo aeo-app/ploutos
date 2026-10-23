@@ -21,7 +21,24 @@ ENGINES = ["ChatGPT", "Perplexity", "Gemini", "AI Overviews"]
 Intent = Literal["Commercial", "Informational", "Transactional"]
 Channel = Literal["fb", "ig", "li", "yt", "gbp"]
 CHANNELS: list[str] = ["fb", "ig", "li", "yt", "gbp"]
-POSTS_PER_CHANNEL = 4
+WEEKS_PER_MONTH = 4
+# What every channel publishes each week: 3 posters + 2 reels (YouTube: 2 reels only). One month = 4 weeks.
+WEEKLY_PLAN: dict[str, list[str]] = {
+    "fb":  ["poster", "reel", "poster", "reel", "poster"],
+    "ig":  ["reel", "poster", "reel", "poster", "poster"],
+    "li":  ["poster", "reel", "poster", "poster", "reel"],
+    "gbp": ["poster", "poster", "reel", "poster", "reel"],
+    "yt":  ["reel", "reel"],
+}
+POSTS_PER_CHANNEL = 20             # the most any channel holds in one month (5 per week x 4 weeks)
+
+
+def month_slots(channel: str, limited: bool = False) -> list[tuple[int, str]]:
+    """[(week, kind)] in posting order for one channel. The free preview is one item per channel."""
+    kinds = WEEKLY_PLAN[channel]
+    if limited:
+        return [(0, "poster" if "poster" in kinds else kinds[0])]
+    return [(w, k) for w in range(WEEKS_PER_MONTH) for k in kinds]
 
 
 # ── Prompt visibility analysis ────────────────────────────────────────────────
@@ -152,9 +169,12 @@ class AeoSocialRequest(AnalyseRequest):
     prompt: str = Field(..., min_length=3, max_length=300)
     refresh: bool = False
     keywords: list[str] = Field(default_factory=list, max_length=20)   # empty -> top 10 are taken from the website
+    cycle: int = Field(default=0, ge=0, le=23)                           # 0 = the first month, 1 = the next month, ...
 
 
 class AeoSocialPost(BaseModel):
+    kind: str = "poster"             # "poster" (image post) or "reel" (vertical video)
+    week: Optional[int] = None       # 0-3: which week of the month. None for calendars made before the weekly plan
     text: str
     cta: str = ""
     tags: str = ""
@@ -170,6 +190,7 @@ class AeoSocialResponse(BaseModel):
     limited: bool = False            # True for the free preview (1 post per channel)
     team: str = ""                   # "" | "edited" | "verified"
     keywords: list[str] = Field(default_factory=list)   # the keywords this calendar was built around
+    cycle: int = 0                   # which month of the calendar this is (0 = first)
 
 
 # ── Saved dashboard state (custom prompts/competitors, selection, links, approvals) ──
@@ -185,6 +206,7 @@ class AeoState(BaseModel):
     post_state: dict[str, dict] = Field(default_factory=dict)                       # "<prompt>|<channel>|<idx>" -> {approved, img, v}
     brand: dict = Field(default_factory=dict)                                       # logo_url, phone, email, website, address (server-owned; see /aeo/brand)
     calendar_keywords: list[str] = Field(default_factory=list, max_length=20)       # keywords the social calendar is built around
+    calendar_start: str = Field(default="", max_length=10)                           # YYYY-MM-DD: the Monday month 1 of the calendar starts on
 
 
 class AeoStatePatch(BaseModel):
@@ -195,6 +217,7 @@ class AeoStatePatch(BaseModel):
     hidden_prompts: Optional[list[str]] = Field(default=None, max_length=80)
     selected_prompts: Optional[list[str]] = Field(default=None, max_length=20)
     calendar_keywords: Optional[list[str]] = Field(default=None, max_length=20)
+    calendar_start: Optional[str] = Field(default=None, max_length=10)
     blog_state: Optional[dict[str, dict]] = None
     post_state: Optional[dict[str, dict]] = None
 

@@ -95,6 +95,21 @@ def publish_to_platform(user_id: str, platform: str, image_url: str, caption: st
         return {"platform": platform, "success": False, "error": f"{PLATFORM_LABELS[platform]} is not connected"}
 
     try:
+        if video_url and platform in ("facebook", "instagram"):
+            # A reel (generated or uploaded by the user): only from OUR bucket and only the owner's; Meta fetches a signed link.
+            from services.media_upload_service import read_user_image, signed_view_url
+            if not read_user_image(video_url, user_id):
+                raise ValueError("That video could not be found. Create or upload the reel again.")
+            link = signed_view_url(video_url, user_id)
+            if not link:
+                raise ValueError("We could not prepare the reel for publishing. Please try again.")
+            if platform == "facebook":
+                post_id = meta.post_video_to_facebook_page(conn["extra"]["page_id"], conn["access_token"], link, caption)
+            else:
+                post_id = meta.post_reel_to_instagram(conn["extra"]["ig_user_id"], conn["access_token"], link, caption)
+            return {"platform": platform, "success": True, "post_id": post_id}
+        if video_url and platform in ("linkedin", "google_business"):
+            raise ValueError(f"{PLATFORM_LABELS[platform]} does not accept reels from outside apps. Download the reel and post it there.")
         if platform == "facebook":
             post_id = meta.post_to_facebook_page(conn["extra"]["page_id"], conn["access_token"], image_url, caption)
         elif platform == "instagram":

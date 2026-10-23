@@ -40,6 +40,7 @@ from db.dynamo import _aeo_content_sk, get_analysis, list_all_users, list_analys
 from models.aeo_models import (
     AeoStrategyRequest,
     CHANNELS,
+    POSTS_PER_CHANNEL,
     AeoBlogDraftRequest,
     AeoBlogDraftResponse,
     AeoSocialRequest,
@@ -234,10 +235,14 @@ def save_content(user_id: str, req: SaveContentRequest, admin_id: str = Depends(
     chans = {}
     for ch in CHANNELS:
         posts = []
-        for p in ((req.data.get("channels") or {}).get(ch) or [])[:4]:
+        for p in ((req.data.get("channels") or {}).get(ch) or [])[:POSTS_PER_CHANNEL]:
             if not isinstance(p, dict):
                 continue
-            posts.append({k: _clip(p.get(k), n) for k, n in (("text", 3000), ("cta", 200), ("tags", 400), ("visual", 800), ("title", 200), ("duration", 20))})
+            item = {k: _clip(p.get(k), n) for k, n in (("text", 3000), ("cta", 200), ("tags", 400), ("visual", 800), ("title", 200), ("duration", 20))}
+            item["kind"] = "reel" if p.get("kind") == "reel" else "poster"
+            w = p.get("week")
+            item["week"] = w if isinstance(w, int) and 0 <= w <= 3 else None
+            posts.append(item)
         chans[ch] = posts
     prior = None
     sk = req.sk
@@ -275,7 +280,7 @@ class AiSocialRequest(BaseModel):
     prompt: str = Field(..., min_length=3, max_length=300)
 
 
-@router.post("/users/{user_id}/social/ai-generate", summary="Generate the full 4-post-per-channel calendar for a prompt and save it for the customer")
+@router.post("/users/{user_id}/social/ai-generate", summary="Generate the full month (weekly posters and reels per channel) for a prompt and save it for the customer")
 def ai_social(user_id: str, req: AiSocialRequest, admin_id: str = Depends(require_admin)):
     b = _business(user_id)
     try:

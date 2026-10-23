@@ -49,15 +49,15 @@ class PublishRequest(_ImageSourceMixin):
     cta_url: Optional[str] = Field(None, description="Used for Google Business Profile's 'Learn more' button, if provided")
     day_date: Optional[str] = Field(None, description="Which calendar day this belongs to, if posting from a specific day's card — defaults to today if not given")
     post_number: Optional[int] = Field(None, description="Which of that day's posts (1 or 2) this is, if posting from a specific post card — lets the calendar UI match this history record back to the exact post it came from")
-    video_url: Optional[str] = Field(None, description="A YouTube Short (a vertical video the user generated or uploaded) — YouTube only; use INSTEAD of poster_id/image_url")
+    video_url: Optional[str] = Field(None, description="A reel / YouTube Short (a vertical video the user generated or uploaded) — YouTube, Facebook or Instagram; use INSTEAD of poster_id/image_url")
     title: Optional[str] = Field(None, max_length=100, description="YouTube video title (defaults to the caption's first line)")
 
     @model_validator(mode="after")
     def _exactly_one_image_source(self):  # replaces the base rule: a video is a third kind of source
         if sum([bool(self.poster_id), bool(self.image_url), bool(self.video_url)]) != 1:
             raise ValueError("Provide exactly one of poster_id, image_url or video_url.")
-        if self.video_url and [p for p in self.platforms if p != "youtube"]:
-            raise ValueError("A Short video can only be published to YouTube.")
+        if self.video_url and [p for p in self.platforms if p not in ("youtube", "facebook", "instagram")]:
+            raise ValueError("A video can only be published to YouTube, Facebook or Instagram.")
         return self
 
 

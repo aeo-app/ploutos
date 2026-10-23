@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import date, datetime, timezone
+from typing import Callable, Optional
 
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
@@ -58,6 +58,7 @@ from services.aeo_service import (
     generate_aeo_blog_draft,
     generate_aeo_prompts,
     generate_aeo_social,
+    social_shape_ok,
     generate_aeo_strategy,
     normalise_social_link,
     run_site_checks,
@@ -86,6 +87,7 @@ def _enforce_domain(user_id: str, url: str, company_name: str) -> None:
 
 def _cached_or_generate(
     user_id: str, kind: str, key: str, refresh: bool, response_cls, generate: Callable[[TokenUsageTracker], object],
+    valid: Optional[Callable[[dict], bool]] = None,
 ):
     """Generated assets are stored per (kind, prompt/title) so a page reload — or
     a second click — returns the saved copy instead of paying for Bedrock again."""
@@ -93,6 +95,8 @@ def _cached_or_generate(
     # Work our team has edited is never overwritten by a regeneration.
     if saved and saved.get("team"):
         refresh = False
+    if saved and valid and not saved.get("team") and not valid(saved):
+        saved = None                       # an older shape (e.g. the old 4-posts-per-channel calendar) — build the new one
     if not refresh:
         if saved:
             try:
@@ -181,13 +185,21 @@ def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user
     )
 
 
-@router.post("/social-posts", response_model=AeoSocialResponse, summary="Four posts for each channel, for one prompt")
+def _social_key(prompt: str, limited: bool, cycle: int = 0) -> str:
+    """Month 1 keeps the original key (so the team's edits stay attached); later months get their own."""
+    return prompt + ("|free" if limited else "") + (f"|m{cycle}" if cycle else "")
+
+
+@router.post("/social-posts", response_model=AeoSocialResponse, summary="A month of posters and reels for each channel, for one prompt")
 def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id)):
     _enforce_domain(user_id, req.url, req.company_name)
     limited = not is_user_paid(user_id)
+    if limited and req.cycle:
+        raise HTTPException(status_code=402, detail="Later months are part of the paid plans.")
     res = _cached_or_generate(
-        user_id, "social", req.prompt + ("|free" if limited else ""), req.refresh, AeoSocialResponse,
+        user_id, "social", _social_key(req.prompt, limited, req.cycle), req.refresh, AeoSocialResponse,
         lambda t: generate_aeo_social(req, usage_tracker=t, limited=limited),
+        valid=lambda d: social_shape_ok(d, limited),
     )
     # The calendar is built around keywords — the user's own, or the top 10 taken from their website
     # when they gave none. Remember them so the user can see and edit them.
@@ -329,13 +341,14 @@ def logo_from_site(req: BrandLogoFromSite, user_id: str = Depends(get_current_us
 class SocialPostEdit(BaseModel):
     prompt: str = Field(..., min_length=3, max_length=300)
     channel: str = Field(..., pattern=r"^(fb|ig|li|yt|gbp)$")
-    index: int = Field(..., ge=0, le=3)
+    index: int = Field(..., ge=0, le=19)
+    cycle: int = Field(default=0, ge=0, le=23)
     post: dict
 
 
 @router.put("/social-post", summary="Customer edits one post (caption, hashtags, call to action, image brief…)")
 def edit_social_post(req: SocialPostEdit, user_id: str = Depends(get_current_user_id)):
-    key = req.prompt + ("" if is_user_paid(user_id) else "|free")
+    key = _social_key(req.prompt, not is_user_paid(user_id), req.cycle)
     doc = get_aeo_content(user_id, "social", key)
     if not doc:
         raise HTTPException(status_code=404, detail="Create the calendar for this prompt first.")
@@ -447,6 +460,14 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
         changes["custom_competitors"] = comps[:25]
     if "calendar_keywords" in changes:
         changes["calendar_keywords"] = clean_keywords(changes["calendar_keywords"], 20)
+    if "calendar_start" in changes:
+        cs = str(changes["calendar_start"] or "").strip()
+        try:
+            date.fromisoformat(cs)
+        except ValueError:
+            cs = ""
+        # Once month 1 has started the date is fixed — later months are counted from it.
+        changes["calendar_start"] = state.get("calendar_start") or cs
     if "hidden_prompts" in changes:
         changes["hidden_prompts"] = _clean_str_list(changes["hidden_prompts"], 80, 200)
     if "hidden_competitors" in changes:
@@ -456,7 +477,7 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
             # Only the few fields the UI uses, with bounded sizes — this is user-writable storage.
             allowed = {"drafted": bool, "approved": bool, "pending": bool, "img": str, "v": int, "published": bool, "pub_at": str, "vid": str, "vthumb": str}
             cleaned = {}
-            for k, v in list(changes[key].items())[:800]:
+            for k, v in list(changes[key].items())[:2000]:
                 if isinstance(v, dict):
                     cleaned[str(k)[:420]] = {f: v[f] for f, t in allowed.items() if f in v and isinstance(v[f], t) and (f not in ("img", "vid", "vthumb") or len(v[f]) <= 600) and (f != "pub_at" or len(v[f]) <= 40)}
             # Fields owned by our team can't be set (or wiped) from the user's side.

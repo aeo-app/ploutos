@@ -61,7 +61,7 @@ export const aeoApi = {
   putState:    (patch) => call("PUT", "/state", patch),
   imageUrl:    (url) => call("POST", "/image-url", { url }),
   downloadBlob:(url) => fetchImageBlob("/aeo/image-download", { url }),
-  editPost:    (prompt, channel, index, post) => call("PUT", "/social-post", { prompt, channel, index, post }),
+  editPost:    (prompt, channel, index, post, cycle = 0) => call("PUT", "/social-post", { prompt, channel, index, post, cycle }),
   teamIndex:   () => call("GET", "/team-index"),
   // Brand kit — logo + contact details printed on every generated image / Short
   getBrand:    () => call("GET", "/brand"),

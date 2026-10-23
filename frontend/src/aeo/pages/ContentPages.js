@@ -10,7 +10,7 @@ import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
 import { BrandKitCard, KeywordsPanel, ShortPlayer } from '../BrandKit';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
-import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate } from '../utils';
+import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
 
 
 // Older cached posts (or a model slip) can have an empty visual — derive one from the post so it is never blank.
@@ -116,8 +116,8 @@ function StrategyBlock({ t }) {
   const retry = useAutoLoad('strategy', t.active, !!data, () => loadStrategy(t.active));
 
   if (!data) {
-    return isBusy ? <Generating title={`Building your strategy for “${t.active}”`} text="Reading the market, then drafting the answer we want AI to give, content pillars and a 4-week plan…" />
-      : <Retry title="Content strategy" text={`Build the answer we want AI to give for “${t.active}”, the content to publish and a 4-week plan.`} label="Generate strategy" onRetry={retry} />;
+    return isBusy ? <Generating title={`Building your strategy for “${t.active}”`} text="Reading the market, then drafting the answer we want AI to give, the content pillars and a 4-week plan…" />
+      : <Retry title="Content strategy" text={`Build the answer we want AI to give for “${t.active}”, the content to publish, and a 4-week plan.`} label="Generate strategy" onRetry={retry} />;
   }
   return (
     <section className="ae-card" style={{ padding: 24, gap: 20 }}>
@@ -265,7 +265,7 @@ function PostImg({ src }) {
   return <img src={url} alt="Post visual" title="Click to view full size" onError={onError} onClick={() => window.open(url, '_blank', 'noopener')} />;
 }
 
-function VisualBrief({ post, fallback, hasImg, working, onSave, onRegen, video }) {
+function VisualBrief({ post, fallback, hasImg, working, onSave, onRegen, video, word = 'Short' }) {
   const [txt, setTxt] = useState(post.visual || fallback);
   useEffect(() => { setTxt(post.visual || fallback); }, [post.visual, fallback]);
   const changed = txt.trim() !== (post.visual || fallback).trim();
@@ -274,27 +274,27 @@ function VisualBrief({ post, fallback, hasImg, working, onSave, onRegen, video }
       <span className="ae-eyebrow p">{video ? 'Content suggestion for the video' : 'Content suggestion for the image'}</span>
       <textarea className="ae-input" style={{ minHeight: 76, resize: 'vertical', fontFamily: 'inherit', padding: '9px 12px' }} maxLength={800} value={txt} onChange={e => setTxt(e.target.value)}
         placeholder={video ? 'Describe what the video should show — e.g. a mover carefully wrapping furniture in a bright Singapore apartment' : 'Describe the image you want — e.g. a friendly team at work, bright office, blue and white colours'} />
-      <span className="ae-note">{video ? 'We make a vertical YouTube Short from real-looking scenes of this, with your logo and contact details. You can also upload your own Short.' : 'Change this to tell us what the image should show — we create a realistic photo of it with your logo and contact details. You can also upload your own image.'}</span>
+      <span className="ae-note">{video ? `We make a vertical ${word} from realistic scenes of this, with your logo and contact details. You can also upload your own ${word}.` : 'Change this to tell us what the image should show — we create a realistic photo of it with your logo and contact details. You can also upload your own image.'}</span>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" className="ae-btn sm primary" disabled={!!working || !txt.trim()} onClick={() => onRegen(txt.trim())}>{working === (video ? 'vid' : 'ai') ? (video ? 'Creating video…' : 'Generating…') : hasImg ? (video ? '↻ Save & regenerate Short' : '↻ Save & regenerate image') : (video ? '✨ Save & generate Short' : '✨ Save & generate image')}</button>
+        <button type="button" className="ae-btn sm primary" disabled={!!working || !txt.trim()} onClick={() => onRegen(txt.trim())}>{working === (video ? 'vid' : 'ai') ? (video ? 'Creating video…' : 'Generating…') : hasImg ? (video ? `↻ Save & regenerate ${word}` : '↻ Save & regenerate image') : (video ? `✨ Save & generate ${word}` : '✨ Save & generate image')}</button>
         <button type="button" className="ae-btn sm" disabled={!!working || !changed || !txt.trim()} onClick={() => onSave(txt.trim())}>Save suggestion only</button>
       </div>
     </div>
   );
 }
 
-function PostEditForm({ ch, post, saving, onSave, onCancel }) {
+function PostEditForm({ ch, post, reel, saving, onSave, onCancel }) {
   const [d, setD] = useState({ text: post.text || '', cta: post.cta || '', tags: post.tags || '', title: post.title || '', duration: post.duration || '' });
   const set = (k) => (e) => setD(x => ({ ...x, [k]: e.target.value }));
   const lab = { fontSize: 12, fontWeight: 700, color: '#4a4966' };
   const inp = { padding: '9px 12px', width: '100%', fontFamily: 'inherit' };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 16px', background: '#f8f8fd', borderTop: '1px solid var(--ae-line2)' }}>
-      {ch.id === 'yt' && <label style={{ display: 'grid', gap: 4 }}><span style={lab}>Video title</span><input className="ae-input" style={inp} maxLength={200} value={d.title} onChange={set('title')} /></label>}
+      {(ch.id === 'yt' || reel) && <label style={{ display: 'grid', gap: 4 }}><span style={lab}>{ch.id === 'yt' ? 'Video title' : 'Hook shown on the video'}</span><input className="ae-input" style={inp} maxLength={200} value={d.title} onChange={set('title')} /></label>}
       <label style={{ display: 'grid', gap: 4 }}><span style={lab}>Caption</span><textarea className="ae-input" style={{ ...inp, minHeight: 130, resize: 'vertical' }} maxLength={3000} value={d.text} onChange={set('text')} /></label>
       <label style={{ display: 'grid', gap: 4 }}><span style={lab}>Call to action</span><input className="ae-input" style={inp} maxLength={200} value={d.cta} onChange={set('cta')} /></label>
       <label style={{ display: 'grid', gap: 4 }}><span style={lab}>Hashtags</span><input className="ae-input" style={inp} maxLength={400} value={d.tags} onChange={set('tags')} placeholder="#example #hashtags" /></label>
-      {ch.id === 'yt' && <label style={{ display: 'grid', gap: 4 }}><span style={lab}>Video length</span><input className="ae-input" style={inp} maxLength={20} value={d.duration} onChange={set('duration')} placeholder="e.g. 0:45" /></label>}
+      {(ch.id === 'yt' || reel) && <label style={{ display: 'grid', gap: 4 }}><span style={lab}>Video length</span><input className="ae-input" style={inp} maxLength={20} value={d.duration} onChange={set('duration')} placeholder="e.g. 0:45" /></label>}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <button type="button" className="ae-btn primary sm" disabled={saving || !d.text.trim()} onClick={() => onSave(d)}>{saving ? 'Saving…' : 'Save changes'}</button>
         <button type="button" className="ae-btn sm" disabled={saving} onClick={onCancel}>Cancel</button>
@@ -304,7 +304,7 @@ function PostEditForm({ ch, post, saving, onSave, onCancel }) {
   );
 }
 
-function PostPreview({ ch, post, when, short, brand, handle, img, vid, vthumb, v, i, showVisual, onToggleVisual, visualSlot }) {
+function PostPreview({ ch, post, reel, when, short, brand, handle, img, vid, vthumb, v, i, showVisual, onToggleVisual, visualSlot }) {
   const ini = brand.split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const tint = TINTS[(i + v) % TINTS.length];
   const id = ch.id;
@@ -316,11 +316,11 @@ function PostPreview({ ch, post, when, short, brand, handle, img, vid, vthumb, v
       {id === 'li' && <><div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '14px 16px 8px' }}><div className="ae-ico" style={{ width: 44, height: 44, borderRadius: 6, background: '#1e3a8a', color: '#fff' }}>{ini}</div><div className="ae-col"><b style={{ fontSize: 14 }}>{brand}</b><span style={{ fontSize: 12, color: '#666' }}>{short}</span></div></div><div style={{ padding: '0 16px 12px', fontSize: 14, lineHeight: 1.5 }}><pre>{text}</pre>{post.cta && <b style={{ display: 'block', marginTop: 6 }}>{post.cta}</b>}{post.tags && <span style={{ display: 'block', marginTop: 6, color: '#1d4ed8' }}>{post.tags}</span>}</div></>}
       {id === 'gbp' && <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '14px 16px 10px' }}><div className="ae-ico" style={{ width: 36, height: 36, borderRadius: '50%', background: '#fef3c7', color: '#92400e' }}>{ini}</div><div className="ae-col"><b style={{ fontSize: 14 }}>{brand}</b><span style={{ fontSize: 12, color: '#5f6368' }}>Update · {short}</span></div></div>}
 
-      <div className={`ae-post-img${id !== 'yt' && img ? ' has-img' : ''}`} style={{ aspectRatio: id === 'yt' ? '9 / 16' : ch.aspect, ...(id === 'yt' ? { maxWidth: 340, margin: '0 auto', width: '100%' } : {}), background: id === 'yt' && vid ? '#000' : `repeating-linear-gradient(135deg,${tint[0]} 0 12px,${tint[1]} 12px 24px)` }}>
-        {id === 'yt'
-          ? (vid ? <ShortPlayer src={vid} thumb={vthumb} /> : <button type="button" className="ae-btn sm ph-btn" onClick={onToggleVisual}>🎬 Short video — content suggestion</button>)
+      <div className={`ae-post-img${!reel && img ? ' has-img' : ''}`} style={{ aspectRatio: reel ? '9 / 16' : ch.aspect, ...(reel ? { maxWidth: 340, margin: '0 auto', width: '100%' } : {}), background: reel && vid ? '#000' : `repeating-linear-gradient(135deg,${tint[0]} 0 12px,${tint[1]} 12px 24px)` }}>
+        {reel
+          ? (vid ? <ShortPlayer src={vid} thumb={vthumb} /> : <button type="button" className="ae-btn sm ph-btn" onClick={onToggleVisual}>🎬 {id === 'yt' ? 'Short' : 'Reel'} video · content suggestion</button>)
           : img ? <PostImg src={img} /> : <button type="button" className="ae-btn sm ph-btn" onClick={onToggleVisual}>💡 Content suggestion</button>}
-        {id === 'yt' && !vid && post.duration && <span style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(0,0,0,.8)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{post.duration}</span>}
+        {reel && !vid && post.duration && <span style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(0,0,0,.8)', color: '#fff', fontSize: 12, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{post.duration}</span>}
       </div>
 
       {showVisual && visualSlot}
@@ -335,9 +335,11 @@ function PostPreview({ ch, post, when, short, brand, handle, img, vid, vthumb, v
 }
 
 function CalendarBlock({ t }) {
-  const { content, busy, saved, brand: brandKit, loadSocial, editPost, setPostState, setPostStates } = useAeo();
+  const { content, busy, saved, brand: brandKit, loadSocial, socialKey, editPost, setPostState, setPostStates, setCalendarStart } = useAeo();
   const { state, toast, setPage } = useApp();
   const [channel, setChannel] = useState('fb');
+  const [cycleSel, setCycleSel] = useState(null);
+  const [weekSel, setWeekSel] = useState(null);
   const [working, setWorking] = useState({});
   const [editing, setEditing] = useState({});
   const [savingPost, setSavingPost] = useState({});
@@ -348,32 +350,83 @@ function CalendarBlock({ t }) {
   const brandRef = useRef(null);
   const progress = useConnectProgress();
   useEffect(() => { let off = false; socialPublishApi.status().then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
-  const data = content.social[t.active];
-  const retry = useAutoLoad('social', t.active, !!data, () => loadSocial(t.active));
-  const start = useMemo(() => calendarStart(), []);
 
-  if (!data) return busy['social|' + t.active] ? <Generating title={`Writing your posts for “${t.active}”`} text="Drafting four posts for each of your five channels…" /> : <><BrandKitCard /><Retry title="Social media calendar" text={`Create a 4-week calendar with posts for Facebook, Instagram, LinkedIn, YouTube Shorts and Google Business, built around your keywords (or the top 10 from your website if you add none) and supporting “${t.active}”. Then generate a realistic image for each post — with your logo and contact details — and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
+  // Month 1 starts on the first Monday we planned for. Every later month is the next 4 weeks.
+  const start0 = useMemo(() => parseIso(saved.calendar_start) || calendarStart(), [saved.calendar_start]);
+  const today = new Date();
+  const currentCycle = Math.min(23, Math.max(0, Math.floor(dayDiff(today, start0) / MONTH_DAYS)));
+  const cycle = cycleSel == null ? currentCycle : cycleSel;
+  const start = useMemo(() => addDays(start0, cycle * MONTH_DAYS), [start0, cycle]);
+  const key = socialKey(t.active, cycle);
+  const data = content.social[key];
+  const retry = useAutoLoad('social', key, !!data, () => loadSocial(t.active, false, cycle));
+  // Remember the day month 1 began, so the calendar carries on from there in later months.
+  useEffect(() => { if (content.social[t.active] && !saved.calendar_start && setCalendarStart) setCalendarStart(isoDate(start0)); }, [!!content.social[t.active], saved.calendar_start]); // eslint-disable-line
+
+  const monthNav = (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <button type="button" className="ae-btn sm" disabled={cycle <= 0} onClick={() => { setCycleSel(cycle - 1); setWeekSel(null); }}>‹ Previous month</button>
+      <b style={{ fontSize: 13 }}>Month {cycle + 1}{cycle === currentCycle ? ' · this month' : cycle > currentCycle ? ' · next month' : ''}</b>
+      <button type="button" className="ae-btn sm" disabled={cycle >= Math.min(23, currentCycle + 1)} onClick={() => { setCycleSel(cycle + 1); setWeekSel(null); }}>Next month ›</button>
+    </div>
+  );
+
+  if (!data && cycle > 0) {
+    const ended = cycle === currentCycle && currentCycle > 0;
+    return <>
+      <BrandKitCard />
+      <section className="ae-card" style={{ padding: 24, gap: 14 }}>
+        <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>{monthNav}</div>
+        {busy['social|' + key]
+          ? <Generating title={`Writing month ${cycle + 1} for “${t.active}”`} text="Drafting this month’s posters and reels for each of your channels…" />
+          : <div className="ae-col" style={{ gap: 10 }}>
+              <span className="ae-sub">{ended ? `Your previous month has ended. ` : ''}Month {cycle + 1} has not been created yet. We will write a fresh set of posters and reels for each channel, built around your keywords. Your earlier months stay available.</span>
+              <div><button type="button" className="ae-btn primary" onClick={retry}>Create month {cycle + 1}</button></div>
+            </div>}
+      </section>
+    </>;
+  }
+
+  if (!data) return busy['social|' + key] ? <Generating title={`Writing your posts for “${t.active}”`} text="Drafting a full month of posters and reels for each of your channels…" /> : <><BrandKitCard /><Retry title="Social media calendar" text={`Create a 4-week calendar. Every week, Facebook, Instagram, LinkedIn and Google Business get 3 posters and 2 reels, and YouTube gets 2 reels. It is built around your keywords (or the top 10 from your website if you add none) and supports “${t.active}”. Then generate a realistic image or reel for each item, with your logo and contact details, and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
 
   const brand = state.request.company_name || 'Your company';
   const handle = hostOf(state.request.url).split('.')[0] || 'yourcompany';
-  const pk = (ch, i) => hkey('post', t.active, ch, i);
+  const pk = (ch, i) => postStateKey(t.active, cycle, ch, i, (data.channels[ch] || [])[i]);
   const all = [];
-  CHANNELS.forEach(c => (data.channels[c.id] || []).slice(0, 4).forEach((post, i) => {
-    const d = new Date(start); d.setDate(d.getDate() + c.day + 7 * i);
-    all.push({ c, i, post, d, offset: c.day + 7 * i, k: pk(c.id, i), st: saved.post_state[pk(c.id, i)] || {} });
-  }));
-  const approvedN = all.filter(p => p.st.approved).length;
-  const ch = CHANNELS.find(c => c.id === channel);
-  const feed = all.filter(p => p.c.id === channel);
-
-  const days = Array.from({ length: 28 }, (_, o) => {
-    const d = new Date(start); d.setDate(d.getDate() + o);
-    return { label: o === 0 || d.getDate() === 1 ? fmtDate(d, { day: 'numeric', month: 'short' }) : String(d.getDate()), chips: all.filter(p => p.offset === o) };
+  CHANNELS.forEach(c => {
+    const list = (data.channels[c.id] || []).slice(0, 20);
+    list.forEach((post, i) => {
+      const offset = dayOffset(c, list, i);
+      const d = addDays(start, offset);
+      const st = saved.post_state[pk(c.id, i)] || {};
+      all.push({ c, i, post, d, offset, week: post.week != null ? post.week : Math.min(3, Math.floor(offset / 7)), reel: isReel(c, post), k: pk(c.id, i), st });
+    });
   });
+  const approvedN = all.filter(p => p.st.approved).length;
+  const postedN = all.filter(p => p.st.published).length;
+  const ch = CHANNELS.find(c => c.id === channel);
+  const curWeek = cycle === currentCycle ? Math.min(3, Math.max(0, Math.floor(dayDiff(today, start) / 7))) : 0;
+  const week = weekSel == null ? curWeek : weekSel;       // 0-3, or 'all'
+  const channelAll = all.filter(p => p.c.id === channel);
+  const feed = channelAll.filter(p => week === 'all' || p.week === week);
+
+  // The grid: every item sits on its planned day. A post published on a different day is also marked on the day it really went out.
+  const gridDays = Array.from({ length: MONTH_DAYS }, (_, o) => {
+    const d = addDays(start, o);
+    return { d, label: o === 0 || d.getDate() === 1 ? fmtDate(d, { day: 'numeric', month: 'short' }) : String(d.getDate()), chips: all.filter(p => p.offset === o), posted: [] };
+  });
+  all.forEach(p => {
+    if (!p.st.published || !p.st.pub_at) return;
+    const pd = new Date(p.st.pub_at);
+    if (isNaN(pd)) return;
+    const o = dayDiff(pd, start);
+    if (o >= 0 && o < MONTH_DAYS && o !== p.offset) gridDays[o].posted.push(p);
+  });
+  const todayOffset = dayDiff(today, start);
 
   const savePost = async (p, fields) => {
     setSavingPost(m => ({ ...m, [p.k]: true }));
-    const ok = await editPost(t.active, p.c.id, p.i, fields);
+    const ok = await editPost(t.active, p.c.id, p.i, fields, cycle);
     setSavingPost(m => { const n = { ...m }; delete n[p.k]; return n; });
     if (ok) toast({ type: 'success', message: 'Saved.' });
     return ok;
@@ -397,15 +450,16 @@ function CalendarBlock({ t }) {
     setWorking(w => ({ ...w, [p.k]: 'pub' }));
     try {
       const res = await socialPublishApi.publish({
-        ...(p.c.id === 'yt' ? { video_url: p.st.vid, title: (p.post.title || '').slice(0, 100) || undefined } : { image_url: p.st.img }),
+        ...(p.reel ? { video_url: p.st.vid, title: (p.post.title || '').slice(0, 100) || undefined } : { image_url: p.st.img }),
         caption: postCaption(p).slice(0, 3000), platforms: [p.c.platform],
         cta_url: hostOf(state.request.url) ? `https://${hostOf(state.request.url)}` : undefined,
         day_date: isoDate(p.d), post_number: 1,
       });
       const r = (res?.results || [])[0] || {};
       if (r.success) {
-        setPostState(p.k, { approved: true, published: true, pub_at: new Date().toISOString() });
-        toast({ type: 'success', message: `Published to ${p.c.name}.` });
+        const at = new Date().toISOString();
+        setPostState(p.k, { approved: true, published: true, pub_at: at });
+        toast({ type: 'success', message: `Published to ${p.c.name} on ${fmtWhen(at)}.` });
       } else if (r.needs_reconnect) {
         setShowLink(true);
         toast({ type: 'info', message: `Please reconnect your ${p.c.name} account, then publish again.` });
@@ -452,7 +506,7 @@ function CalendarBlock({ t }) {
       while (Date.now() < until) {
         await sleep(4000);
         const st = await aeoApi.shortStatus(job_id);
-        if (st.status === 'done') { setPostState(p.k, { vid: st.video_url, vthumb: st.thumb_url, v: (p.st.v || 0) + 1 }); toast({ type: 'success', message: 'Your Short is ready.' }); return; }
+        if (st.status === 'done') { setPostState(p.k, { vid: st.video_url, vthumb: st.thumb_url, v: (p.st.v || 0) + 1 }); toast({ type: 'success', message: `Your ${reelWord(p.c)} is ready.` }); return; }
         if (st.status === 'error') throw new Error(st.error || 'Could not create the video.');
       }
       throw new Error('The video is taking longer than usual. Please try again in a few minutes.');
@@ -466,7 +520,7 @@ function CalendarBlock({ t }) {
     setWorking(w => ({ ...w, [p.k]: 'upv' }));
     try {
       const res = await socialPublishApi.uploadVideo(file);
-      if (res?.video_url) { setPostState(p.k, { vid: res.video_url, vthumb: res.thumb_url || '', v: (p.st.v || 0) + 1 }); toast({ type: 'success', message: 'Your Short is uploaded.' }); }
+      if (res?.video_url) { setPostState(p.k, { vid: res.video_url, vthumb: res.thumb_url || '', v: (p.st.v || 0) + 1 }); toast({ type: 'success', message: `Your ${reelWord(p.c)} is uploaded.` }); }
     } catch (e) {
       if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Upload failed.' });
     } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
@@ -485,7 +539,7 @@ function CalendarBlock({ t }) {
   };
   const rebuild = async (prompt) => {
     if (!window.confirm('Rebuild the calendar around these keywords? The posts are rewritten. Images and approvals stay on the same slots.')) return;
-    await loadSocial(prompt, true);
+    await loadSocial(prompt, true, cycle);
   };
   const upload = async (p, file) => {
     if (!file) return;
@@ -499,13 +553,24 @@ function CalendarBlock({ t }) {
     } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
   };
 
+  const kindWord = (p) => (p.reel ? reelWord(p.c) : 'Poster');
+  const goTo = (p) => {
+    setChannel(p.c.id); setWeekSel(p.week);
+    setTimeout(() => { const el = document.getElementById(`post-${p.k}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+  };
+  const markPosted = (p) => setPostState(p.k, { approved: true, published: true, pub_at: new Date().toISOString() });
+  const hasMedia = (p) => (p.reel ? !!p.st.vid : !!p.st.img);
+  const manualOnly = (p) => p.reel && (p.c.id === 'li' || p.c.id === 'gbp');
+  const weekLabel = (w) => `Week ${w + 1} · ${fmtDate(addDays(start, w * 7), { day: 'numeric', month: 'short' })}`;
+
   return (
     <>
       <div ref={brandRef}><BrandKitCard /></div>
       <section className="ae-card" style={{ padding: 24, gap: 18 }}>
-        <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(new Date(start.getTime() + 27 * 864e5), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
-          <b style={{ fontSize: 13, color: '#4a4966' }}>{approvedN} of {all.length} posts approved</b></div>
-        <KeywordsPanel prompt={t.active} onRegenerate={rebuild} regenerating={!!busy['social|' + t.active]} />
+        <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
+          <div className="ae-col" style={{ alignItems: 'flex-end', gap: 8 }}>{monthNav}
+            <b style={{ fontSize: 13, color: '#4a4966' }}>{approvedN} of {all.length} items approved · {postedN} posted</b></div></div>
+        <KeywordsPanel prompt={t.active} onRegenerate={rebuild} regenerating={!!busy['social|' + key]} />
         <div className="ae-chtabs">
           {CHANNELS.map(c => (
             <button key={c.id} className={`ae-chtab ${c.id === channel ? 'on' : ''}`} onClick={() => setChannel(c.id)}>
@@ -515,10 +580,11 @@ function CalendarBlock({ t }) {
                 {(() => { const cs = channelState(c, conn[c.platform], !!progress[c.platform]);
                   return <span style={{ fontSize: 11, fontWeight: 700, color: cs.color }}>{cs.label}</span>; })()}
                 {(() => {
-                  const tot = all.filter(p => p.c.id === c.id).length, ok = all.filter(p => p.c.id === c.id && p.st.approved).length;
+                  const mine = all.filter(p => p.c.id === c.id), tot = mine.length, ok = mine.filter(p => p.st.approved).length, pub = mine.filter(p => p.st.published).length;
                   const done = tot > 0 && ok === tot;
-                  return <span className="ae-pill" style={{ fontSize: 11, padding: '2px 8px', background: done ? '#d1fae5' : ok ? '#fef3c7' : '#fee2e2', color: done ? '#065f46' : ok ? '#92400e' : '#991b1b' }}>
-                    {done ? '✓ Approved' : ok ? `Partly approved · ${ok}/${tot}` : `Not approved · 0/${tot}`}</span>;
+                  return <><span className="ae-pill" style={{ fontSize: 11, padding: '2px 8px', background: done ? '#d1fae5' : ok ? '#fef3c7' : '#fee2e2', color: done ? '#065f46' : ok ? '#92400e' : '#991b1b' }}>
+                    {done ? '✓ All approved' : ok ? `Partly approved · ${ok}/${tot}` : `Not approved · 0/${tot}`}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: pub ? '#047857' : '#64748b' }}>{pub ? `● ${pub} of ${tot} posted` : `○ None posted yet`}</span></>;
                 })()}
               </span>
             </button>
@@ -526,52 +592,71 @@ function CalendarBlock({ t }) {
         </div>
         <div className="ae-cal">
           {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => <span key={d} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ae-faint)', padding: '0 6px' }}>{d}</span>)}
-          {days.map((d, o) => (
-            <div key={o} className="ae-cal-d"><span>{d.label}</span>
-              {d.chips.map(p => (
-                <button key={p.k} title={`${p.c.name} · ${p.c.time}`} onClick={() => setChannel(p.c.id)}
-                  style={{ background: p.st.approved ? p.c.fg : p.c.bg, color: p.st.approved ? '#fff' : p.c.fg, borderColor: p.c.id === channel ? '#1c1b3a' : 'transparent' }}>{p.st.approved ? '✓ ' : ''}{p.c.name}</button>
+          {gridDays.map((d, o) => (
+            <div key={o} className="ae-cal-d" style={o === todayOffset ? { outline: '2px solid #4f46e5', background: '#f1f1ff' } : undefined}><span>{d.label}{o === todayOffset ? ' · today' : ''}</span>
+              {d.chips.map(p => {
+                const posted = !!p.st.published;
+                return (
+                  <button key={p.k} title={`${p.c.name} · ${kindWord(p)} · ${p.c.time}${posted ? ` · Posted ${fmtWhen(p.st.pub_at)}` : p.st.approved ? ' · Approved' : ''}`} onClick={() => goTo(p)}
+                    style={{ background: posted ? '#059669' : p.st.approved ? p.c.fg : p.c.bg, color: posted || p.st.approved ? '#fff' : p.c.fg, borderColor: p.k === (feed.find(f => f.k === p.k) || {}).k && p.c.id === channel ? '#1c1b3a' : 'transparent' }}>
+                    {posted ? '● ' : p.st.approved ? '✓ ' : ''}{p.c.abbr} {p.reel ? '🎬' : '🖼'}</button>
+                );
+              })}
+              {d.posted.map(p => (
+                <button key={'pd' + p.k} title={`${p.c.name} ${kindWord(p).toLowerCase()} was posted on this day, ${fmtWhen(p.st.pub_at)} (planned for ${fmtDate(p.d, { day: 'numeric', month: 'short' })})`} onClick={() => goTo(p)}
+                  style={{ background: '#d1fae5', color: '#065f46', borderColor: '#10b981' }}>● {p.c.abbr} posted</button>
               ))}
             </div>
           ))}
+        </div>
+        <div className="ae-note" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <span>🖼 Poster</span><span>🎬 Reel or Short</span><span>✓ Approved</span><span style={{ color: '#047857', fontWeight: 700 }}>● Posted (hover for the date and time)</span>
+          <span>A post can go out on any day. We show the day and time it was really posted.</span>
         </div>
         {(() => { const cs = channelState(ch, conn[ch.platform], !!progress[ch.platform]);
           if (cs.key === 'on') return null;
           const prog = cs.key === 'progress';
           return <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '10px 14px', borderRadius: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span>{prog ? <><b>{ch.name} is in progress.</b> We are finishing this connection — you can write, edit and approve these posts now and we will publish them once it is ready.</>
+            <span>{prog ? <><b>{ch.name} is in progress.</b> We are finishing this connection. You can write, edit and approve these posts now, and we will publish them once it is ready.</>
               : <><b>Connect your {ch.name} account</b> to publish these posts. You can approve them in the meantime.</>}</span>
             <button className="ae-btn sm" onClick={() => setShowLink(v => !v)}>{showLink ? 'Hide' : prog ? 'Try again' : 'Connect account'}</button></div>; })()}
         {showLink && <SocialChannelsCard />}
-        {data.limited && <PreviewBanner what="You get one post per channel. Paid plans include four posts per channel across the 4 weeks." />}
-        <span className="ae-note">Approve each post when you are happy with it and its image. Channels with unapproved posts are marked “Not approved”.</span>
+        {data.limited && <PreviewBanner what="You get one item per channel. Paid plans include a full month: every week, 3 posters and 2 reels on each channel (YouTube: 2 reels), for as many months as you like." />}
+        <span className="ae-note">Approve each item when you are happy with it and its image or video. Channels with unapproved items are marked “Not approved”.</span>
       </section>
 
       <section className="ae-feed">
+        <div className="ae-seg" style={{ alignSelf: 'center', flexWrap: 'wrap' }}>
+          {[0, 1, 2, 3].map(w => <button key={w} className={week === w ? 'on' : ''} onClick={() => setWeekSel(w)}>{weekLabel(w)}</button>)}
+          <button className={week === 'all' ? 'on' : ''} onClick={() => setWeekSel('all')}>Whole month</button>
+        </div>
         <div className="ae-row" style={{ width: '100%', maxWidth: 560, flexWrap: 'nowrap' }}>
-          <b style={{ fontSize: 15 }}>{ch.name} preview</b>
-          <button className="ae-btn good sm" style={{ padding: '8px 14px', fontSize: 13 }} onClick={() => setPostStates(Object.fromEntries(feed.map(p => [p.k, { approved: true }])))}>Approve all {ch.name}</button>
+          <b style={{ fontSize: 15 }}>{ch.name} · {week === 'all' ? 'whole month' : `week ${week + 1}`} · {feed.filter(p => !p.reel).length} poster{feed.filter(p => !p.reel).length === 1 ? '' : 's'}, {feed.filter(p => p.reel).length} {reelWord(ch).toLowerCase()}{feed.filter(p => p.reel).length === 1 ? '' : 's'}</b>
+          <button className="ae-btn good sm" style={{ padding: '8px 14px', fontSize: 13 }} disabled={!feed.length} onClick={() => setPostStates(Object.fromEntries(feed.map(p => [p.k, { approved: true }])))}>Approve all shown</button>
         </div>
         {feed.map(p => {
-          const ap = !!p.st.approved, w = working[p.k];
+          const ap = !!p.st.approved, w = working[p.k], isPub = !!p.st.published;
+          const lateDay = isPub && p.st.pub_at && dayDiff(new Date(p.st.pub_at), p.d) !== 0;
           return (
-            <div key={p.k} className={`ae-post ${ap ? 'ok' : ''}`}>
-              <div className="ae-post-bar"><span style={{ color: '#4a4966' }}>{fmtDate(p.d, { weekday: 'short', day: 'numeric', month: 'short' })} · {p.c.time}</span><span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{p.st.team && <span className="ae-pill" style={{ fontSize: 11, background: '#e0f2fe', color: '#075985' }}>{p.st.team === 'verified' ? 'Verified by our team' : 'Updated by our team'}</span>}<span style={{ color: ap ? '#047857' : '#b45309' }}>{ap ? 'Approved' : 'Awaiting your approval'}</span></span></div>
-              <PostPreview ch={p.c} post={p.post} short={fmtDate(p.d, { day: 'numeric', month: 'short' })} brand={brand} handle={handle} img={p.st.img} vid={p.st.vid} vthumb={p.st.vthumb} v={p.st.v || 0} i={p.i}
+            <div key={p.k} id={`post-${p.k}`} className={`ae-post ${ap ? 'ok' : ''}`}>
+              <div className="ae-post-bar"><span style={{ color: '#4a4966' }}>{p.reel ? `🎬 ${reelWord(p.c)}` : '🖼 Poster'} · {fmtDate(p.d, { weekday: 'short', day: 'numeric', month: 'short' })} · {p.c.time}</span><span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{p.st.team && <span className="ae-pill" style={{ fontSize: 11, background: '#e0f2fe', color: '#075985' }}>{p.st.team === 'verified' ? 'Verified by our team' : 'Updated by our team'}</span>}<span style={{ color: isPub ? '#047857' : ap ? '#047857' : '#b45309' }}>{isPub ? '● Posted' : ap ? 'Approved' : 'Awaiting your approval'}</span></span></div>
+              <PostPreview ch={p.c} post={p.post} reel={p.reel} short={fmtDate(p.d, { day: 'numeric', month: 'short' })} brand={brand} handle={handle} img={p.st.img} vid={p.st.vid} vthumb={p.st.vthumb} v={p.st.v || 0} i={p.i}
                 showVisual={!!openVis[p.k]} onToggleVisual={() => setOpenVis(o => ({ ...o, [p.k]: !o[p.k] }))}
-                visualSlot={<VisualBrief post={p.post} fallback={visualOf(p.post, brand)} hasImg={p.c.id === 'yt' ? !!p.st.vid : !!p.st.img} working={w} video={p.c.id === 'yt'}
+                visualSlot={<VisualBrief post={p.post} fallback={visualOf(p.post, brand)} hasImg={hasMedia(p)} working={w} video={p.reel} word={reelWord(p.c)}
                   onSave={(v) => savePost(p, { visual: v })}
-                  onRegen={async (v) => { if (v !== (p.post.visual || visualOf(p.post, brand)).trim()) { if (!(await savePost(p, { visual: v }))) return; } p.c.id === 'yt' ? genShort(p, v) : genImage(p, v); }} />} />
-              {editing[p.k] && <PostEditForm ch={p.c} post={p.post} saving={!!savingPost[p.k]}
+                  onRegen={async (v) => { if (v !== (p.post.visual || visualOf(p.post, brand)).trim()) { if (!(await savePost(p, { visual: v }))) return; } p.reel ? genShort(p, v) : genImage(p, v); }} />} />
+              {isPub && <div style={{ padding: '8px 16px', background: '#ecfdf5', borderTop: '1px solid #a7f3d0', color: '#065f46', fontSize: 13, fontWeight: 700 }}>
+                ● Published on {fmtWhen(p.st.pub_at)}{lateDay ? ` (it was planned for ${fmtDate(p.d, { weekday: 'short', day: 'numeric', month: 'short' })})` : ''}</div>}
+              {editing[p.k] && <PostEditForm ch={p.c} post={p.post} reel={p.reel} saving={!!savingPost[p.k]}
                 onCancel={() => setEditing(m => ({ ...m, [p.k]: false }))}
                 onSave={async (d) => { if (await savePost(p, d)) setEditing(m => ({ ...m, [p.k]: false })); }} />}
               <div className="ae-post-actions">
                 <button className="ae-btn sm" style={{ fontWeight: 700 }} onClick={() => setEditing(m => ({ ...m, [p.k]: !m[p.k] }))}>{editing[p.k] ? 'Close editor' : '✎ Edit post'}</button>
-                {p.c.id === 'yt' ? <>
-                  <span className="ae-eyebrow" style={{ letterSpacing: '.06em' }}>Short video</span>
+                {p.reel ? <>
+                  <span className="ae-eyebrow" style={{ letterSpacing: '.06em' }}>{reelWord(p.c)} video</span>
                   <button className="ae-btn sm" style={{ fontWeight: 700 }} onClick={() => setOpenVis(o => ({ ...o, [p.k]: !o[p.k] }))}>{openVis[p.k] ? 'Hide suggestion' : '💡 Content suggestion'}</button>
-                  <button className="ae-btn sm" style={{ fontWeight: 700, ...(p.st.vid ? {} : { borderColor: '#4f46e5', background: '#eef0ff', color: '#3730a3' }) }} disabled={!!w} onClick={() => genShort(p)}>{w === 'vid' ? 'Creating your Short… (1–2 min)' : p.st.vid ? 'Regenerate Short' : '🎬 Generate Short video'}</button>
-                  <label className="ae-btn sm" style={{ fontWeight: 700, cursor: 'pointer' }}>{w === 'upv' ? 'Uploading…' : 'Upload your own Short'}<input type="file" accept="video/mp4,video/quicktime,video/webm,video/*" style={{ display: 'none' }} disabled={!!w} onChange={e => { uploadShort(p, e.target.files && e.target.files[0]); e.target.value = ''; }} /></label>
+                  <button className="ae-btn sm" style={{ fontWeight: 700, ...(p.st.vid ? {} : { borderColor: '#4f46e5', background: '#eef0ff', color: '#3730a3' }) }} disabled={!!w} onClick={() => genShort(p)}>{w === 'vid' ? `Creating your ${reelWord(p.c)}… (1–2 min)` : p.st.vid ? `Regenerate ${reelWord(p.c)}` : `🎬 Generate ${reelWord(p.c)} video`}</button>
+                  <label className="ae-btn sm" style={{ fontWeight: 700, cursor: 'pointer' }}>{w === 'upv' ? 'Uploading…' : `Upload your own ${reelWord(p.c)}`}<input type="file" accept="video/mp4,video/quicktime,video/webm,video/*" style={{ display: 'none' }} disabled={!!w} onChange={e => { uploadShort(p, e.target.files && e.target.files[0]); e.target.value = ''; }} /></label>
                   {p.st.vid && <button className="ae-btn sm" style={{ fontWeight: 700 }} disabled={w === 'dl'} onClick={() => downloadShort(p)}>{w === 'dl' ? 'Preparing…' : '⬇ Download'}</button>}
                   {p.st.vid && <button className="ae-linkbtn" onClick={() => setPostState(p.k, { vid: '', vthumb: '' })}>Remove video</button>}
                 </> : <>
@@ -583,20 +668,23 @@ function CalendarBlock({ t }) {
                 {p.st.img && <button className="ae-linkbtn" onClick={() => setPostState(p.k, { img: '' })}>Remove image</button>}
                 </>}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {p.st.published && <span className="ae-pill" style={{ fontSize: 11.5, background: '#d1fae5', color: '#065f46' }} title={p.st.pub_at ? new Date(p.st.pub_at).toLocaleString() : ''}>✓ Published</span>}
                   {confirmPub === p.k
                     ? <><span className="ae-note" style={{ fontSize: 12.5 }}>Post to {p.c.name} now?</span>
                         <button className="ae-btn sm" style={{ fontWeight: 800, background: '#4f46e5', color: '#fff', borderColor: '#4f46e5' }} onClick={() => publishNow(p)}>Yes, publish</button>
                         <button className="ae-btn sm" onClick={() => setConfirmPub(null)}>Cancel</button></>
-                    : <button className="ae-btn sm" style={{ fontWeight: 800 }} disabled={!!w || !(p.c.id === 'yt' ? p.st.vid : p.st.img) || !!data.limited}
-                        title={data.limited ? 'Publishing is available on paid plans.' : !(p.c.id === 'yt' ? p.st.vid : p.st.img) ? (p.c.id === 'yt' ? 'Create or upload a Short first.' : 'Add an image first — every channel needs one.') : `Post this to ${p.c.name} right now`}
-                        onClick={() => setConfirmPub(p.k)}>{w === 'pub' ? 'Publishing…' : p.st.published ? '↻ Publish again' : '🚀 Publish now'}</button>}
+                    : manualOnly(p)
+                      ? <button className="ae-btn sm" style={{ fontWeight: 800 }} disabled={!!w || !p.st.vid} title={`${p.c.name} does not accept reels from other apps. Download the reel, post it there, then mark it as posted here.`} onClick={() => markPosted(p)}>{isPub ? '↻ Posted again today' : '✓ I posted this myself'}</button>
+                      : <button className="ae-btn sm" style={{ fontWeight: 800 }} disabled={!!w || !hasMedia(p) || !!data.limited}
+                          title={data.limited ? 'Publishing is available on paid plans.' : !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : `Post this to ${p.c.name} right now`}
+                          onClick={() => setConfirmPub(p.k)}>{w === 'pub' ? 'Publishing…' : isPub ? '↻ Publish again' : '🚀 Publish now'}</button>}
                   <button className="ae-btn good" style={{ fontWeight: 800, padding: '8px 16px', background: ap ? '#ecfdf5' : '#10b981', color: ap ? '#047857' : '#fff' }} onClick={() => setPostState(p.k, { approved: !ap })}>{ap ? 'Approved ✓' : 'Approve'}</button>
                 </span>
               </div>
+              {manualOnly(p) && <div className="ae-note" style={{ padding: '0 16px 12px' }}>{p.c.name} does not accept reels from other apps. Download the reel, post it there, then tap “I posted this myself” so the calendar shows the date and time.</div>}
             </div>
           );
         })}
+        {!feed.length && <span className="ae-note">Nothing planned for {ch.name} in this week.</span>}
       </section>
     </>
   );

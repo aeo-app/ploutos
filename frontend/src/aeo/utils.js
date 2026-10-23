@@ -84,6 +84,27 @@ export function calendarStart(now = new Date()) {
   d.setDate(d.getDate() + add);
   return d;
 }
+// The weekly rhythm: each channel posts on these weekdays (0 = Monday). 3 posters + 2 reels a week; YouTube posts 2 reels.
+export const SLOT_DAYS = { fb: [0, 1, 2, 4, 5], ig: [1, 2, 3, 5, 6], li: [0, 1, 2, 3, 4], gbp: [0, 2, 3, 4, 5], yt: [1, 4] };
+export const WEEK_DAYS = 7;
+export const MONTH_DAYS = 28;
+export const isReel = (c, post) => c.id === 'yt' || post?.kind === 'reel';
+export const reelWord = (c) => (c.id === 'yt' ? 'Short' : 'Reel');
+/** Day offset (from the first Monday of the month) of the i-th item of a channel. Calendars made before the weekly plan have no `week`. */
+export function dayOffset(c, list, i) {
+  const post = list[i] || {};
+  if (post.week == null) return c.day + 7 * i;
+  let slot = 0;
+  for (let j = 0; j < i; j++) if (list[j].week === post.week) slot++;
+  const days = SLOT_DAYS[c.id] || [c.day];
+  return 7 * post.week + days[Math.min(slot, days.length - 1)];
+}
+export const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+export const parseIso = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+export const dayDiff = (a, b) => Math.round((new Date(a.getFullYear(), a.getMonth(), a.getDate()) - new Date(b.getFullYear(), b.getMonth(), b.getDate())) / 864e5);
+export const fmtWhen = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase()}`; };
+/** Key of a post's saved state (approval, image, video, published). Calendars made before the weekly plan keep their old keys. */
+export const postStateKey = (prompt, cycle, chId, i, post) => (post && post.week != null ? hkey('post2', prompt, cycle || 0, chId, i) : hkey('post', prompt, chId, i));
 export const isoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); return true; } catch (e) { return false; } };

@@ -200,3 +200,37 @@ def post_to_instagram(ig_user_id: str, page_access_token: str, image_url: str, c
     if not media_id:
         raise MetaError(f"Instagram publish did not return an id: {published}")
     return media_id
+
+
+def post_video_to_facebook_page(page_id: str, page_access_token: str, video_url: str, description: str) -> str:
+    """Posts a reel-style vertical video to the Page. Facebook fetches `video_url` itself (a signed link), then processes it."""
+    resp = _post(f"/{page_id}/videos", {"file_url": video_url, "description": description, "access_token": page_access_token})
+    video_id = resp.get("id")
+    if not video_id:
+        raise MetaError(f"Facebook video did not return an id: {resp}")
+    return video_id
+
+
+def post_reel_to_instagram(ig_user_id: str, page_access_token: str, video_url: str, caption: str) -> str:
+    """Instagram Reel: same two-step container model as a photo, with media_type=REELS (video processing takes longer)."""
+    container = _post(f"/{ig_user_id}/media", {
+        "media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true", "access_token": page_access_token,
+    })
+    container_id = container.get("id")
+    if not container_id:
+        raise MetaError(f"Instagram reel container did not return an id: {container}")
+    for _ in range(max(POLL_MAX_ATTEMPTS, 40)):
+        status = _get(f"/{container_id}", {"fields": "status_code", "access_token": page_access_token})
+        code = status.get("status_code")
+        if code == "FINISHED":
+            break
+        if code == "ERROR":
+            raise MetaError(f"Instagram could not process the reel: {status}")
+        time.sleep(POLL_INTERVAL_SECONDS)
+    else:
+        raise MetaError("Instagram is still processing the reel — please try again in a minute.")
+    published = _post(f"/{ig_user_id}/media_publish", {"creation_id": container_id, "access_token": page_access_token})
+    media_id = published.get("id")
+    if not media_id:
+        raise MetaError(f"Instagram reel publish did not return an id: {published}")
+    return media_id

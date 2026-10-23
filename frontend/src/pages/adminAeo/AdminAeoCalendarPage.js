@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { adminAeoApi } from '../../api/adminApi';
 import { canvaApi } from '../../api/canvaApi';
 import { downloadImage } from '../../api/downloadImage';
-import { CHANNELS, channelState, hkey } from '../../aeo/utils';
+import { CHANNELS, channelState, isReel, reelWord, postStateKey, dayOffset } from '../../aeo/utils';
 import { Badge, Card, Empty, SectionHeader, SkeletonCard } from '../../components/ui/UI';
 import { useApp } from '../../context/AppContext';
 import { AdminImg, AdminVideo, CustomerList, UserHeader, promptsOf, useAdminCall, useWorkspace } from './shared';
@@ -12,11 +12,13 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const brandVisual = (post, brand) => (post.visual && post.visual.trim())
   || `A realistic, real-world photograph for ${brand} showing: ${(post.title || post.text || '').replace(/\s+/g, ' ').slice(0, 160)}`;
 
-function PostEditor({ userId, brand, brandOk, prompt, ch, i, post, st, onChange, onFlag, onSaveDoc, saving, dirty, justSaved, saveError }) {
+function PostEditor({ siblings, userId, brand, brandOk, prompt, ch, i, post, st, onChange, onFlag, onSaveDoc, saving, dirty, justSaved, saveError }) {
   const call = useAdminCall();
   const { toast } = useApp();
   const fileRef = useRef(null);
-  const key = hkey('post', prompt, ch.id, i);
+  const key = postStateKey(prompt, 0, ch.id, i, post);
+  const reel = isReel(ch, post);
+  const dayName = DAYS[post.week != null ? dayOffset(ch, siblings, i) % 7 : ch.day];
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState(!st.approved);
   const [needCanva, setNeedCanva] = useState(false);
@@ -124,7 +126,7 @@ function PostEditor({ userId, brand, brandOk, prompt, ch, i, post, st, onChange,
       <div>
         <div className={s.head} style={{ marginBottom: 10 }}>
           <div className={s.actions}>
-            <b>Week {i + 1}</b><span className={s.muted}>{DAYS[ch.day]} · {ch.time}</span>
+            <b>Week {(post.week != null ? post.week : i) + 1}</b><span className={s.muted}>{reel ? `🎬 ${reelWord(ch)}` : '🖼 Poster'} · {dayName} · {ch.time}</span>
             {approved ? <Badge variant="success">✓ Approved by customer</Badge> : <Badge variant="warning">Awaiting customer approval</Badge>}
             {st.team && <Badge variant="brand">{st.team === 'verified' ? 'Verified by team' : 'Updated by team'}</Badge>}
           </div>
@@ -137,13 +139,13 @@ function PostEditor({ userId, brand, brandOk, prompt, ch, i, post, st, onChange,
           </div>
         ) : (
           <>
-            {ch.id === 'yt' && (
-              <div className={s.field}><span className={s.label}>Video title</span><input className={s.input} value={post.title || ''} onChange={e => set('title', e.target.value)} /></div>
+            {reel && (
+              <div className={s.field}><span className={s.label}>{ch.id === 'yt' ? 'Video title' : 'Hook shown on the video'}</span><input className={s.input} value={post.title || ''} onChange={e => set('title', e.target.value)} /></div>
             )}
             <div className={s.field}><span className={s.label}>Post text</span><textarea className={s.area} value={post.text || ''} onChange={e => set('text', e.target.value)} /></div>
             <div className={s.field}><span className={s.label}>Call to action</span><input className={s.input} value={post.cta || ''} onChange={e => set('cta', e.target.value)} /></div>
             <div className={s.field}><span className={s.label}>Hashtags</span><input className={s.input} value={post.tags || ''} onChange={e => set('tags', e.target.value)} /></div>
-            {ch.id === 'yt' && <div className={s.field}><span className={s.label}>Duration</span><input className={s.input} value={post.duration || ''} onChange={e => set('duration', e.target.value)} /></div>}
+            {reel && <div className={s.field}><span className={s.label}>Duration</span><input className={s.input} value={post.duration || ''} onChange={e => set('duration', e.target.value)} /></div>}
             <div className={s.field}><span className={s.label}>Visual suggestion (used to create the image)</span>
               <textarea className={s.area} style={{ minHeight: 64 }} value={post.visual || ''} placeholder={brandVisual(post, brand)} onChange={e => set('visual', e.target.value)} /></div>
             {approved && <div className={s.banner} style={{ marginBottom: 8 }}>The customer already approved this post. Changes you save here will show on their screen.</div>}
@@ -157,18 +159,18 @@ function PostEditor({ userId, brand, brandOk, prompt, ch, i, post, st, onChange,
           </>
         )}
       </div>
-      {ch.id === 'yt' ? (
+      {reel ? (
       <div>
-        {vid ? <AdminVideo userId={userId} src={vid} thumb={st.vthumb} /> : <div className={s.imgBox} style={{ aspectRatio: '9 / 16', maxWidth: 320 }}><span>No Short video yet</span></div>}
+        {vid ? <AdminVideo userId={userId} src={vid} thumb={st.vthumb} /> : <div className={s.imgBox} style={{ aspectRatio: '9 / 16', maxWidth: 320 }}><span>No video yet</span></div>}
         {(!approved || open) && (
           <div className={s.imgBtns}>
-            <button type="button" className={`${s.btn} ${s.sm} ${s.primary}`} disabled={!!busy} onClick={genShort}>{busy === 'short' ? 'Creating… (1–2 min)' : vid ? '↻ Create new Short' : '🎬 Create Short video'}</button>
-            <button type="button" className={`${s.btn} ${s.sm}`} disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === 'upv' ? 'Uploading…' : '⬆ Upload Short'}</button>
+            <button type="button" className={`${s.btn} ${s.sm} ${s.primary}`} disabled={!!busy} onClick={genShort}>{busy === 'short' ? 'Creating… (1–2 min)' : vid ? `↻ Create new ${reelWord(ch)}` : `🎬 Create ${reelWord(ch)} video`}</button>
+            <button type="button" className={`${s.btn} ${s.sm}`} disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === 'upv' ? 'Uploading…' : `⬆ Upload ${reelWord(ch)}`}</button>
             {vid && <button type="button" className={`${s.btn} ${s.sm}`} disabled={!!busy} onClick={removeShort}>Remove</button>}
             <input ref={fileRef} type="file" accept="video/mp4,video/quicktime,video/webm,video/*" hidden onChange={e => { uploadShort(e.target.files?.[0]); e.target.value = ''; }} />
           </div>
         )}
-        <p className={s.note} style={{ margin: '8px 0 0' }}>YouTube posts are vertical Shorts (9:16, up to 3 minutes). Generated Shorts carry the customer's logo and contact details.</p>
+        <p className={s.note} style={{ margin: '8px 0 0' }}>Reels and Shorts are vertical videos (9:16, up to 3 minutes). Generated videos carry the customer's logo and contact details.</p>
       </div>
       ) : (
       <div>
@@ -225,6 +227,7 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
   const doc = ws.content.find(c => c.kind === 'social' && c.prompt === prompt);
   const [channels, setChannels] = useState(doc?.data.channels || null);
   const [channel, setChannel] = useState('fb');
+  const [weekSel, setWeekSel] = useState(0);
   const [saving, setSaving] = useState(false);
   const [gen, setGen] = useState(false);
   const [conn, setConn] = useState({});
@@ -266,8 +269,8 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
   const verifyAll = async () => {
     if (!(await saveDoc('verified'))) return;
     for (const c of CHANNELS) for (let i = 0; i < (channels[c.id] || []).length; i++) {
-      const r = await call(adminAeoApi.flag(userId, { section: 'post', key: hkey('post', prompt, c.id, i), team: 'verified' }), { quiet: true });
-      if (r?.entry) setEntry(hkey('post', prompt, c.id, i), r.entry);
+      const r = await call(adminAeoApi.flag(userId, { section: 'post', key: postStateKey(prompt, 0, c.id, i, (channels[c.id] || [])[i]), team: 'verified' }), { quiet: true });
+      if (r?.entry) setEntry(postStateKey(prompt, 0, c.id, i, (channels[c.id] || [])[i]), r.entry);
     }
   };
 
@@ -284,7 +287,7 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
   const ch = CHANNELS.find(c => c.id === channel);
   const posts = channels[channel] || [];
   const total = CHANNELS.reduce((n, c) => n + (channels[c.id] || []).length, 0);
-  const approved = CHANNELS.reduce((n, c) => n + (channels[c.id] || []).filter((_, i) => ps[hkey('post', prompt, c.id, i)]?.approved).length, 0);
+  const approved = CHANNELS.reduce((n, c) => n + (channels[c.id] || []).filter((p, i) => ps[postStateKey(prompt, 0, c.id, i, p)]?.approved).length, 0);
 
   return (
     <Card>
@@ -300,7 +303,7 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
       <div className={s.tabs} style={{ margin: '12px 0' }}>
         {CHANNELS.map(c => {
           const list = channels[c.id] || [];
-          const ok = list.filter((_, i) => ps[hkey('post', prompt, c.id, i)]?.approved).length;
+          const ok = list.filter((p, i) => ps[postStateKey(prompt, 0, c.id, i, p)]?.approved).length;
           const cn = conn[c.platform];
           return (
             <button key={c.id} type="button" className={`${s.tab} ${c.id === channel ? s.tabOn : ''}`} onClick={() => setChannel(c.id)}>
@@ -313,15 +316,21 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
       </div>
       {channelState(ch, conn[ch.platform]).key !== 'on' && <div className={s.banner} style={{ marginBottom: 12 }}>{ch.name} is not connected for this customer yet — posts can be prepared and approved now, and published once they connect it.</div>}
       {dirtyCount > 0 && <div className={s.banner} style={{ marginBottom: 12 }}>You have {dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}. They are not visible to the customer until you save.</div>}
+      {posts.some(x => x.week != null) && (
+        <div className={s.tabs} style={{ margin: '0 0 12px' }}>
+          {[0, 1, 2, 3].map(w => <button key={w} type="button" className={`${s.tab} ${weekSel === w ? s.tabOn : ''}`} onClick={() => setWeekSel(w)}><b style={{ fontSize: 13 }}>Week {w + 1}</b></button>)}
+          <button type="button" className={`${s.tab} ${weekSel === 'all' ? s.tabOn : ''}`} onClick={() => setWeekSel('all')}><b style={{ fontSize: 13 }}>Whole month</b></button>
+        </div>
+      )}
       <div className={s.main}>
-        {posts.map((p, i) => (
-          <PostEditor key={`${channel}${i}`} userId={userId} brand={brand} brandOk={ws.brand_complete !== false} prompt={prompt} ch={ch} i={i} post={p}
-            st={ps[hkey('post', prompt, ch.id, i)] || {}}
+        {posts.map((p, i) => (weekSel !== 'all' && p.week != null && p.week !== weekSel) ? null : (
+          <PostEditor key={`${channel}${i}`} siblings={posts} userId={userId} brand={brand} brandOk={ws.brand_complete !== false} prompt={prompt} ch={ch} i={i} post={p}
+            st={ps[postStateKey(prompt, 0, ch.id, i, p)] || {}}
             onChange={np => setChannels(c => ({ ...c, [channel]: c[channel].map((x, j) => (j === i ? np : x)) }))}
             onFlag={setEntry} onSaveDoc={() => saveDoc('edited')} saving={saving}
             dirty={isDirty(channel, i)} justSaved={justSaved} saveError={saveError} />
         ))}
-        {posts.length < 4 && (
+        {posts.length < 4 && !posts.some(x => x.week != null) && (
           <button type="button" className={s.btn} onClick={() => setChannels(c => ({ ...c, [channel]: [...(c[channel] || []), { text: '', cta: '', tags: '', visual: '' }] }))}>+ Add a post to {ch.name}</button>
         )}
       </div>
@@ -347,7 +356,7 @@ function NewCalendar({ ws, userId, existing, onCreated }) {
   return (
     <Card>
       <div className={s.title}>Create a calendar from a prompt</div>
-      <p className={s.note}>Choose one of this customer's prompts, or type your own. We write four posts for every channel for it, and it appears on the customer's Social Media Calendar page.</p>
+      <p className={s.note}>Choose one of this customer's prompts, or type your own. We write a month of posters and reels for every channel, and it appears on the customer's Social Media Calendar page.</p>
       <div className={s.actions} style={{ alignItems: 'stretch' }}>
         <select className={s.input} style={{ flex: '1 1 260px' }} value={pick} onChange={e => { setPick(e.target.value); setCustom(''); }}>
           <option value="">{options.length ? 'Choose a prompt…' : 'No other prompts available'}</option>

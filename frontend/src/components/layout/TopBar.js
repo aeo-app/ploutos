@@ -12,7 +12,7 @@ const META = {
   profile:        ['Company Profile', 'Your website and business details, as AI engines should see them'],
   aeoStrategy:    ['Content Strategy', 'Strategy, blogs and social posts for your selected prompts'],
   aeoBlogs:       ['Blog Topics', 'Blogs written to win your selected prompts'],
-  aeoCalendar:    ['Social Media Calendar', 'Four weeks of posts across every channel'],
+  aeoCalendar:    ['Social Media Calendar', 'A month of posters and reels for every channel, week by week'],
   compete:        ['Competitor Analysis', 'Visibility scores, DA estimates & keyword rankings'],
   keywords:       ['Keyword Intelligence', 'Volume, intent, competition & position data'],
   contentStrategy:['Keyword Content Strategy', 'Competitor-informed, SEO-optimised content per keyword'],

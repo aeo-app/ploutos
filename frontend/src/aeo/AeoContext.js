@@ -8,7 +8,7 @@ import { seoApi } from '../api/seoApi';
 import { usePayment } from '../context/PaymentContext';
 
 const Ctx = createContext(null);
-const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], brand: {} };
+const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], calendar_start: '', brand: {} };
 
 export function AeoProvider({ children }) {
   const { state, runApi, toast, requirePayment } = useApp();
@@ -80,7 +80,7 @@ export function AeoProvider({ children }) {
     const r = state.request;
     const base = { company_name: r.company_name, url: r.url, market: r.market || 'Global', industry: r.industry || 'General' };
     const jobs = [];
-    Object.values(contentRef.current.social).forEach(c => c?.prompt && jobs.push(aeoApi.socialPosts({ ...base, prompt: c.prompt }).then(x => ['social', c.prompt, x])));
+    Object.entries(contentRef.current.social).forEach(([key, c]) => c?.prompt && jobs.push(aeoApi.socialPosts({ ...base, prompt: c.prompt, cycle: c.cycle || 0 }).then(x => ['social', key, x])));
     Object.values(contentRef.current.blog).forEach(c => c?.prompt && c?.title && jobs.push(aeoApi.blogDraft({ ...base, prompt: c.prompt, type: c.type || 'Blog', title: c.title, words: 1000 }).then(x => ['blog', `${c.prompt}|${c.title}`, x])));
     Object.values(contentRef.current.strategy).forEach(c => c?.prompt && jobs.push(aeoApi.strategy({ ...base, prompt: c.prompt }).then(x => ['strategy', c.prompt, x])));
     const done = await Promise.allSettled(jobs);
@@ -189,8 +189,10 @@ export function AeoProvider({ children }) {
   }, [state.request, goScreen, logout, toast, requirePayment]);
 
   const loadStrategy = (prompt, refresh) => generate('strategy', prompt, { prompt }, aeoApi.strategy, refresh);
-  const loadSocial   = async (prompt, refresh) => {
-    return generate('social', prompt, { prompt, keywords: savedRef.current.calendar_keywords || [] }, aeoApi.socialPosts, refresh);
+  // Month 1 is stored under the prompt itself (so our team's edits stay attached); later months under "<prompt>#m<n>".
+  const socialKey = (prompt, cycle = 0) => (cycle ? `${prompt}#m${cycle}` : prompt);
+  const loadSocial   = async (prompt, refresh, cycle = 0) => {
+    return generate('social', socialKey(prompt, cycle), { prompt, cycle, keywords: savedRef.current.calendar_keywords || [] }, aeoApi.socialPosts, refresh);
   };
   const loadBlogDraft = (prompt, topic, refresh) =>
     generate('blog', `${prompt}|${topic.title}`, { prompt, type: topic.type, title: topic.title, words: topic.words || 1000 }, aeoApi.blogDraft, refresh);
@@ -208,15 +210,16 @@ export function AeoProvider({ children }) {
   }, [goScreen, logout, toast]);
 
   /** Saves the customer's edits to one post and updates the open calendar. Returns true on success. */
-  const editPost = async (prompt, chId, idx, fields) => {
+  const editPost = async (prompt, chId, idx, fields, cycle = 0) => {
+    const key = socialKey(prompt, cycle);
     try {
-      const r = await withTokenExpiry(aeoApi.editPost(prompt, chId, idx, fields), { goScreen, logout });
+      const r = await withTokenExpiry(aeoApi.editPost(prompt, chId, idx, fields, cycle), { goScreen, logout });
       setContent(c => {
-        const doc = c.social[prompt];
+        const doc = c.social[key];
         if (!doc) return c;
         const list = [...(doc.channels[chId] || [])];
         list[idx] = { ...list[idx], ...r.post };
-        return { ...c, social: { ...c.social, [prompt]: { ...doc, channels: { ...doc.channels, [chId]: list } } } };
+        return { ...c, social: { ...c.social, [key]: { ...doc, channels: { ...doc.channels, [chId]: list } } } };
       });
       return true;
     } catch (e) {
@@ -256,6 +259,7 @@ export function AeoProvider({ children }) {
 
   /* ── Calendar keywords ─────────────────────────────────── */
   const setCalendarKeywords = (list) => patch({ calendar_keywords: list });
+  const setCalendarStart = (iso) => patch({ calendar_start: iso });
   const suggestKeywords = async () => {
     const r = state.request;
     const d = await withTokenExpiry(aeoApi.suggestKeywords({ company_name: r.company_name, url: r.url, market: r.market || 'Global', industry: r.industry || 'General' }), { goScreen, logout });
@@ -265,8 +269,8 @@ export function AeoProvider({ children }) {
   const value = useMemo(() => ({
     analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
-    loadStrategy, loadSocial, loadBlogDraft, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setPostState, setPostStates,
-    brand, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, suggestKeywords,
+    loadStrategy, loadSocial, socialKey, loadBlogDraft, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setPostState, setPostStates,
+    brand, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
     // eslint-disable-next-line
   }), [analysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);
 
