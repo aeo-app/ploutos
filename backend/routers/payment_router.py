@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
-from core.security import get_current_user_id
+from core.security import get_real_user_id as get_current_user_id  # never "act as" a customer here
 from db import (
     cancel_auto_renew,
     get_user_entitlement,

@@ -4,6 +4,8 @@ import { hkey } from '../../aeo/utils';
 import { Badge, Card, Empty, SectionHeader, SkeletonCard } from '../../components/ui/UI';
 import { useApp } from '../../context/AppContext';
 import { AdminImg, CustomerList, UserHeader, promptsOf, useAdminCall, useWorkspace } from './shared'; // eslint-disable-line no-unused-vars
+import { CustomerView, ViewTabs } from './CustomerView';
+import { BlogsAeoPage } from '../../aeo/pages/ContentPages';
 import s from './AdminAeo.module.css';
 
 const TYPES = ['Blog', 'FAQ', 'How-to guide', 'Comparison', 'Case study', 'Listicle'];
@@ -159,6 +161,8 @@ export function AdminAeoBlogsPage({ selectedUser, onSelectUser }) {
   const { ws, loading, reload } = useWorkspace(selectedUser);
   const [tick, setTick] = useState(0);
   const prompts = promptsOf(ws);
+  const [view, setView] = useState('customer');
+  const pick = (v) => { setView(v); if (v === 'team') { reload(); setTick(t => t + 1); } };
   const refresh = () => { reload(); setTick(t => t + 1); };
   return (
     <div>
@@ -171,8 +175,12 @@ export function AdminAeoBlogsPage({ selectedUser, onSelectUser }) {
           {ws && (
             <>
               <UserHeader ws={ws} />
+              <ViewTabs value={view} onChange={pick} />
+              {view === 'customer' && <CustomerView ws={ws}><BlogsAeoPage /></CustomerView>}
+              {view === 'team' && <>
               {prompts.length === 0 && <Empty icon="🧭" title="No prompts selected yet" body="This customer has not chosen prompts to work on, so there are no blog topics yet." />}
               {prompts.map(p => <PromptBlogs key={p} userId={ws.user.user_id} prompt={p} ws={ws} reload={refresh} />)}
+              </>}
             </>
           )}
         </div>

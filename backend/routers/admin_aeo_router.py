@@ -38,6 +38,7 @@ from db import (
 )
 from db.dynamo import _aeo_content_sk, get_analysis, list_all_users, list_analyses
 from models.aeo_models import (
+    CALENDAR_PROMPT,
     AeoStrategyRequest,
     CHANNELS,
     POSTS_PER_CHANNEL,
@@ -242,6 +243,8 @@ def save_content(user_id: str, req: SaveContentRequest, admin_id: str = Depends(
             item["kind"] = "reel" if p.get("kind") == "reel" else "poster"
             w = p.get("week")
             item["week"] = w if isinstance(w, int) and 0 <= w <= 3 else None
+            cr = p.get("core")
+            item["core"] = cr if isinstance(cr, int) and 0 <= cr <= 19 else None
             posts.append(item)
         chans[ch] = posts
     prior = None
@@ -277,16 +280,21 @@ def ai_blog(user_id: str, req: AiBlogRequest, admin_id: str = Depends(require_ad
 
 
 class AiSocialRequest(BaseModel):
-    prompt: str = Field(..., min_length=3, max_length=300)
+    prompt: str = Field(default=CALENDAR_PROMPT, min_length=3, max_length=300)
 
 
 @router.post("/users/{user_id}/social/ai-generate", summary="Generate the full month (weekly posters and reels per channel) for a prompt and save it for the customer")
 def ai_social(user_id: str, req: AiSocialRequest, admin_id: str = Depends(require_admin)):
     b = _business(user_id)
+    st = get_aeo_state(user_id)
+    chosen = list(st.get("calendar_keywords") or [])        # the customer's own keywords; empty -> the top 10 from their website
     try:
-        r = generate_aeo_social(AeoSocialRequest(**b, prompt=req.prompt, keywords=list(get_aeo_state(user_id).get('calendar_keywords') or [])), usage_tracker=TokenUsageTracker(), limited=False)
+        r = generate_aeo_social(AeoSocialRequest(**b, prompt=req.prompt, keywords=chosen), usage_tracker=TokenUsageTracker(), limited=False)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Could not generate this right now: {e}")
+    if not chosen and r.keywords:                           # show the customer which keywords the calendar was built around
+        st["calendar_keywords"] = list(r.keywords)
+        save_aeo_state(user_id, AeoState(**st).model_dump())
     doc = json.loads(r.model_dump_json())
     doc["team"] = "edited"
     sk = _aeo_content_sk("social", req.prompt + ("" if is_user_paid(user_id) else "|free"))

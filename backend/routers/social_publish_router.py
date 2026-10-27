@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from core.security import get_current_user_id
+from core.security import get_real_user_id as get_current_user_id  # never "act as" a customer here
 from db import (
     cancel_scheduled_post,
     delete_social_connection,

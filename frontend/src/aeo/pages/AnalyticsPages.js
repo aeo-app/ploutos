@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAeo, usePromptRows } from '../AeoContext';
-import { CompetitorsMini, EmptyAnalysis, Kpi, PromptsCard, SelectionBar, SocialChannelsCard, useCompetitorRows } from '../parts';
+import { CompetitorsMini, EmptyAnalysis, Kpi, PromptsCard, SocialChannelsCard, useCompetitorRows } from '../parts';
 import { ENGINES, citedCount, engineStats, hostOf, isReal, overallVis, sovRank, youSov } from '../utils';
 
 const delta = (cur, prev, unit = '') => {
@@ -45,13 +45,12 @@ export function DashboardPage() {
       ) : null}
 
       {analysis ? <><PromptsCard /><div className="ae-grid2"><CompetitorsMini /><SocialChannelsCard /></div></> : <><EmptyAnalysis /><div className="ae-grid2"><CompetitorsMini /><SocialChannelsCard /></div></>}
-      <SelectionBar />
     </>
   );
 }
 
 export function PromptsPage() {
-  return <><PromptsCard /><SelectionBar /></>;
+  return <><PromptsCard /></>;
 }
 
 export function CompetitorsAeoPage() {

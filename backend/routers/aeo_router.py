@@ -40,6 +40,7 @@ from db import (
 )
 from db.dynamo import normalize_domain
 from models.aeo_models import (
+    CALENDAR_PROMPT,
     BlogTopicIdea,
     AeoBlogDraftRequest,
     AeoBlogDraftResponse,
@@ -190,14 +191,31 @@ def _social_key(prompt: str, limited: bool, cycle: int = 0) -> str:
     return prompt + ("|free" if limited else "") + (f"|m{cycle}" if cycle else "")
 
 
+def _adopt_team_calendar(user_id: str, key: str, limited: bool) -> None:
+    """The calendar used to be one per AI prompt. If our team already edited one in the new weekly format, carry the newest into the keyword calendar."""
+    try:
+        docs = [c for c in list_aeo_content(user_id)
+                if c["kind"] == "social" and c["data"].get("team") and bool(c["data"].get("limited")) == limited and social_shape_ok(c["data"], limited)]
+        if docs:
+            best = max(docs, key=lambda c: c.get("updated_at", ""))
+            doc = {**best["data"], "prompt": CALENDAR_PROMPT}
+            doc.pop("cached", None)
+            save_aeo_content(user_id, "social", key, doc)
+    except Exception as e:  # noqa: BLE001 — never block the calendar over this
+        logger.info(f"[aeo] could not carry over the team's calendar: {e}")
+
+
 @router.post("/social-posts", response_model=AeoSocialResponse, summary="A month of posters and reels for each channel, for one prompt")
 def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id)):
     _enforce_domain(user_id, req.url, req.company_name)
     limited = not is_user_paid(user_id)
     if limited and req.cycle:
         raise HTTPException(status_code=402, detail="Later months are part of the paid plans.")
+    key = _social_key(req.prompt, limited, req.cycle)
+    if req.prompt == CALENDAR_PROMPT and not req.cycle and not get_aeo_content(user_id, "social", key):
+        _adopt_team_calendar(user_id, key, limited)
     res = _cached_or_generate(
-        user_id, "social", _social_key(req.prompt, limited, req.cycle), req.refresh, AeoSocialResponse,
+        user_id, "social", key, req.refresh, AeoSocialResponse,
         lambda t: generate_aeo_social(req, usage_tracker=t, limited=limited),
         valid=lambda d: social_shape_ok(d, limited),
     )
@@ -316,9 +334,24 @@ def detect_brand(req: BrandDetectRequest, user_id: str = Depends(get_current_use
         user_id, business={"title": found["title"], "description": found["description"]}, socials=found["socials"],
         detected_at=datetime.now(timezone.utc).isoformat(timespec="seconds"), **fill,
     )
+    # Link the channels we found on the website, unless the customer already linked that channel themselves.
+    st = get_aeo_state(user_id)
+    links = dict(st.get("social_links") or {})
+    added = []
+    for found_key, ch_id in (("facebook", "fb"), ("instagram", "ig"), ("linkedin", "li"), ("youtube", "yt"), ("google_business", "gbp")):
+        if found.get("socials", {}).get(found_key) and not links.get(ch_id):
+            try:
+                links[ch_id] = normalise_social_link(ch_id, found["socials"][found_key])
+                added.append(ch_id)
+            except ValueError:
+                pass
+    if added:
+        st["social_links"] = links
+        save_aeo_state(user_id, AeoState(**st).model_dump())
     out = _brand_view(user_id)
     out["found"] = {k: found[k] for k in ("phones", "emails", "address", "socials", "logo_candidates", "pages_read")}
     out["filled"] = sorted(fill)
+    out["social_links"] = links
     return out
 
 

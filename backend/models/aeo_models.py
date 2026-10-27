@@ -22,23 +22,28 @@ Intent = Literal["Commercial", "Informational", "Transactional"]
 Channel = Literal["fb", "ig", "li", "yt", "gbp"]
 CHANNELS: list[str] = ["fb", "ig", "li", "yt", "gbp"]
 WEEKS_PER_MONTH = 4
-# What every channel publishes each week: 3 posters + 2 reels (YouTube: 2 reels only). One month = 4 weeks.
-WEEKLY_PLAN: dict[str, list[str]] = {
-    "fb":  ["poster", "reel", "poster", "reel", "poster"],
-    "ig":  ["reel", "poster", "reel", "poster", "poster"],
-    "li":  ["poster", "reel", "poster", "poster", "reel"],
-    "gbp": ["poster", "poster", "reel", "poster", "reel"],
-    "yt":  ["reel", "reel"],
-}
-POSTS_PER_CHANNEL = 20             # the most any channel holds in one month (5 per week x 4 weeks)
+# One set of CORE content per week, shared by every channel: 3 posters + 2 reels. Each channel gets the same core items with only the
+# caption, hashtags and format adjusted. YouTube is video-only, so it carries the 2 reels of the week.
+CORE_KINDS = ["poster", "reel", "poster", "reel", "poster"]
+CORES_PER_WEEK = len(CORE_KINDS)
+POSTS_PER_CHANNEL = WEEKS_PER_MONTH * CORES_PER_WEEK      # the most any channel holds in one month (20)
+
+
+def channel_cores(channel: str, limited: bool = False) -> list[tuple[int, int, str]]:
+    """[(core_id, week, kind)] a channel carries, in posting order. core_id = week * 5 + slot, the same on every channel.
+    The free preview is one item per channel (a poster; a reel for YouTube)."""
+    out = [(w * CORES_PER_WEEK + j, w, k) for w in range(WEEKS_PER_MONTH) for j, k in enumerate(CORE_KINDS)]
+    if channel == "yt":
+        out = [c for c in out if c[2] == "reel"]
+    return out[:1] if limited else out
+
+
+WEEKLY_PLAN: dict[str, list[str]] = {c: [k for _, w, k in channel_cores(c) if w == 0] for c in ("fb", "ig", "li", "gbp", "yt")}
 
 
 def month_slots(channel: str, limited: bool = False) -> list[tuple[int, str]]:
-    """[(week, kind)] in posting order for one channel. The free preview is one item per channel."""
-    kinds = WEEKLY_PLAN[channel]
-    if limited:
-        return [(0, "poster" if "poster" in kinds else kinds[0])]
-    return [(w, k) for w in range(WEEKS_PER_MONTH) for k in kinds]
+    """[(week, kind)] in posting order for one channel."""
+    return [(w, k) for _, w, k in channel_cores(channel, limited)]
 
 
 # ── Prompt visibility analysis ────────────────────────────────────────────────
@@ -165,8 +170,11 @@ class AeoBlogDraftResponse(BaseModel):
 
 # ── Social posts for a prompt ────────────────────────────────────────────────
 
+CALENDAR_PROMPT = "Social media calendar"   # the calendar is built from keywords, not from one AI prompt — this is its fixed name/key
+
+
 class AeoSocialRequest(AnalyseRequest):
-    prompt: str = Field(..., min_length=3, max_length=300)
+    prompt: str = Field(default=CALENDAR_PROMPT, min_length=3, max_length=300)
     refresh: bool = False
     keywords: list[str] = Field(default_factory=list, max_length=20)   # empty -> top 10 are taken from the website
     cycle: int = Field(default=0, ge=0, le=23)                           # 0 = the first month, 1 = the next month, ...
@@ -175,6 +183,7 @@ class AeoSocialRequest(AnalyseRequest):
 class AeoSocialPost(BaseModel):
     kind: str = "poster"             # "poster" (image post) or "reel" (vertical video)
     week: Optional[int] = None       # 0-3: which week of the month. None for calendars made before the weekly plan
+    core: Optional[int] = None       # which core item this is (week * 5 + slot). The same core on different channels is the same content
     text: str
     cta: str = ""
     tags: str = ""

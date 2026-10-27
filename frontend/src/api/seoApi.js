@@ -1,16 +1,10 @@
 import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
-// export const BASE = "https://api.aeo-app.ai/api/v1";
-// Configurable via REACT_APP_API_BASE_URL — see authApi.js's BASE_URL for
-// the full explanation of why this must not be hardcoded to localhost.
-// export const BASE = "https://api.aeo-app.com/api/v1";
-export const BASE = "http://localhost:8000/api/v1"; // for local dev, override with REACT_APP_API_BASE_URL
 
-// 🔹 Check Token & User Validity (forcefully redirect to login if missing)
-// Exported so every other API module (socialApi.js, etc.) reuses THIS exact
-// implementation and the shared ApiError class above — see authApi.js's
-// comment on why duplicating this per-module previously broke token-expiry
-// redirects.
+export const BASE = "https://api.aeo-app.com/api/v1";
+// export const BASE = "http://localhost:8000/api/v1"; // for local dev, override with REACT_APP_API_BASE_URL
+
+
 export const checkAuthTokens = () => {
   const idToken = localStorage.getItem("id_token");
   const accessToken = localStorage.getItem("access_token");
@@ -40,6 +34,12 @@ function isTokenExpired(token) {
 }
 
 // 🔹 Centralized Auth Headers
+// Admin "act as customer": while set, every request carries X-Act-As-User and the
+// server (which re-checks the caller is an admin) works on that customer's data.
+let _actAs = "";
+export const setActAs = (userId) => { _actAs = userId || ""; };
+export const isActingAs = () => !!_actAs;
+
 export const getAuthHeaders = () => {
   const { idToken, userId } = checkAuthTokens(); // This will throw if tokens missing
 
@@ -47,6 +47,7 @@ export const getAuthHeaders = () => {
     "Content-Type": "application/json",
     Authorization: `Bearer ${idToken}`, // Use id_token specifically
     "X-User-ID": userId, // Always include user_id
+    ...(_actAs ? { "X-Act-As-User": _actAs } : {}),
   };
 };
 

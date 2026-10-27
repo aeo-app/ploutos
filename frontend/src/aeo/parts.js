@@ -4,7 +4,7 @@ import { socialPublishApi } from '../api/socialPublishApi';
 import { rememberPageBeforeOAuthRedirect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
 import { useConnectProgress } from './useConnectProgress';
 import { useAeo, usePromptRows } from './AeoContext';
-import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num } from './utils';
+import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf } from './utils';
 
 export function EngCell({ x, j }) {
   const c = engCell(x, j);
@@ -106,6 +106,7 @@ export function PromptsCard() {
         <span><em style={{ border: '1px dashed #a5a4c4' }} />Pending next run</span>
       </div>
       {analysis?.disclaimer && <span className="ae-note">{analysis.disclaimer}</span>}
+      <SelectionBar />
     </section>
   );
 }
@@ -161,8 +162,16 @@ export function CompetitorsMini() {
 }
 
 /* ── Social channels ─────────────────────────────────────────────────────── */
+const FOUND_KEY = { fb: 'facebook', ig: 'instagram', li: 'linkedin', yt: 'youtube', gbp: 'google_business' };
+const OTHER_NETWORKS = { x: 'X (Twitter)', tiktok: 'TikTok', pinterest: 'Pinterest', threads: 'Threads', whatsapp: 'WhatsApp' };
+const shortLink = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+
 export function SocialChannelsCard() {
   const { setPage, state, toast } = useApp();
+  const { brand, detecting, detectBrand } = useAeo();
+  const found = (brand.data && brand.data.socials) || {};
+  const foundCount = Object.keys(found).length;
+  const rescan = async () => { try { await detectBrand(); toast({ type: 'success', message: 'We checked your website again.' }); } catch (e) { if (e.code !== 'TokenExpired') toast({ type: 'info', message: 'We could not read your website just now. Please try again in a moment.' }); } };
   const [status, setStatus] = useState({});
   const [connecting, setConnecting] = useState(null);
   const progress = useConnectProgress();
@@ -202,6 +211,12 @@ export function SocialChannelsCard() {
   return (
     <section className="ae-card" style={{ gap: 12 }}>
       <div className="ae-row" style={{ alignItems: 'baseline' }}><h2>Social media channels</h2><a onClick={() => { setPage('aeoCalendar'); window.scrollTo(0, 0); }} style={{ fontSize: 13, fontWeight: 700 }}>Open calendar →</a></div>
+      <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '9px 12px', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span>{detecting ? <b>Reading your website for social accounts…</b>
+          : foundCount ? <><b>We found {foundCount} social account{foundCount > 1 ? 's' : ''} on {hostOf(state.request.url) || 'your website'}.</b> Connect each one below so we can publish for you.</>
+          : brand.data?.detected ? <>We did not find social account links on {hostOf(state.request.url) || 'your website'}. You can still connect your accounts below.</> : <>We will look for your social accounts on your website.</>}</span>
+        <button type="button" className="ae-btn sm" disabled={detecting || !state.request.url} onClick={rescan}>{detecting ? 'Reading…' : '🔎 Scan website again'}</button>
+      </div>
       {SOCIAL_ORDER.map(id => {
         const ch = CHANNELS.find(c => c.id === id);
         const st = status[ch.platform];
@@ -215,6 +230,7 @@ export function SocialChannelsCard() {
               <div className="ae-col" style={{ minWidth: 0 }}>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>{ch.name}</span>
                 <span style={{ fontSize: 12, color: 'var(--ae-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{handle}</span>
+                {found[FOUND_KEY[id]] && <a href={found[FOUND_KEY[id]]} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, fontWeight: 700, color: '#047857', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title="Found on your website">✓ Found on your website: {shortLink(found[FOUND_KEY[id]]).replace(/^[a-z]+\.com\//i, '')}</a>}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: cs.color }}>{cs.label.replace(/^[●○◐] /, '')}</span>
@@ -226,6 +242,12 @@ export function SocialChannelsCard() {
           </div>
         );
       })}
+      {Object.keys(OTHER_NETWORKS).some(k => found[k]) && (
+        <div className="ae-note" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span>Also found on your website (we cannot publish to these yet):</span>
+          {Object.keys(OTHER_NETWORKS).filter(k => found[k]).map(k => <a key={k} href={found[k]} target="_blank" rel="noreferrer" style={{ padding: '3px 10px', borderRadius: 999, background: '#eef0ff', color: '#3730a3', fontWeight: 700, fontSize: 12 }}>{OTHER_NETWORKS[k]}</a>)}
+        </div>
+      )}
     </section>
   );
 }

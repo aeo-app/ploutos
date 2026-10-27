@@ -3,6 +3,7 @@ import { withTokenExpiry } from '../api/authApi';
 import { useAuth } from './AuthContext';
 
 const Ctx = createContext(null);
+export const AppCtx = Ctx;
 
 const init = {
   page: 'home',

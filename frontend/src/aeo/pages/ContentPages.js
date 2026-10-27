@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { canvaApi } from '../../api/canvaApi';
 import { socialPublishApi } from '../../api/socialPublishApi';
+import { isActingAs } from '../../api/seoApi';
 import { aeoApi } from '../../api/aeoApi';
 import { downloadImage } from '../../api/downloadImage';
 import { useAeo } from '../AeoContext';
@@ -10,7 +11,7 @@ import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
 import { BrandKitCard, KeywordsPanel, ShortPlayer } from '../BrandKit';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
-import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
+import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
 
 
 // Older cached posts (or a model slip) can have an empty visual — derive one from the post so it is never blank.
@@ -334,12 +335,15 @@ function PostPreview({ ch, post, reel, when, short, brand, handle, img, vid, vth
   );
 }
 
+// The calendar is built around the customer's keywords, so it no longer depends on picking a target prompt.
+const CAL_TARGET = { active: CALENDAR_PROMPT };
+
 function CalendarBlock({ t }) {
   const { content, busy, saved, brand: brandKit, loadSocial, socialKey, editPost, setPostState, setPostStates, setCalendarStart } = useAeo();
   const { state, toast, setPage } = useApp();
   const [channel, setChannel] = useState('fb');
   const [cycleSel, setCycleSel] = useState(null);
-  const [weekSel, setWeekSel] = useState(null);
+  const [selKey, setSelKey] = useState(null);
   const [working, setWorking] = useState({});
   const [editing, setEditing] = useState({});
   const [savingPost, setSavingPost] = useState({});
@@ -348,8 +352,9 @@ function CalendarBlock({ t }) {
   const [showLink, setShowLink] = useState(false);
   const [confirmPub, setConfirmPub] = useState(null);
   const brandRef = useRef(null);
+  const acting = isActingAs();   // an admin viewing a customer: connecting and publishing stay with the customer
   const progress = useConnectProgress();
-  useEffect(() => { let off = false; socialPublishApi.status().then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
+  useEffect(() => { let off = false; (isActingAs() ? Promise.resolve(null) : socialPublishApi.status()).then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
 
   // Month 1 starts on the first Monday we planned for. Every later month is the next 4 weeks.
   const start0 = useMemo(() => parseIso(saved.calendar_start) || calendarStart(), [saved.calendar_start]);
@@ -365,9 +370,9 @@ function CalendarBlock({ t }) {
 
   const monthNav = (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <button type="button" className="ae-btn sm" disabled={cycle <= 0} onClick={() => { setCycleSel(cycle - 1); setWeekSel(null); }}>‹ Previous month</button>
+      <button type="button" className="ae-btn sm" disabled={cycle <= 0} onClick={() => { setCycleSel(cycle - 1); setSelKey(null); }}>‹ Previous month</button>
       <b style={{ fontSize: 13 }}>Month {cycle + 1}{cycle === currentCycle ? ' · this month' : cycle > currentCycle ? ' · next month' : ''}</b>
-      <button type="button" className="ae-btn sm" disabled={cycle >= Math.min(23, currentCycle + 1)} onClick={() => { setCycleSel(cycle + 1); setWeekSel(null); }}>Next month ›</button>
+      <button type="button" className="ae-btn sm" disabled={cycle >= Math.min(23, currentCycle + 1)} onClick={() => { setCycleSel(cycle + 1); setSelKey(null); }}>Next month ›</button>
     </div>
   );
 
@@ -378,7 +383,7 @@ function CalendarBlock({ t }) {
       <section className="ae-card" style={{ padding: 24, gap: 14 }}>
         <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>{monthNav}</div>
         {busy['social|' + key]
-          ? <Generating title={`Writing month ${cycle + 1} for “${t.active}”`} text="Drafting this month’s posters and reels for each of your channels…" />
+          ? <Generating title={`Writing month ${cycle + 1} of your calendar`} text="Drafting this month’s posters and reels for each of your channels…" />
           : <div className="ae-col" style={{ gap: 10 }}>
               <span className="ae-sub">{ended ? `Your previous month has ended. ` : ''}Month {cycle + 1} has not been created yet. We will write a fresh set of posters and reels for each channel, built around your keywords. Your earlier months stay available.</span>
               <div><button type="button" className="ae-btn primary" onClick={retry}>Create month {cycle + 1}</button></div>
@@ -387,42 +392,47 @@ function CalendarBlock({ t }) {
     </>;
   }
 
-  if (!data) return busy['social|' + key] ? <Generating title={`Writing your posts for “${t.active}”`} text="Drafting a full month of posters and reels for each of your channels…" /> : <><BrandKitCard /><Retry title="Social media calendar" text={`Create a 4-week calendar. Every week, Facebook, Instagram, LinkedIn and Google Business get 3 posters and 2 reels, and YouTube gets 2 reels. It is built around your keywords (or the top 10 from your website if you add none) and supports “${t.active}”. Then generate a realistic image or reel for each item, with your logo and contact details, and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
+  if (!data) return busy['social|' + key] ? <Generating title="Writing your social media calendar" text="Drafting a full month of posters and reels for each of your channels…" /> : <><BrandKitCard /><Retry title="Social media calendar" text={`Create a 4-week calendar. Every week has 3 posters and 2 reels. We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. It is built around your keywords (or the top 10 from your website if you add none) Then generate a realistic image or reel for each item, with your logo and contact details, and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
 
   const brand = state.request.company_name || 'Your company';
   const handle = hostOf(state.request.url).split('.')[0] || 'yourcompany';
   const pk = (ch, i) => postStateKey(t.active, cycle, ch, i, (data.channels[ch] || [])[i]);
   const all = [];
+  const groupMap = new Map();
   CHANNELS.forEach(c => {
     const list = (data.channels[c.id] || []).slice(0, 20);
     list.forEach((post, i) => {
       const offset = dayOffset(c, list, i);
       const d = addDays(start, offset);
       const st = saved.post_state[pk(c.id, i)] || {};
-      all.push({ c, i, post, d, offset, week: post.week != null ? post.week : Math.min(3, Math.floor(offset / 7)), reel: isReel(c, post), k: pk(c.id, i), st });
+      const p = { c, i, post, d, offset, week: post.week != null ? post.week : Math.min(3, Math.floor(offset / 7)), reel: isReel(c, post), k: pk(c.id, i), st };
+      all.push(p);
+      // The same core content on several platforms is ONE entry on the calendar.
+      const gk = post.core != null ? `c${post.core}` : `l${c.id}${i}`;
+      if (!groupMap.has(gk)) groupMap.set(gk, { key: gk, offset, d, reel: p.reel, items: [] });
+      groupMap.get(gk).items.push(p);
     });
   });
-  const approvedN = all.filter(p => p.st.approved).length;
-  const postedN = all.filter(p => p.st.published).length;
-  const ch = CHANNELS.find(c => c.id === channel);
-  const curWeek = cycle === currentCycle ? Math.min(3, Math.max(0, Math.floor(dayDiff(today, start) / 7))) : 0;
-  const week = weekSel == null ? curWeek : weekSel;       // 0-3, or 'all'
-  const channelAll = all.filter(p => p.c.id === channel);
-  const feed = channelAll.filter(p => week === 'all' || p.week === week);
-
-  // The grid: every item sits on its planned day. A post published on a different day is also marked on the day it really went out.
-  const gridDays = Array.from({ length: MONTH_DAYS }, (_, o) => {
-    const d = addDays(start, o);
-    return { d, label: o === 0 || d.getDate() === 1 ? fmtDate(d, { day: 'numeric', month: 'short' }) : String(d.getDate()), chips: all.filter(p => p.offset === o), posted: [] };
-  });
-  all.forEach(p => {
-    if (!p.st.published || !p.st.pub_at) return;
-    const pd = new Date(p.st.pub_at);
-    if (isNaN(pd)) return;
-    const o = dayDiff(pd, start);
-    if (o >= 0 && o < MONTH_DAYS && o !== p.offset) gridDays[o].posted.push(p);
-  });
+  const groups = [...groupMap.values()].sort((x, y) => x.offset - y.offset);
+  groups.forEach(g => { const f = g.items[0].post; g.title = (g.reel && f.title ? f.title : String(f.text || '').replace(/\s+/g, ' ').split(/(?<=[.!?])\s/)[0]).slice(0, 90); });
   const todayOffset = dayDiff(today, start);
+  const statusOf = (g) => {
+    const n = g.items.length, pub = g.items.filter(p => p.st.published), ap = g.items.filter(p => p.st.approved);
+    if (pub.length === n) return { k: 'published', label: 'Published', color: '#047857', bg: '#ecfdf5', bd: '#34d399' };
+    if (pub.length) return { k: 'partial', label: `Published on ${pub.length} of ${n}`, color: '#047857', bg: '#f0fdf4', bd: '#86efac' };
+    if (ap.length === n) return { k: 'scheduled', label: 'Scheduled', color: '#1d4ed8', bg: '#eff6ff', bd: '#93c5fd' };
+    if (ap.length) return { k: 'approving', label: `Approved ${ap.length} of ${n}`, color: '#92400e', bg: '#fffbeb', bd: '#fcd34d' };
+    return { k: 'draft', label: 'Needs approval', color: '#475569', bg: '#fff', bd: '#cbd5e1' };
+  };
+  const firstPub = (g) => g.items.filter(p => p.st.published && p.st.pub_at).map(p => p.st.pub_at).sort()[0];
+  const dayCell = (iso) => fmtDate(new Date(iso), { day: 'numeric', month: 'short' });
+  const countBy = (keys) => groups.filter(g => keys.includes(statusOf(g).k)).length;
+  const nPublished = countBy(['published', 'partial']), nScheduled = countBy(['scheduled', 'approving']), nDraft = countBy(['draft']);
+  const defaultGroup = (cycle === currentCycle ? groups.find(g => g.offset >= todayOffset) : null) || groups[0];
+  const selGroup = groups.find(g => g.key === selKey) || defaultGroup;
+  const selItem = selGroup ? (selGroup.items.find(p => p.c.id === channel) || selGroup.items[0]) : null;
+  const ch = selItem ? selItem.c : CHANNELS[0];
+  const dayGrid = Array.from({ length: MONTH_DAYS }, (_, o) => ({ o, d: addDays(start, o), groups: groups.filter(g => g.offset === o) }));
 
   const savePost = async (p, fields) => {
     setSavingPost(m => ({ ...m, [p.k]: true }));
@@ -554,87 +564,114 @@ function CalendarBlock({ t }) {
   };
 
   const kindWord = (p) => (p.reel ? reelWord(p.c) : 'Poster');
-  const goTo = (p) => {
-    setChannel(p.c.id); setWeekSel(p.week);
-    setTimeout(() => { const el = document.getElementById(`post-${p.k}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+  const pickDay = (g) => {
+    setSelKey(g.key);
+    if (!g.items.some(p => p.c.id === channel)) setChannel(g.items[0].c.id);
+    setTimeout(() => { const el = document.getElementById('day-detail'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+  };
+  // The same core item appears on several channels. Its picture or video can be reused: a video fits everywhere,
+  // an image only where the picture shape is the same (so the logo and contact bar are not cropped).
+  const sameCore = (p) => (p.post.core == null ? [] : all.filter(q => q.post.core === p.post.core && q.k !== p.k));
+  const reusable = (p) => sameCore(p).filter(q => (p.reel ? !q.st.vid : (!q.st.img && q.c.aspect === p.c.aspect)));
+  const reuseMedia = (p) => {
+    const targets = reusable(p);
+    if (!targets.length) return;
+    setPostStates(Object.fromEntries(targets.map(q => [q.k, p.reel ? { vid: p.st.vid, vthumb: p.st.vthumb || '', v: (q.st.v || 0) + 1 } : { img: p.st.img, v: (q.st.v || 0) + 1 }])));
+    toast({ type: 'success', message: `Used on ${targets.map(q => q.c.name).join(', ')}.` });
   };
   const markPosted = (p) => setPostState(p.k, { approved: true, published: true, pub_at: new Date().toISOString() });
   const hasMedia = (p) => (p.reel ? !!p.st.vid : !!p.st.img);
   const manualOnly = (p) => p.reel && (p.c.id === 'li' || p.c.id === 'gbp');
-  const weekLabel = (w) => `Week ${w + 1} · ${fmtDate(addDays(start, w * 7), { day: 'numeric', month: 'short' })}`;
 
   return (
     <>
       <div ref={brandRef}><BrandKitCard /></div>
-      <section className="ae-card" style={{ padding: 24, gap: 18 }}>
-        <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
-          <div className="ae-col" style={{ alignItems: 'flex-end', gap: 8 }}>{monthNav}
-            <b style={{ fontSize: 13, color: '#4a4966' }}>{approvedN} of {all.length} items approved · {postedN} posted</b></div></div>
-        <KeywordsPanel prompt={t.active} onRegenerate={rebuild} regenerating={!!busy['social|' + key]} />
-        <div className="ae-chtabs">
-          {CHANNELS.map(c => (
-            <button key={c.id} className={`ae-chtab ${c.id === channel ? 'on' : ''}`} onClick={() => setChannel(c.id)}>
-              <span className="ae-ico" style={{ background: c.bg, color: c.fg }}>{c.abbr}</span>
-              <span className="ae-col" style={{ alignItems: 'flex-start' }}>
-                <b style={{ fontSize: 13.5 }}>{c.name}</b>
-                {(() => { const cs = channelState(c, conn[c.platform], !!progress[c.platform]);
-                  return <span style={{ fontSize: 11, fontWeight: 700, color: cs.color }}>{cs.label}</span>; })()}
-                {(() => {
-                  const mine = all.filter(p => p.c.id === c.id), tot = mine.length, ok = mine.filter(p => p.st.approved).length, pub = mine.filter(p => p.st.published).length;
-                  const done = tot > 0 && ok === tot;
-                  return <><span className="ae-pill" style={{ fontSize: 11, padding: '2px 8px', background: done ? '#d1fae5' : ok ? '#fef3c7' : '#fee2e2', color: done ? '#065f46' : ok ? '#92400e' : '#991b1b' }}>
-                    {done ? '✓ All approved' : ok ? `Partly approved · ${ok}/${tot}` : `Not approved · 0/${tot}`}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: pub ? '#047857' : '#64748b' }}>{pub ? `● ${pub} of ${tot} posted` : `○ None posted yet`}</span></>;
-                })()}
-              </span>
-            </button>
-          ))}
+      <section className="ae-card ae-calcard">
+        <div className="ae-calhead">
+          <div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
+          {monthNav}
         </div>
-        <div className="ae-cal">
-          {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map(d => <span key={d} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: 'var(--ae-faint)', padding: '0 6px' }}>{d}</span>)}
-          {gridDays.map((d, o) => (
-            <div key={o} className="ae-cal-d" style={o === todayOffset ? { outline: '2px solid #4f46e5', background: '#f1f1ff' } : undefined}><span>{d.label}{o === todayOffset ? ' · today' : ''}</span>
-              {d.chips.map(p => {
-                const posted = !!p.st.published;
+        <div className="ae-calstats">
+          <span className="ae-stat"><i style={{ background: '#34d399' }} /><b>{nPublished}</b> published</span>
+          <span className="ae-stat"><i style={{ background: '#60a5fa' }} /><b>{nScheduled}</b> scheduled</span>
+          <span className="ae-stat"><i style={{ background: '#cbd5e1' }} /><b>{nDraft}</b> need approval</span>
+          <span className="ae-note" style={{ marginLeft: 'auto' }}>{groups.length} posts this month · each goes to every platform that carries it</span>
+        </div>
+        <details className="ae-kwdet">
+          <summary>Keywords this calendar is built around{(saved.calendar_keywords || []).length ? ` · ${(saved.calendar_keywords || []).length}` : ''}</summary>
+          <KeywordsPanel prompt={t.active} onRegenerate={rebuild} regenerating={!!busy['social|' + key]} />
+        </details>
+        <div className="ae-cal2">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <span key={d} className="ae-cal2-h">{d}</span>)}
+          {dayGrid.map(({ o, d, groups: gs }) => (
+            <div key={o} className={`ae-day${gs.length ? '' : ' empty'}${o === todayOffset ? ' today' : ''}`}>
+              <span className="ae-day-n">{o === 0 || d.getDate() === 1 ? fmtDate(d, { day: 'numeric', month: 'short' }) : d.getDate()}<span className="ae-day-wk"> · {fmtDate(d, { weekday: 'short' })}</span>{o === todayOffset ? <em> today</em> : null}</span>
+              {gs.map(g => {
+                const sx = statusOf(g), fp = firstPub(g);
                 return (
-                  <button key={p.k} title={`${p.c.name} · ${kindWord(p)} · ${p.c.time}${posted ? ` · Posted ${fmtWhen(p.st.pub_at)}` : p.st.approved ? ' · Approved' : ''}`} onClick={() => goTo(p)}
-                    style={{ background: posted ? '#059669' : p.st.approved ? p.c.fg : p.c.bg, color: posted || p.st.approved ? '#fff' : p.c.fg, borderColor: p.k === (feed.find(f => f.k === p.k) || {}).k && p.c.id === channel ? '#1c1b3a' : 'transparent' }}>
-                    {posted ? '● ' : p.st.approved ? '✓ ' : ''}{p.c.abbr} {p.reel ? '🎬' : '🖼'}</button>
+                  <button key={g.key} type="button" className={`ae-tile${selGroup && selGroup.key === g.key ? ' sel' : ''}`} style={{ background: sx.bg, borderColor: sx.bd }} onClick={() => pickDay(g)}
+                    title={g.items.map(p => `${p.c.name}: ${p.st.published ? `published ${fmtWhen(p.st.pub_at)}` : p.st.approved ? 'approved' : 'needs approval'}`).join('\n')}>
+                    <span className="ae-tile-kind">{g.reel ? '🎬 Reel' : '🖼 Poster'}</span>
+                    <span className="ae-tile-title">{g.title}</span>
+                    <span className="ae-tile-st" style={{ color: sx.color }}>{fp ? `● Published ${dayCell(fp)}` : sx.label}</span>
+                    <span className="ae-dots">{g.items.map(p => (
+                      <span key={p.k} className="ae-dot" style={p.st.published ? { background: '#059669', color: '#fff' } : p.st.approved ? { background: p.c.fg, color: '#fff' } : { background: p.c.bg, color: p.c.fg }}>{p.st.published ? '✓' : p.c.abbr}</span>))}</span>
+                  </button>
                 );
               })}
-              {d.posted.map(p => (
-                <button key={'pd' + p.k} title={`${p.c.name} ${kindWord(p).toLowerCase()} was posted on this day, ${fmtWhen(p.st.pub_at)} (planned for ${fmtDate(p.d, { day: 'numeric', month: 'short' })})`} onClick={() => goTo(p)}
-                  style={{ background: '#d1fae5', color: '#065f46', borderColor: '#10b981' }}>● {p.c.abbr} posted</button>
-              ))}
             </div>
           ))}
         </div>
-        <div className="ae-note" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-          <span>🖼 Poster</span><span>🎬 Reel or Short</span><span>✓ Approved</span><span style={{ color: '#047857', fontWeight: 700 }}>● Posted (hover for the date and time)</span>
-          <span>A post can go out on any day. We show the day and time it was really posted.</span>
+        <div className="ae-legend2">
+          <span><i style={{ background: '#fff', border: '1.5px solid #cbd5e1' }} />Needs approval</span>
+          <span><i style={{ background: '#eff6ff', border: '1.5px solid #93c5fd' }} />Scheduled (approved)</span>
+          <span><i style={{ background: '#ecfdf5', border: '1.5px solid #34d399' }} />Published, with the date</span>
+          <span>Round badges show the platforms. A ✓ means it is published there.</span>
         </div>
-        {(() => { const cs = channelState(ch, conn[ch.platform], !!progress[ch.platform]);
-          if (cs.key === 'on') return null;
-          const prog = cs.key === 'progress';
-          return <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '10px 14px', borderRadius: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span>{prog ? <><b>{ch.name} is in progress.</b> We are finishing this connection. You can write, edit and approve these posts now, and we will publish them once it is ready.</>
-              : <><b>Connect your {ch.name} account</b> to publish these posts. You can approve them in the meantime.</>}</span>
-            <button className="ae-btn sm" onClick={() => setShowLink(v => !v)}>{showLink ? 'Hide' : prog ? 'Try again' : 'Connect account'}</button></div>; })()}
-        {showLink && <SocialChannelsCard />}
         {data.limited && <PreviewBanner what="You get one item per channel. Paid plans include a full month: every week, 3 posters and 2 reels on each channel (YouTube: 2 reels), for as many months as you like." />}
-        <span className="ae-note">Approve each item when you are happy with it and its image or video. Channels with unapproved items are marked “Not approved”.</span>
       </section>
 
+      {selGroup && (
+      <section className="ae-card" id="day-detail" style={{ gap: 14 }}>
+        <div className="ae-calhead">
+          <div className="ae-col" style={{ gap: 4 }}>
+            <span className="ae-eyebrow p">{selGroup.reel ? '🎬 Reel' : '🖼 Poster'} · {fmtDate(selGroup.d, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+            <h2>{selGroup.title}</h2>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="ae-pill" style={{ background: statusOf(selGroup).bg, color: statusOf(selGroup).color, border: `1px solid ${statusOf(selGroup).bd}`, fontWeight: 800 }}>{firstPub(selGroup) ? `● Published ${dayCell(firstPub(selGroup))}` : statusOf(selGroup).label}</span>
+            <button className="ae-btn good sm" onClick={() => setPostStates(Object.fromEntries(selGroup.items.map(p => [p.k, { approved: true }])))}>Approve on all platforms</button>
+          </div>
+        </div>
+        <div className="ae-plats">
+          {selGroup.items.map(p => {
+            const cs = channelState(p.c, conn[p.c.platform], !!progress[p.c.platform]);
+            return (
+              <button key={p.k} type="button" className={`ae-plat${p.c.id === ch.id ? ' on' : ''}`} onClick={() => setChannel(p.c.id)}>
+                <span className="ae-ico" style={{ background: p.c.bg, color: p.c.fg }}>{p.c.abbr}</span>
+                <span className="ae-col" style={{ alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
+                  <b style={{ fontSize: 13 }}>{p.c.name}</b>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: p.st.published ? '#047857' : p.st.approved ? '#1d4ed8' : '#64748b' }}>
+                    {p.st.published ? `● Published ${fmtWhen(p.st.pub_at)}` : p.st.approved ? `Scheduled · ${p.c.time}` : 'Needs approval'}</span>
+                  {!acting && <span style={{ fontSize: 10.5, fontWeight: 700, color: cs.color }}>{cs.label}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {(() => { const cs = channelState(ch, conn[ch.platform], !!progress[ch.platform]);
+          if (acting || cs.key === 'on') return null;
+          const prog = cs.key === 'progress';
+          return <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '10px 14px', borderRadius: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>{prog ? <><b>{ch.name} is in progress.</b> We are finishing this connection. You can write, edit and approve now, and we will publish once it is ready.</>
+              : <><b>Connect your {ch.name} account</b> to publish this post. You can approve it in the meantime.</>}</span>
+            <button className="ae-btn sm" onClick={() => setShowLink(v => !v)}>{showLink ? 'Hide' : prog ? 'Try again' : 'Connect account'}</button></div>; })()}
+        {showLink && !acting && <SocialChannelsCard />}
+      </section>
+      )}
+
       <section className="ae-feed">
-        <div className="ae-seg" style={{ alignSelf: 'center', flexWrap: 'wrap' }}>
-          {[0, 1, 2, 3].map(w => <button key={w} className={week === w ? 'on' : ''} onClick={() => setWeekSel(w)}>{weekLabel(w)}</button>)}
-          <button className={week === 'all' ? 'on' : ''} onClick={() => setWeekSel('all')}>Whole month</button>
-        </div>
-        <div className="ae-row" style={{ width: '100%', maxWidth: 560, flexWrap: 'nowrap' }}>
-          <b style={{ fontSize: 15 }}>{ch.name} · {week === 'all' ? 'whole month' : `week ${week + 1}`} · {feed.filter(p => !p.reel).length} poster{feed.filter(p => !p.reel).length === 1 ? '' : 's'}, {feed.filter(p => p.reel).length} {reelWord(ch).toLowerCase()}{feed.filter(p => p.reel).length === 1 ? '' : 's'}</b>
-          <button className="ae-btn good sm" style={{ padding: '8px 14px', fontSize: 13 }} disabled={!feed.length} onClick={() => setPostStates(Object.fromEntries(feed.map(p => [p.k, { approved: true }])))}>Approve all shown</button>
-        </div>
-        {feed.map(p => {
+        {(selItem ? [selItem] : []).map(p => {
           const ap = !!p.st.approved, w = working[p.k], isPub = !!p.st.published;
           const lateDay = isPub && p.st.pub_at && dayDiff(new Date(p.st.pub_at), p.d) !== 0;
           return (
@@ -645,6 +682,7 @@ function CalendarBlock({ t }) {
                 visualSlot={<VisualBrief post={p.post} fallback={visualOf(p.post, brand)} hasImg={hasMedia(p)} working={w} video={p.reel} word={reelWord(p.c)}
                   onSave={(v) => savePost(p, { visual: v })}
                   onRegen={async (v) => { if (v !== (p.post.visual || visualOf(p.post, brand)).trim()) { if (!(await savePost(p, { visual: v }))) return; } p.reel ? genShort(p, v) : genImage(p, v); }} />} />
+              {sameCore(p).length > 0 && <div className="ae-note" style={{ padding: '8px 16px', borderTop: '1px solid var(--ae-line2)' }}>Same content on {sameCore(p).map(q => q.c.name).join(', ')}. Only the caption, hashtags and format change for each platform.</div>}
               {isPub && <div style={{ padding: '8px 16px', background: '#ecfdf5', borderTop: '1px solid #a7f3d0', color: '#065f46', fontSize: 13, fontWeight: 700 }}>
                 ● Published on {fmtWhen(p.st.pub_at)}{lateDay ? ` (it was planned for ${fmtDate(p.d, { weekday: 'short', day: 'numeric', month: 'short' })})` : ''}</div>}
               {editing[p.k] && <PostEditForm ch={p.c} post={p.post} reel={p.reel} saving={!!savingPost[p.k]}
@@ -668,7 +706,8 @@ function CalendarBlock({ t }) {
                 {p.st.img && <button className="ae-linkbtn" onClick={() => setPostState(p.k, { img: '' })}>Remove image</button>}
                 </>}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {confirmPub === p.k
+                  {hasMedia(p) && reusable(p).length > 0 && <button className="ae-btn sm" style={{ fontWeight: 700 }} title={`Use this ${p.reel ? 'video' : 'image'} on ${reusable(p).map(q => q.c.name).join(', ')}`} onClick={() => reuseMedia(p)}>↔ Use on {reusable(p).length} other platform{reusable(p).length > 1 ? 's' : ''}</button>}
+                  {acting ? null : confirmPub === p.k
                     ? <><span className="ae-note" style={{ fontSize: 12.5 }}>Post to {p.c.name} now?</span>
                         <button className="ae-btn sm" style={{ fontWeight: 800, background: '#4f46e5', color: '#fff', borderColor: '#4f46e5' }} onClick={() => publishNow(p)}>Yes, publish</button>
                         <button className="ae-btn sm" onClick={() => setConfirmPub(null)}>Cancel</button></>
@@ -684,7 +723,6 @@ function CalendarBlock({ t }) {
             </div>
           );
         })}
-        {!feed.length && <span className="ae-note">Nothing planned for {ch.name} in this week.</span>}
       </section>
     </>
   );
@@ -694,7 +732,7 @@ function CalendarBlock({ t }) {
 export function StrategyAeoPage() {
   const t = useTargets();
   if (!t.active) return <NeedAnalysis setPage={t.setPage} />;
-  return <><TargetChips t={t} /><StrategyBlock t={t} /><BlogsBlock t={t} /><CalendarBlock t={t} /></>;
+  return <><TargetChips t={t} /><StrategyBlock t={t} /><BlogsBlock t={t} /><CalendarBlock t={CAL_TARGET} /></>;
 }
 function Tabs({ tabs, value, onChange }) {
   return <div className="ae-seg">{tabs.map(([id, label]) => <button key={id} className={value === id ? 'on' : ''} onClick={() => onChange(id)}>{label}</button>)}</div>;
@@ -714,9 +752,7 @@ export function BlogsAeoPage() {
   );
 }
 export function CalendarAeoPage() {
-  const t = useTargets();
   const { refreshTeamWork } = useAeo();
   useEffect(() => { refreshTeamWork(); }, []); // eslint-disable-line
-  if (!t.active) return <NeedAnalysis setPage={t.setPage} />;
-  return <><TargetChips t={t} /><CalendarBlock t={t} /></>;
+  return <CalendarBlock t={CAL_TARGET} />;
 }

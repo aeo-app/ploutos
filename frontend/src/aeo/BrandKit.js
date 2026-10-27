@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAeo } from './AeoContext';
 import { aeoApi } from '../api/aeoApi';
@@ -12,17 +12,9 @@ export function BrandKitCard({ defaultOpen = false }) {
   const [f, setF] = useState({ phone: '', email: '', website: '', address: '' });
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const autoRan = useRef(false);
 
   // Pull the saved values into the form whenever they change.
   useEffect(() => { setF({ phone: d.phone || '', email: d.email || '', website: d.website || '', address: d.address || '' }); }, [d.phone, d.email, d.website, d.address]);
-  // First time: read the website for the phone, email, address and a logo — nothing to type if the site has them.
-  useEffect(() => {
-    if (!brand.loaded || brand.complete || d.detected || autoRan.current || !state.request.url) return;
-    autoRan.current = true;
-    (async () => { setBusy('detect'); try { await detectBrand(); } catch (_) { /* the form still works by hand */ } finally { setBusy(''); } })();
-    // eslint-disable-next-line
-  }, [brand.loaded, brand.complete, d.detected]);
   useEffect(() => { if (brand.loaded && !brand.complete) setEditing(true); }, [brand.loaded, brand.complete]);
 
   const run = async (kind, fn, okMsg) => {

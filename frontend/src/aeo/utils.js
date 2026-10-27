@@ -85,14 +85,17 @@ export function calendarStart(now = new Date()) {
   return d;
 }
 // The weekly rhythm: each channel posts on these weekdays (0 = Monday). 3 posters + 2 reels a week; YouTube posts 2 reels.
+export const CALENDAR_PROMPT = 'Social media calendar';   // the calendar is built from keywords, not from one prompt
 export const SLOT_DAYS = { fb: [0, 1, 2, 4, 5], ig: [1, 2, 3, 5, 6], li: [0, 1, 2, 3, 4], gbp: [0, 2, 3, 4, 5], yt: [1, 4] };
 export const WEEK_DAYS = 7;
 export const MONTH_DAYS = 28;
 export const isReel = (c, post) => c.id === 'yt' || post?.kind === 'reel';
 export const reelWord = (c) => (c.id === 'yt' ? 'Short' : 'Reel');
 /** Day offset (from the first Monday of the month) of the i-th item of a channel. Calendars made before the weekly plan have no `week`. */
+export const CORE_DAYS = [0, 1, 2, 3, 4];   // one core item a day, Monday to Friday: poster, reel, poster, reel, poster
 export function dayOffset(c, list, i) {
   const post = list[i] || {};
+  if (post.core != null && post.week != null) return 7 * post.week + CORE_DAYS[post.core % CORE_DAYS.length];
   if (post.week == null) return c.day + 7 * i;
   let slot = 0;
   for (let j = 0; j < i; j++) if (list[j].week === post.week) slot++;

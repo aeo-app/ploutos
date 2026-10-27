@@ -28,7 +28,20 @@ _SOCIAL = {
     "linkedin": re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/(?:company|in)/[^\s\"'<>?#]+", re.I),
     "youtube": re.compile(r"https?://(?:www\.)?youtube\.com/(?:@|channel/|c/|user/)[^\s\"'<>?#]+", re.I),
     "x": re.compile(r"https?://(?:www\.)?(?:twitter|x)\.com/[A-Za-z0-9_]{2,15}(?=[\"'<>?#\s/]|$)", re.I),
+    "google_business": re.compile(r"https?://(?:g\.page/[^\s\"'<>?#]+|maps\.app\.goo\.gl/[^\s\"'<>?#]+|(?:www\.)?google\.[a-z.]{2,6}/maps/place/[^\s\"'<>]+|business\.google\.com/[^\s\"'<>?#]+)", re.I),
+    "tiktok": re.compile(r"https?://(?:www\.)?tiktok\.com/@[A-Za-z0-9._]{2,40}", re.I),
+    "pinterest": re.compile(r"https?://(?:[a-z]{2}\.)?pinterest\.[a-z.]{2,6}/[A-Za-z0-9_]{3,40}(?=[\"'<>?#\s/]|$)", re.I),
+    "threads": re.compile(r"https?://(?:www\.)?threads\.net/@[A-Za-z0-9._]{2,40}", re.I),
+    "whatsapp": re.compile(r"https?://(?:wa\.me/\+?\d{6,15}|api\.whatsapp\.com/send\?phone=\d{6,15}|chat\.whatsapp\.com/[A-Za-z0-9]+)", re.I),
 }
+# Links that are not an account: share buttons, tracking pixels, embedded posts, widgets, login pages.
+_NOT_ACCOUNT = re.compile(r"sharer|share\.php|/share|/dialog|/plugins|/tr\?|/tr/|/intent/|/embed|/login|/policies|/help|/legal|/privacy|/terms|/hashtag/|/explore|/p/|/reel/|/reels/|/stories/|/watch|/status/|/events/|/photo|/videos/|/groups/|/pages/create|/home\?|/search", re.I)
+
+
+def _good_social(url: str) -> bool:
+    path = "/" + url.split("://", 1)[-1].split("/", 1)[-1]
+    return bool(url) and len(url) < 200 and not _NOT_ACCOUNT.search(path)
+
 _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 # International-looking numbers: optional +, 8-15 digits overall, separators allowed.
 _PHONE = re.compile(r"(?<![\w.])(\+?\d[\d\s().\-]{6,20}\d)(?![\w])")
@@ -163,8 +176,8 @@ def analyse_site(url: str) -> dict:
                 result["address"] = addr
             for sa in (node.get("sameAs") if isinstance(node.get("sameAs"), list) else []):
                 for k, rx in _SOCIAL.items():
-                    if isinstance(sa, str) and rx.match(sa) and k not in result["socials"]:
-                        result["socials"][k] = sa
+                    if isinstance(sa, str) and rx.match(sa) and _good_social(sa) and k not in result["socials"]:
+                        result["socials"][k] = sa.rstrip("/")
             lg = node.get("logo")
             if isinstance(lg, dict):
                 lg = lg.get("url")
@@ -188,9 +201,10 @@ def analyse_site(url: str) -> dict:
                     result["address"] = a
         for k, rx in _SOCIAL.items():
             if k not in result["socials"]:
-                m = rx.search(h)
-                if m and not re.search(r"sharer|share\?|intent/|plugins", m.group(0), re.I):
-                    result["socials"][k] = m.group(0).rstrip("/\"'")
+                for m in rx.finditer(_html.unescape(h)):          # first link that is a real account, not a share button
+                    if _good_social(m.group(0)):
+                        result["socials"][k] = m.group(0).rstrip("/\"'")
+                        break
         # Logo hints.
         for m in re.finditer(r'<img[^>]+>', h, re.I):
             tag = m.group(0)

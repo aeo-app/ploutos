@@ -33,7 +33,12 @@ from models.aeo_models import (
     CHANNELS,
     ENGINES,
     POSTS_PER_CHANNEL,
+    CALENDAR_PROMPT,
     month_slots,
+    channel_cores,
+    CORE_KINDS,
+    CORES_PER_WEEK,
+    WEEKS_PER_MONTH,
     AeoBlogDraftRequest,
     AeoBlogDraftResponse,
     AeoCompetitor,
@@ -439,99 +444,138 @@ Return ONE JSON object: {{"keywords": ["...", "..."]}} with exactly {n} items.""
 
 
 _BEDROCK_SLOTS = threading.BoundedSemaphore(int(os.getenv('SOCIAL_PARALLEL_CALLS', '8')))
+_WEEK_THEMES = [
+    "week 1: direct answers and first impressions (who we are, what we do, why choose us)",
+    "week 2: proof and trust (process, expertise, what customers can expect — no invented numbers or reviews)",
+    "week 3: practical help (tips, checklists, myths vs facts, how-to)",
+    "week 4: local relevance and action (who it is for, common questions, a clear next step)",
+]
 
 
-def _slot_batch(req: AeoSocialRequest, c: str, slots: list[tuple[int, str]], keywords: list[str],
+def _brand_context(req: AeoSocialRequest) -> str:
+    goal = (f"build awareness and drive enquiries for {req.company_name} on social media, around the keywords below"
+            if req.prompt == CALENDAR_PROMPT else f'make {req.company_name} the answer to the AI prompt "{req.prompt}"')
+    return (f"Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}\n"
+            f"{_site_block(req.url, req.company_name)}\n"
+            f"Marketing objective: {goal}. One consistent brand voice across every item: "
+            f"clear, trustworthy, and specific to this business. Never invent client names, quotes, numbers, prices or reviews.")
+
+
+def _with_retries(fn, want: int, label: str) -> list:
+    """Calls fn(done_so_far) until `want` items are collected (the model sometimes skips one). Raises only if retries run out."""
+    got: list = []
+    last: Exception | None = None
+    for _ in range(3):
+        if len(got) >= want:
+            break
+        try:
+            got += fn(got)
+        except Exception as e:  # noqa: BLE001 — a bad reply or a throttle: try again
+            last = e
+    if len(got) < want:
+        raise RuntimeError(f"Only {len(got)} of {want} {label} were generated — please try again." + (f" ({last})" if last else ""))
+    return got[:want]
+
+
+def _core_week(req: AeoSocialRequest, week: int, keywords: list[str], usage_tracker: TokenUsageTracker | None) -> list[dict]:
+    """The core content of one week: 3 posters + 2 reels. Written ONCE and then adapted for every channel."""
+    kw = (f'KEYWORDS to target (one or two per item, naturally): {json.dumps(keywords, ensure_ascii=False)}') if keywords else ""
+    month_note = f"This is month {req.cycle + 1} of an ongoing calendar. Use fresh angles, not the obvious first-month ones.\n" if req.cycle else ""
+
+    def call(done: list) -> list[dict]:
+        todo = CORE_KINDS[len(done):]
+        prompt = f"""
+{_brand_context(req)}
+{kw}
+{month_note}Theme for this week — {_WEEK_THEMES[week % 4]}.
+Write the CORE content for the week. These items are shared by every social channel, so write them channel-neutral: the idea, the key
+message and the visual. Each item has a different angle. A "poster" is one image post. A "reel" is a vertical video of 15-20 seconds.
+`topic`: the angle in a few words. `message`: the key message in 2-3 plain sentences (facts that can be said on any channel).
+`cta`: a short call to action. `hook`: a punchy line under 60 characters (the on-screen hook for a reel; the headline for a poster).
+`visual`: for a poster, ONE realistic photograph (real people, places, products or services; no text in the image); for a reel, 3 realistic
+scenes in order. Never cartoons or illustrations. `duration`: for a reel like '0:18', for a poster empty.
+
+Write exactly these {len(todo)} items, in this order:
+{chr(10).join(f"{i + 1}. {k}" for i, k in enumerate(todo))}
+
+Return ONE JSON object: {{"items": [{{"topic": "...", "message": "...", "cta": "...", "hook": "...", "visual": "...", "duration": "..."}}, ...]}}."""
+        with _BEDROCK_SLOTS:
+            raw = _converse(_SYSTEM, prompt, max_tokens=900 + 450 * len(todo), usage_tracker=usage_tracker)
+        out = []
+        for p in list(_parse_json(raw).get("items") or []):
+            if not isinstance(p, dict) or not str(p.get("message", "")).strip():
+                break
+            out.append({k: str(p.get(k, "")).strip() for k in ("topic", "message", "cta", "hook", "visual", "duration")})
+        return out
+    return _with_retries(call, CORES_PER_WEEK, f"core items for week {week + 1}")
+
+
+def _adapt_week(req: AeoSocialRequest, c: str, week: int, items: list[tuple[int, str, dict]], keywords: list[str],
                 usage_tracker: TokenUsageTracker | None) -> list[AeoSocialPost]:
-    """One Bedrock call writes a small batch of items (one week of one channel). Returns as many valid items as came back, in order."""
-    kw_block = (f'KEYWORDS this calendar is built around (spread them across the posts, one or two per post, naturally in the '
-                f'text and hashtags — never stuffed): {json.dumps(keywords, ensure_ascii=False)}') if keywords else ""
-    listing = "\n".join(f"{i + 1}. week {w + 1} · {k}" for i, (w, k) in enumerate(slots))
-    month_note = (f"This is month {req.cycle + 1} of an ongoing calendar. Use fresh angles, hooks and topics, not the obvious first-month ones.\n"
-                  if req.cycle else "")
-    prompt = f"""
-Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
-{_site_block(req.url, req.company_name)}
-Target AI prompt: "{req.prompt}"
-{kw_block}
-{month_note}
-Write {CHANNEL_NAMES[c]} content. Each item supports the idea that {req.company_name} is the answer to that
-prompt and targets the keywords above. Give every item a different angle (direct answer, checklist or tips, proof point to be collected,
-myth vs fact, a behind-the-scenes look, a local angle). Later weeks of the month should not repeat earlier weeks' angles.
-Channel rule — {_CHANNEL_RULES[c]}
-A "poster" is a single image post. A "reel" is a vertical video of 15-20 seconds: `title` is the short on-screen hook (under 60 characters),
-`text` is the caption (1-3 sentences), `visual` describes 3 realistic scenes in order (real people, places, products or services; never cartoons),
-`duration` like '0:18'. For a poster, `title` and `duration` stay empty and `visual` describes one realistic photograph (no text in the image).
+    """One channel's version of one week: same core ideas, with only the caption, hashtags, CTA and format changed to suit the channel."""
+    kw = (f'Keywords (use one or two, naturally): {json.dumps(keywords, ensure_ascii=False)}') if keywords else ""
 
-Write exactly these {len(slots)} items, in this order:
+    def call(done: list) -> list[AeoSocialPost]:
+        todo = items[len(done):]
+        listing = "\n".join(
+            f"{i + 1}. [{k}] topic: {core['topic']} | key message: {core['message']} | cta: {core['cta']} | hook: {core['hook']}"
+            for i, (_, k, core) in enumerate(todo))
+        prompt = f"""
+{_brand_context(req)}
+{kw}
+Adapt the shared core content below for {CHANNEL_NAMES[c]}. The idea, key message and facts stay the SAME as the core item — do not
+add new claims or change the offer. Change only what the channel needs: caption length and tone, hashtags, call to action wording and format.
+Channel rule — {_CHANNEL_RULES[c]}
+For a "reel", `text` is the caption of the video and `title` is the on-screen hook (under 60 characters; YouTube: a video title under 90 characters).
+For a "poster", `text` is the post copy and `title` stays empty.
+
+Core items, in order:
 {listing}
 
-Return ONE JSON object: {{"posts": [item, ...]}} where item = {{"text": "...", "cta": "short button label", "tags": "#a #b",
-"visual": "...", "title": "...", "duration": "..."}}. The array must contain exactly {len(slots)} items.
-Do NOT invent client names, quotes, numbers or reviews."""
-    with _BEDROCK_SLOTS:                      # at most a few model calls at once, so a month does not trip rate limits
-        raw = _converse(_SYSTEM, prompt, max_tokens=900 + 450 * len(slots), usage_tracker=usage_tracker)
-    items = list(_parse_json(raw).get("posts") or [])
-    out: list[AeoSocialPost] = []
-    for (w, k), p in zip(slots, items):
-        if not isinstance(p, dict) or not str(p.get("text", "")).strip():
-            break
-        text = str(p.get("text", ""))[:2000]
-        visual = str(p.get("visual", "")).strip()[:600] or f"A realistic, real-world photograph for {req.company_name} showing: {' '.join(text.split())[:160]}"
-        reel = k == "reel"
-        out.append(AeoSocialPost(
-            kind=k, week=w, text=text, cta=str(p.get("cta", ""))[:60], tags=str(p.get("tags", ""))[:200], visual=visual,
-            title=str(p.get("title", ""))[:120] if (reel or c == "yt") else "", duration=str(p.get("duration", ""))[:10] if reel else "",
-        ))
-    return out
-
-
-def _channel_batch(req: AeoSocialRequest, c: str, slots: list[tuple[int, str]], keywords: list[str],
-                   usage_tracker: TokenUsageTracker | None) -> list[AeoSocialPost]:
-    """All items of one channel for the month: one small call per week, and a retry for any item the model skipped."""
-    weeks: dict[int, list[tuple[int, str]]] = {}
-    for w, k in slots:
-        weeks.setdefault(w, []).append((w, k))
-
-    def one_week(week_slots: list[tuple[int, str]]) -> list[AeoSocialPost]:
-        got: list[AeoSocialPost] = []
-        last_err: Exception | None = None
-        for _ in range(3):
-            todo = week_slots[len(got):]
-            if not todo:
+Return ONE JSON object: {{"posts": [{{"text": "...", "cta": "...", "tags": "#a #b", "title": "..."}}, ...]}} with exactly {len(todo)} items in the same order."""
+        with _BEDROCK_SLOTS:
+            raw = _converse(_SYSTEM, prompt, max_tokens=700 + 380 * len(todo), usage_tracker=usage_tracker)
+        out: list[AeoSocialPost] = []
+        for (cid, k, core), p in zip(todo, list(_parse_json(raw).get("posts") or [])):
+            if not isinstance(p, dict) or not str(p.get("text", "")).strip():
                 break
-            try:
-                got += _slot_batch(req, c, todo, keywords, usage_tracker)
-            except Exception as e:  # noqa: BLE001 — a bad reply or a throttle: try again
-                last_err = e
-        if len(got) < len(week_slots):
-            raise RuntimeError(f"Only {len(got)} of {len(week_slots)} {CHANNEL_NAMES[c]} items for week {week_slots[0][0] + 1} were generated — please try again."
-                               + (f" ({last_err})" if last_err else ""))
-        return got
-
-    out: list[AeoSocialPost] = []
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for part in [f.result() for f in [pool.submit(one_week, ws) for ws in weeks.values()]]:
-            out += part
-    return out
+            reel = k == "reel"
+            out.append(AeoSocialPost(
+                kind=k, week=week, core=cid, text=str(p.get("text", ""))[:2000], cta=str(p.get("cta") or core["cta"])[:60],
+                tags=str(p.get("tags", ""))[:200], visual=(core["visual"] or core["message"])[:600],
+                title=(str(p.get("title") or core["hook"])[:120] if reel else ""), duration=core["duration"][:10] if reel else "",
+            ))
+        return out
+    return _with_retries(call, len(items), f"{CHANNEL_NAMES[c]} items for week {week + 1}")
 
 
 def generate_aeo_social(
     req: AeoSocialRequest, usage_tracker: TokenUsageTracker | None = None, limited: bool = False,
 ) -> AeoSocialResponse:
-    """A month of content: every week each channel gets 3 posters + 2 reels (YouTube: 2 reels)."""
+    """A month of content: the same 3 posters + 2 reels per week on every channel (YouTube: the 2 reels), written once and adapted per channel."""
     keywords = clean_keywords(req.keywords) or suggest_site_keywords(
         req.company_name, req.url, req.market, req.industry, usage_tracker=usage_tracker)
-    with ThreadPoolExecutor(max_workers=len(CHANNELS)) as pool:
-        futures = {c: pool.submit(_channel_batch, req, c, month_slots(c, limited), keywords, usage_tracker) for c in CHANNELS}
-        channels = {c: f.result() for c, f in futures.items()}
+    weeks = [0] if limited else list(range(WEEKS_PER_MONTH))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        cores = dict(zip(weeks, [f.result() for f in [pool.submit(_core_week, req, w, keywords, usage_tracker) for w in weeks]]))
+    jobs: list[tuple[str, int, list[tuple[int, str, dict]]]] = []
+    for c in CHANNELS:
+        by_week: dict[int, list[tuple[int, str, dict]]] = {}
+        for cid, w, k in channel_cores(c, limited):
+            by_week.setdefault(w, []).append((cid, k, cores[w][cid % CORES_PER_WEEK]))
+        jobs += [(c, w, its) for w, its in by_week.items()]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        done = [(c, w, pool.submit(_adapt_week, req, c, w, its, keywords, usage_tracker)) for c, w, its in jobs]
+        channels: dict[str, list[AeoSocialPost]] = {c: [] for c in CHANNELS}
+        for c, w, f in done:
+            channels[c] += f.result()
     return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited, keywords=keywords, cycle=req.cycle)
 
 
 def social_shape_ok(doc: dict, limited: bool) -> bool:
     """False for a saved calendar made before the weekly plan (4 posts per channel) — it is regenerated."""
     chans = doc.get("channels") or {}
-    return all(len(chans.get(c) or []) == len(month_slots(c, limited)) and all(p.get("week") is not None for p in chans.get(c) or [])
+    return all(len(chans.get(c) or []) == len(month_slots(c, limited)) and all(p.get("week") is not None and p.get("core") is not None for p in chans.get(c) or [])
                for c in CHANNELS)
 
 

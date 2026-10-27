@@ -4,6 +4,7 @@ import { withTokenExpiry } from '../api/authApi';
 import { useAuth } from './AuthContext';
 
 const PaymentCtx = createContext(null);
+export const PaymentContext = PaymentCtx;
 
 export function PaymentProvider({ children }) {
   const { goScreen, logout } = useAuth();

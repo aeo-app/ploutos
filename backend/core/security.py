@@ -119,11 +119,15 @@ def _stub_decode(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Cannot decode JWT payload")
 
 
-def get_current_user_id(
+def get_real_user_id(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     x_user_id:     Optional[str] = Header(None, alias="X-User-ID"),
 ) -> str:
     """
+    The person who is actually signed in — never the customer an admin is viewing.
+    Use this for anything an admin must NOT do on a customer's behalf
+    (connecting accounts, publishing, payments) and for the admin check itself.
+
     FastAPI dependency — extracts user_id from:
       1. Bearer token in Authorization header (Cognito access token, verified)
       2. X-User-ID header (fallback for dev / service-to-service)
@@ -166,6 +170,27 @@ def get_current_user_id(
         ),
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def get_current_user_id(
+    real: str = Depends(get_real_user_id),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    x_act_as_user: Optional[str] = Header(None, alias="X-Act-As-User"),
+) -> str:
+    """
+    The user whose data a request works on. Normally the signed-in user. When a
+    verified admin sends X-Act-As-User, it is that customer, so the admin sees
+    and edits exactly what the customer would. Non-admins sending the header are
+    rejected (never silently ignored) so it can't be used to probe other accounts.
+    """
+    target = (x_act_as_user or "").strip()
+    if not target or target == real:
+        return real
+    if "Admins" not in _groups_from_authorization(authorization):
+        from db.dynamo import is_admin as _is_admin
+        if not _is_admin(real):
+            raise HTTPException(status_code=403, detail="Admin access required.")
+    return target
 
 
 # ── Payment gate ─────────────────────────────────────────────────────────────
@@ -227,7 +252,7 @@ def _groups_from_authorization(authorization: Optional[str]) -> list[str]:
 
 
 def require_admin(
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_real_user_id),
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ) -> str:
     if "Admins" in _groups_from_authorization(authorization):

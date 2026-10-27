@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { adminAeoApi } from '../../api/adminApi';
 import { canvaApi } from '../../api/canvaApi';
 import { downloadImage } from '../../api/downloadImage';
-import { CHANNELS, channelState, isReel, reelWord, postStateKey, dayOffset } from '../../aeo/utils';
+import { CALENDAR_PROMPT, CHANNELS, channelState, isReel, reelWord, postStateKey, dayOffset } from '../../aeo/utils';
 import { Badge, Card, Empty, SectionHeader, SkeletonCard } from '../../components/ui/UI';
 import { useApp } from '../../context/AppContext';
 import { AdminImg, AdminVideo, CustomerList, UserHeader, promptsOf, useAdminCall, useWorkspace } from './shared';
+import { CustomerView, ViewTabs } from './CustomerView';
+import { CalendarAeoPage } from '../../aeo/pages/ContentPages';
 import s from './AdminAeo.module.css';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -338,33 +340,24 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
   );
 }
 
-function NewCalendar({ ws, userId, existing, onCreated }) {
+function NewCalendar({ ws, userId, has, onCreated }) {
   const call = useAdminCall();
   const { toast } = useApp();
-  const [pick, setPick] = useState('');
-  const [custom, setCustom] = useState('');
   const [busy, setBusy] = useState(false);
-  const options = (ws.prompt_options || []).filter(p => !existing.includes(p));
-  const prompt = (custom.trim() || pick).trim();
+  const kws = (ws.state && ws.state.calendar_keywords) || [];
   const create = async () => {
-    if (prompt.length < 3) return;
+    if (has && !window.confirm('Rebuild the calendar? This replaces the current posts, including your edits.')) return;
     setBusy(true);
-    const r = await call(adminAeoApi.aiSocial(userId, prompt));
+    const r = await call(adminAeoApi.aiSocial(userId, CALENDAR_PROMPT));
     setBusy(false);
-    if (r) { toast({ type: 'success', message: 'Calendar created. The customer can see it now.' }); setPick(''); setCustom(''); onCreated(prompt); }
+    if (r) { toast({ type: 'success', message: 'Calendar created. The customer can see it now.' }); onCreated(CALENDAR_PROMPT); }
   };
   return (
     <Card>
-      <div className={s.title}>Create a calendar from a prompt</div>
-      <p className={s.note}>Choose one of this customer's prompts, or type your own. We write a month of posters and reels for every channel, and it appears on the customer's Social Media Calendar page.</p>
-      <div className={s.actions} style={{ alignItems: 'stretch' }}>
-        <select className={s.input} style={{ flex: '1 1 260px' }} value={pick} onChange={e => { setPick(e.target.value); setCustom(''); }}>
-          <option value="">{options.length ? 'Choose a prompt…' : 'No other prompts available'}</option>
-          {options.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <input className={s.input} style={{ flex: '1 1 220px' }} placeholder="…or type a prompt" maxLength={300} value={custom} onChange={e => { setCustom(e.target.value); if (e.target.value) setPick(''); }} />
-        <button type="button" className={`${s.btn} ${s.primary}`} disabled={busy || prompt.length < 3} onClick={create}>{busy ? 'Creating the calendar…' : '✨ Create calendar'}</button>
-      </div>
+      <div className={s.title}>{has ? 'Rebuild the calendar from keywords' : 'Create the calendar from keywords'}</div>
+      <p className={s.note}>We write a month of posters and reels for every channel: 3 posters and 2 reels a week (YouTube: 2 reels). It is built around the keywords this customer chose{kws.length ? '' : '. They have not chosen any, so we use the top 10 from their website'}. It appears on the customer's Social Media Calendar page.</p>
+      {kws.length > 0 && <div className={s.chips}>{kws.map(k => <span key={k} className={s.chip}>{k}</span>)}</div>}
+      <div className={s.actions}><button type="button" className={`${s.btn} ${s.primary}`} disabled={busy} onClick={create}>{busy ? 'Creating the calendar…' : has ? '↻ Rebuild calendar' : '✨ Create calendar'}</button></div>
     </Card>
   );
 }
@@ -372,34 +365,28 @@ function NewCalendar({ ws, userId, existing, onCreated }) {
 export function AdminAeoCalendarPage({ selectedUser, onSelectUser }) {
   const { ws, setWs, loading, reload } = useWorkspace(selectedUser);
   const [tick, setTick] = useState(0);
-  const [prompt, setPrompt] = useState(null);
-  const prompts = promptsOf(ws);
-  useEffect(() => { setPrompt(null); }, [selectedUser?.user_id]);
-  const active = prompt && prompts.includes(prompt) ? prompt : prompts[0];
+  const active = CALENDAR_PROMPT;
+  const [view, setView] = useState('customer');
+  const pick = (v) => { setView(v); if (v === 'team') { reload(); setTick(t => t + 1); } };
+  const has = !!ws && ws.content.some(c => c.kind === 'social' && c.prompt === CALENDAR_PROMPT);
   return (
     <div>
-      <SectionHeader title="Social Media Calendar" subtitle="See the prompts a customer chose, edit their posts, create images, and see what they approved. Changes appear on the customer's screen." />
+      <SectionHeader title="Social Media Calendar" subtitle="Edit a customer's posts, create images, and see what they approved. Changes appear on the customer's screen." />
       <div className={s.layout}>
         <CustomerList selectedUser={selectedUser} onSelectUser={onSelectUser} refreshKey={tick} />
         <div className={s.main}>
-          {!selectedUser && <Empty icon="📅" title="Choose a customer" body="Pick a customer to see their prompts and social media calendars." />}
+          {!selectedUser && <Empty icon="📅" title="Choose a customer" body="Pick a customer to see their social media calendar." />}
           {selectedUser && (loading || !ws) && <SkeletonCard rows={4} />}
           {ws && (
             <>
               <UserHeader ws={ws} />
+              <ViewTabs value={view} onChange={pick} />
+              {view === 'customer' && <CustomerView ws={ws}><CalendarAeoPage /></CustomerView>}
+              {view === 'team' && <>
               {ws.brand_complete === false && <div className={s.banner}>This customer has not added their <b>logo and contact phone number</b> yet (Company Profile / Social Media Calendar → Brand kit). Images and Shorts can't be created until they do, because both are printed on every one.</div>}
-              <NewCalendar ws={ws} userId={ws.user.user_id} existing={prompts.filter(p => ws.content.some(c => c.kind === 'social' && c.prompt === p))}
-                onCreated={(p) => { setPrompt(p); reload(); setTick(t => t + 1); }} />
-              {prompts.length === 0 && <Empty icon="🧭" title="No prompts selected yet" body="This customer has not chosen prompts to work on. Create a calendar from any prompt above." />}
-              {prompts.length > 0 && (
-                <div className={s.chips}>
-                  {prompts.map(p => {
-                    const has = ws.content.some(c => c.kind === 'social' && c.prompt === p);
-                    return <button key={p} type="button" className={`${s.chip} ${p === active ? s.chipOn : ''}`} onClick={() => setPrompt(p)}>{p}{has ? '' : ' · no calendar'}</button>;
-                  })}
-                </div>
-              )}
-              {active && <PromptCalendar key={active} ws={ws} setWs={setWs} prompt={active} reload={() => { reload(); setTick(t => t + 1); }} />}
+              <NewCalendar ws={ws} userId={ws.user.user_id} has={has} onCreated={() => { reload(); setTick(t => t + 1); }} />
+              {has && <PromptCalendar key={active} ws={ws} setWs={setWs} prompt={active} reload={() => { reload(); setTick(t => t + 1); }} />}
+              </>}
             </>
           )}
         </div>

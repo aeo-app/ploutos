@@ -1,7 +1,7 @@
 {
   "files": {
-    "main.css": "/static/css/main.35f4326c.css",
-    "main.js": "/static/js/main.768eaa33.js",
+    "main.css": "/static/css/main.bd84bd20.css",
+    "main.js": "/static/js/main.8ba8f834.js",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
     "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.1fadcd9c7fcd8c4d83d9.md",
     "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.77e9b10ae98f4d24caa6.md",
@@ -10,11 +10,11 @@
     "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.2d782c113fbe7a6a7e36.md",
     "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.e2ee09412b1cea253ceb.md",
     "index.html": "/index.html",
-    "main.35f4326c.css.map": "/static/css/main.35f4326c.css.map",
-    "main.768eaa33.js.map": "/static/js/main.768eaa33.js.map"
+    "main.bd84bd20.css.map": "/static/css/main.bd84bd20.css.map",
+    "main.8ba8f834.js.map": "/static/js/main.8ba8f834.js.map"
   },
   "entrypoints": [
-    "static/css/main.35f4326c.css",
-    "static/js/main.768eaa33.js"
+    "static/css/main.bd84bd20.css",
+    "static/js/main.8ba8f834.js"
   ]
 }

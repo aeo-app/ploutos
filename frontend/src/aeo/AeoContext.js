@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { withTokenExpiry } from '../api/authApi';
 import { historyApi } from '../api/historyApi';
 import { aeoApi } from '../api/aeoApi';
-import { seoApi } from '../api/seoApi';
+import { seoApi, isActingAs } from '../api/seoApi';
 import { usePayment } from '../context/PaymentContext';
 
 const Ctx = createContext(null);
@@ -250,12 +250,24 @@ export function AeoProvider({ children }) {
   useEffect(() => { if (!isPaid) unlockedOnce.current = false; }, [isPaid]);
 
   /* ── Brand kit (logo + contact details) ────────────────── */
-  const applyBrand = (d) => { if (d) setBrandState(b => ({ ...b, loaded: true, complete: !!d.complete, missing: d.missing || [], data: d.brand || {}, ...(d.found ? { found: d.found } : {}) })); return d; };
+  const applyBrand = (d) => { if (d?.social_links) setSaved(sv => ({ ...sv, social_links: d.social_links })); if (d) setBrandState(b => ({ ...b, loaded: true, complete: !!d.complete, missing: d.missing || [], data: d.brand || {}, ...(d.found ? { found: d.found } : {}) })); return d; };
   const brandCall = async (promise) => applyBrand(await withTokenExpiry(promise, { goScreen, logout }));
   const saveBrand = (b) => brandCall(aeoApi.saveBrand(b));
   const uploadLogo = (file) => brandCall(aeoApi.uploadLogo(file));
-  const detectBrand = () => brandCall(aeoApi.detectBrand(state.request.url, state.request.company_name));
+  const [detecting, setDetecting] = useState(false);
+  const detectBrand = async () => {
+    setDetecting(true);
+    try { return await brandCall(aeoApi.detectBrand(state.request.url, state.request.company_name)); } finally { setDetecting(false); }
+  };
   const adoptSiteLogo = (u) => brandCall(aeoApi.logoFromSite(u));
+  // On login: read the website once for contact details, the logo and the social accounts, so the dashboard can show them straight away.
+  const detectRan = useRef(false);
+  useEffect(() => {
+    if (!brand.loaded || detectRan.current || brand.data?.detected || !state.request.url || isActingAs()) return;
+    detectRan.current = true;
+    detectBrand().catch(() => { /* the dashboard still works without it */ });
+    // eslint-disable-next-line
+  }, [brand.loaded, brand.data, state.request.url]);
 
   /* ── Calendar keywords ─────────────────────────────────── */
   const setCalendarKeywords = (list) => patch({ calendar_keywords: list });
@@ -270,7 +282,7 @@ export function AeoProvider({ children }) {
     analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setPostState, setPostStates,
-    brand, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
+    brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
     // eslint-disable-next-line
   }), [analysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);
 
