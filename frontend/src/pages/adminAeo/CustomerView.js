@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { AppCtx } from '../../context/AppContext';
 import { PaymentContext } from '../../context/PaymentContext';
 import { AeoProvider } from '../../aeo/AeoContext';
+import { BrandKitCard } from '../../aeo/BrandKit';
 import { historyApi } from '../../api/historyApi';
 import { setActAs } from '../../api/seoApi';
 import { SkeletonCard } from '../../components/ui/UI';
@@ -14,23 +15,24 @@ import '../../aeo/aeo.css';
  * keywords, blogs and the calendar are read and saved on the customer's account. Publishing and
  * connecting social accounts stay with the customer.
  */
-export function CustomerView({ ws, children }) {
+export function CustomerView({ ws, children, setup = false, onNavigate }) {
   const app = useContext(AppCtx);
   const pay = useContext(PaymentContext);
   const uid = ws.user.user_id;
   const [ready, setReady] = useState(false);
   const [analysis, setAnalysis] = useState(null);
+  const [req, setReq] = useState(null);     // company name / website / market / industry the customer analysed with
 
   // Everything below this point speaks for the customer until the admin leaves or switches customer.
   useEffect(() => {
-    setReady(false); setAnalysis(null);
+    setReady(false); setAnalysis(null); setReq(null);
     setActAs(uid);
     let off = false;
     (async () => {
       try {
         const list = await historyApi.list({ analysisType: 'aeo_prompts', limit: 1 });
         const first = (list?.items || [])[0];
-        if (first) { const full = await historyApi.getOne(first.analysis_id); if (!off) setAnalysis(full?.result || null); }
+        if (first) { const full = await historyApi.getOne(first.analysis_id); if (!off) { setAnalysis(full?.result || null); setReq(full?.request || null); } }
       } catch (_) { /* the customer may not have run an analysis yet */ }
       if (!off) setReady(true);
     })();
@@ -42,11 +44,17 @@ export function CustomerView({ ws, children }) {
     state: {
       ...app.state,
       isAdmin: false,
-      request: { company_name: ws.user.company_name || ws.user.full_name || '', url: ws.user.domain ? (/^https?:/.test(ws.user.domain) ? ws.user.domain : `https://${ws.user.domain}`) : '', market: 'Global', industry: 'General' },
+      request: {
+        company_name: req?.company_name || ws.user.company_name || ws.user.full_name || '',
+        url: req?.url || (ws.user.domain ? (/^https?:/.test(ws.user.domain) ? ws.user.domain : `https://${ws.user.domain}`) : ''),
+        market: req?.market || 'Global', industry: req?.industry || 'General',
+      },
       results: { ...app.state.results, aeoPrompts: analysis },
       loading: { ...app.state.loading, aeoPrompts: false },
     },
-  }), [app, ws.user, analysis]);
+    // The customer's own screens link to each other; inside the admin they switch tabs instead of leaving the page.
+    setPage: (p) => { if (onNavigate) onNavigate(p); },
+  }), [app, ws.user, analysis, req, onNavigate]);
   const payValue = useMemo(() => ({ ...pay, isPaid: !!ws.user.is_paid }), [pay, ws.user.is_paid]);
 
   if (!ready) return <SkeletonCard rows={4} />;
@@ -55,7 +63,8 @@ export function CustomerView({ ws, children }) {
       <PaymentContext.Provider value={payValue}>
         {/* key: a fresh provider per customer so nothing from the previous one lingers */}
         <AeoProvider key={uid}>
-          <div className="ae-app" style={{ background: 'transparent' }}>
+          <div className="ae-app" style={{ background: 'transparent', display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {setup && <BrandKitCard />}
             {children}
           </div>
         </AeoProvider>

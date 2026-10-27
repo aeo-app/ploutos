@@ -32,6 +32,11 @@ from db import list_users_due_for_renewal, save_payment_intent, set_renewal_stat
 from services.airwallex_service import (
     AirwallexError,
     PAID_ACCESS_DAYS,
+    RENEWAL_GRACE_DAYS,
+    RENEWAL_PENDING_HOLD_HOURS,
+    RENEWAL_RETRY_HOURS,
+    RENEWAL_WINDOW_HOURS,
+    paid_access_delta,
     PAYMENT_CURRENCY,
     PLANS,
     confirm_renewal_with_consent,
@@ -44,20 +49,53 @@ logger = logging.getLogger(__name__)
 RENEWAL_SUCCESS_STATUSES = {"SUCCEEDED"}
 
 
-def _compute_next_paid_until() -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=PAID_ACCESS_DAYS)).isoformat().replace("+00:00", "Z")
+def _compute_next_paid_until(plan_id: str | None = None) -> str:
+    return (datetime.now(timezone.utc) + (paid_access_delta(plan_id) or timedelta(days=PAID_ACCESS_DAYS))).isoformat().replace("+00:00", "Z")
+
+
+def _parse(ts):
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _should_skip(entitlement: dict) -> str | None:
+    """Why this user must NOT be charged on this run (None = go ahead). Stops the hourly job from
+    charging twice for one period, hammering a declined card, or chasing someone forever."""
+    now = datetime.now(timezone.utc)
+    paid_until = _parse(entitlement.get("paid_until"))
+    # Short plans (a day) renew only once the period has ended; monthly plans start RENEWAL_WINDOW_HOURS early.
+    delta = paid_access_delta(entitlement.get("plan"))
+    window = 0.0 if (delta is not None and delta < timedelta(days=2)) else RENEWAL_WINDOW_HOURS
+    if paid_until and paid_until - now > timedelta(hours=window):
+        return "not due yet"
+    if paid_until and now - paid_until > timedelta(days=RENEWAL_GRACE_DAYS):
+        return f"access ended more than {RENEWAL_GRACE_DAYS:g} days ago — giving up"
+    last = _parse(entitlement.get("last_renewal_attempt_at"))
+    status = entitlement.get("renewal_status")
+    if last and status == "pending" and now - last < timedelta(hours=RENEWAL_PENDING_HOLD_HOURS):
+        return "a renewal charge is still pending"
+    if last and status == "failed" and now - last < timedelta(hours=RENEWAL_RETRY_HOURS):
+        return "last attempt failed recently — waiting before retrying"
+    return None
 
 
 def process_due_renewals() -> int:
     """Returns how many renewal attempts were made this run (successes
     and failures both count — this is a "how much work happened" metric
     for logging/monitoring, not a health signal on its own)."""
-    due = list_users_due_for_renewal(within_hours=24)
+    due = list_users_due_for_renewal(within_hours=max(RENEWAL_WINDOW_HOURS, 24))
     if not due:
         return 0
 
     for entitlement in due:
         user_id = entitlement["user_id"]
+        skip = _should_skip(entitlement)
+        if skip:
+            if skip != "not due yet":
+                logger.info(f"[renewal] user={user_id} skipped: {skip}")
+            continue
         plan_id = entitlement.get("plan") or "starter"
         customer_id = entitlement.get("airwallex_customer_id")
         consent_id = entitlement.get("payment_consent_id")
@@ -90,7 +128,7 @@ def process_due_renewals() -> int:
             )
 
             if status in RENEWAL_SUCCESS_STATUSES:
-                set_user_paid(user_id=user_id, is_paid=True, paid_until=_compute_next_paid_until(), plan=plan_id, currency=currency)
+                set_user_paid(user_id=user_id, is_paid=True, paid_until=_compute_next_paid_until(plan_id), plan=plan_id, currency=currency)
                 set_renewal_status(user_id, "succeeded")
                 logger.info(f"[renewal] user={user_id} renewed successfully, plan={plan_id}, {amount} {currency}")
             else:

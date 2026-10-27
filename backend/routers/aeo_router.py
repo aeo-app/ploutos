@@ -186,6 +186,36 @@ def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user
     )
 
 
+class BlogDraftEdit(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=300)
+    title: str = Field(..., min_length=1, max_length=300)       # identifies the draft; the title itself isn't changed
+    intro: str = Field(default="", max_length=6000)
+    sections: list[dict] = Field(default_factory=list, max_length=40)
+
+
+@router.put("/blog-draft", summary="Save the customer's edits to one of their blog drafts")
+def edit_blog_draft(req: BlogDraftEdit, user_id: str = Depends(get_current_user_id)):
+    key = f"{req.prompt}|{req.title}"
+    doc = get_aeo_content(user_id, "blog", key)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generate this blog first, then you can edit it.")
+    sections = []
+    for sec in req.sections:
+        h = str((sec or {}).get("h") or "").strip()[:200]
+        p = str((sec or {}).get("p") or "").strip()[:8000]
+        if h or p:
+            sections.append({"h": h, "p": p})
+    intro = req.intro.strip()
+    if not intro and not sections:
+        raise HTTPException(status_code=422, detail="The blog can't be empty.")
+    doc["intro"] = intro
+    doc["sections"] = sections
+    doc["edited_by_customer"] = True
+    doc.pop("cached", None)
+    save_aeo_content(user_id, "blog", key, doc)
+    return {"ok": True, "data": doc}
+
+
 def _social_key(prompt: str, limited: bool, cycle: int = 0) -> str:
     """Month 1 keeps the original key (so the team's edits stay attached); later months get their own."""
     return prompt + ("|free" if limited else "") + (f"|m{cycle}" if cycle else "")
@@ -493,6 +523,16 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
         changes["custom_competitors"] = comps[:25]
     if "calendar_keywords" in changes:
         changes["calendar_keywords"] = clean_keywords(changes["calendar_keywords"], 20)
+    if "custom_blog_topics" in changes:
+        seen, topics = set(), []
+        for t in changes["custom_blog_topics"]:
+            prompt = str((t or {}).get("prompt", "")).strip()[:300]
+            title = " ".join(str((t or {}).get("title", "")).split())[:200]
+            if not prompt or len(title) < 3 or (prompt.lower(), title.lower()) in seen:
+                continue
+            seen.add((prompt.lower(), title.lower()))
+            topics.append({"prompt": prompt, "title": title, "type": str((t or {}).get("type") or "Blog").strip()[:30] or "Blog"})
+        changes["custom_blog_topics"] = topics[:100]
     if "calendar_start" in changes:
         cs = str(changes["calendar_start"] or "").strip()
         try:

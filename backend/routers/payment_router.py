@@ -39,6 +39,7 @@ from models.payment_models import CreatePaymentIntentRequest
 from services.airwallex_service import (
     AirwallexError,
     PAID_ACCESS_DAYS,
+    paid_access_delta,
     DEFAULT_CURRENCY,
     PAYMENT_CURRENCY,
     PLANS,
@@ -71,10 +72,11 @@ def _country_from_authorization(authorization: str | None, access_token: str | N
         return None
 
 
-def _compute_paid_until() -> str | None:
-    if PAID_ACCESS_DAYS <= 0:
+def _compute_paid_until(plan_id: str | None = None) -> str | None:
+    delta = paid_access_delta(plan_id)
+    if delta is None:
         return None
-    return (datetime.now(timezone.utc) + timedelta(days=PAID_ACCESS_DAYS)).isoformat().replace("+00:00", "Z")
+    return (datetime.now(timezone.utc) + delta).isoformat().replace("+00:00", "Z")
 
 
 @router.get("/api/v1/payment/plans", summary="List available plans (Starter/Growth/Scale)")
@@ -117,6 +119,7 @@ def _localized_plans(currency: str) -> list[dict]:
             "prompts": p["prompts"],
             "features": p["features"],
             "highlight": p["highlight"],
+            "billing_days": (paid_access_delta(plan_id).total_seconds() / 86400) if paid_access_delta(plan_id) else 0,
         }
         for plan_id, p in PLANS.items()
     ]
@@ -227,7 +230,7 @@ async def payment_status(
             if record and live_status in SUCCESS_STATUSES:
                 set_user_paid(
                     user_id=record["user_id"], is_paid=True,
-                    paid_until=_compute_paid_until(), plan=record.get("plan_id") or "starter",
+                    paid_until=_compute_paid_until(record.get("plan_id") or "starter"), plan=record.get("plan_id") or "starter",
                 )
         except AirwallexError as e:
             # Don't fail the whole status check just because the live poll
@@ -379,7 +382,7 @@ async def airwallex_webhook(request: Request):
 
     if status in SUCCESS_STATUSES:
         plan_id = record.get("plan_id") or "starter"
-        set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until(), plan=plan_id, currency=record.get("currency"))
+        set_user_paid(user_id=record["user_id"], is_paid=True, paid_until=_compute_paid_until(plan_id), plan=plan_id, currency=record.get("currency"))
         if is_renewal:
             set_renewal_status(record["user_id"], "succeeded")
         logger.info(f"[payment] user={record['user_id']} marked paid ({plan_id}) via webhook ({payment_intent_id}, renewal={is_renewal})")

@@ -71,7 +71,36 @@ PAYMENT_CURRENCY = "SGD"
 # since services/subscription_renewal_scheduler.py (a service module)
 # needs the SAME value for renewal charges — a router module is the
 # wrong place for a constant a service module also depends on.
-PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))
+# ── Autopay TEST MODE ───────────────────────────────────────────────────────
+# While on: the Starter plan costs AUTOPAY_TEST_STARTER_PRICE (default 1) in every
+# currency and one payment grants 1 day of access, so the whole first-payment →
+# saved card → automatic renewal loop can be tried for pennies. The renewal job
+# then only charges once the paid period has actually ended (no 24h early window)
+# and, if the day is too long to wait, PAID_ACCESS_MINUTES=5 makes a period 5 minutes.
+# TURN OFF BEFORE LAUNCH: set AUTOPAY_TEST_MODE=false (prices and 30-day access return).
+AUTOPAY_TEST_MODE = os.getenv("AUTOPAY_TEST_MODE", "true").lower() == "true"
+AUTOPAY_TEST_STARTER_PRICE = os.getenv("AUTOPAY_TEST_STARTER_PRICE", "1.00")
+PAID_ACCESS_MINUTES = int(os.getenv("PAID_ACCESS_MINUTES", "0"))   # optional: even shorter Starter period, for quick tests
+PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))        # Growth / Scale (and any plan without its own length)
+# Per-plan access length in days. Starter is 1 day for now (autopay testing); set STARTER_ACCESS_DAYS=30 for the real plan.
+PLAN_ACCESS_DAYS = {"starter": int(os.getenv("STARTER_ACCESS_DAYS", "1"))}
+# How long before paid_until the renewal job starts charging. Test mode: only once it has ended.
+RENEWAL_WINDOW_HOURS = float(os.getenv("RENEWAL_WINDOW_HOURS", "24"))   # plans with a period under 2 days renew only once it has ended
+# A charge left "pending" is not charged again for this long; a failed one is retried no sooner than this.
+RENEWAL_PENDING_HOLD_HOURS = float(os.getenv("RENEWAL_PENDING_HOLD_HOURS", "6"))
+RENEWAL_RETRY_HOURS = float(os.getenv("RENEWAL_RETRY_HOURS", "6" if AUTOPAY_TEST_MODE else "24"))
+# Stop retrying once access has been over for this many days.
+RENEWAL_GRACE_DAYS = float(os.getenv("RENEWAL_GRACE_DAYS", "3"))
+
+
+def paid_access_delta(plan_id: str | None = None):
+    """How much access one successful payment (first or renewal) of this plan grants. None = forever."""
+    from datetime import timedelta
+    if plan_id == "starter" and PAID_ACCESS_MINUTES > 0:
+        return timedelta(minutes=PAID_ACCESS_MINUTES)
+    days = PLAN_ACCESS_DAYS.get(plan_id or "", PAID_ACCESS_DAYS)
+    return timedelta(days=days) if days > 0 else None
+
 
 # Pricing is shown in three currencies only: Singapore -> SGD, India -> INR,
 # everywhere else -> USD.
@@ -203,6 +232,9 @@ def get_plan_price(plan_id: str, currency: str | None = None) -> str:
     global _catalog_prices, _catalog_loaded_at
     plan = PLANS[plan_id]
     currency_code = (currency or PAYMENT_CURRENCY).upper()
+    if AUTOPAY_TEST_MODE and plan_id == "starter":
+        logger.warning(f"[airwallex] starter/{currency_code} = {AUTOPAY_TEST_STARTER_PRICE} (AUTOPAY TEST MODE — not the real price)")
+        return AUTOPAY_TEST_STARTER_PRICE
     now = time.time()
     catalog_fetch_failed = False
     if now - _catalog_loaded_at >= AIRWALLEX_CATALOG_CACHE_SECONDS:

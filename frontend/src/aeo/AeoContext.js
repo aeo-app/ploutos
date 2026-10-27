@@ -8,7 +8,7 @@ import { seoApi, isActingAs } from '../api/seoApi';
 import { usePayment } from '../context/PaymentContext';
 
 const Ctx = createContext(null);
-const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], calendar_start: '', brand: {} };
+const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], custom_blog_topics: [], calendar_start: '', brand: {} };
 
 export function AeoProvider({ children }) {
   const { state, runApi, toast, requirePayment } = useApp();
@@ -144,6 +144,7 @@ export function AeoProvider({ children }) {
 
   /* ── the analysis itself ───────────────────────────────── */
   const runAnalysis = useCallback(async () => {
+    if (isActingAs()) { toast({ type: 'info', message: 'This customer has not run an analysis yet. They run it from their own account.' }); return null; }
     const r = state.request;
     if (!r.company_name || !r.url) {
       toast({ type: 'error', message: 'Add your company name and website in your profile first.' });
@@ -197,6 +198,33 @@ export function AeoProvider({ children }) {
   const loadBlogDraft = (prompt, topic, refresh) =>
     generate('blog', `${prompt}|${topic.title}`, { prompt, type: topic.type, title: topic.title, words: topic.words || 1000 }, aeoApi.blogDraft, refresh);
 
+  /** Saves the customer's edits to a blog draft and updates the open copy. Returns true on success. */
+  const editBlog = async (prompt, title, fields) => {
+    try {
+      const r = await withTokenExpiry(aeoApi.editBlog({ prompt, title, ...fields }), { goScreen, logout });
+      setContent(c => ({ ...c, blog: { ...c.blog, [`${prompt}|${title}`]: { ...(c.blog[`${prompt}|${title}`] || {}), ...r.data } } }));
+      return true;
+    } catch (e) {
+      if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not save your changes.' });
+      return false;
+    }
+  };
+
+  /** A topic typed in by the customer (or admin). Saved on the account, listed under its prompt. Returns the topic, or null. */
+  const addBlogTopic = (prompt, title, type = 'Blog') => {
+    const t = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (t.length < 3 || !prompt) return null;
+    const cur = savedRef.current.custom_blog_topics || [];
+    const topic = { prompt, title: t, type: String(type || 'Blog').slice(0, 30) };
+    if (!cur.some(x => x.prompt === prompt && x.title.toLowerCase() === t.toLowerCase())) {
+      const next = [...cur, topic];
+      savedRef.current = { ...savedRef.current, custom_blog_topics: next };
+      patch({ custom_blog_topics: next });
+    }
+    return topic;
+  };
+  const removeBlogTopic = (prompt, title) => patch({ custom_blog_topics: (savedRef.current.custom_blog_topics || []).filter(x => !(x.prompt === prompt && x.title === title)) });
+
   /* ── social links ──────────────────────────────────────── */
   const linkSocial = useCallback(async (platform, url) => {
     try {
@@ -228,7 +256,9 @@ export function AeoProvider({ children }) {
     }
   };
 
-  const setBlogState = (k, p) => patch({ blog_state: { ...saved.blog_state, [k]: { ...(saved.blog_state[k] || {}), ...p } } });
+  const setBlogState = (k, p) => { const cur = savedRef.current.blog_state || {}; const next = { ...cur, [k]: { ...(cur[k] || {}), ...p } }; savedRef.current = { ...savedRef.current, blog_state: next }; return patch({ blog_state: next }); };
+  // Several blogs at once ("generate for all"): one save, so parallel saves can't overwrite each other.
+  const setBlogStates = (map) => { const cur = savedRef.current.blog_state || {}; return patch({ blog_state: { ...cur, ...Object.fromEntries(Object.entries(map).map(([k, p]) => [k, { ...(cur[k] || {}), ...p }])) } }); };
   const setPostState = (k, p) => patch({ post_state: { ...saved.post_state, [k]: { ...(saved.post_state[k] || {}), ...p } } });
   const setPostStates = (map) => patch({ post_state: { ...saved.post_state, ...Object.fromEntries(Object.entries(map).map(([k, p]) => [k, { ...(saved.post_state[k] || {}), ...p }])) } });
 
@@ -281,7 +311,7 @@ export function AeoProvider({ children }) {
   const value = useMemo(() => ({
     analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
-    loadStrategy, loadSocial, socialKey, loadBlogDraft, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setPostState, setPostStates,
+    loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
     brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
     // eslint-disable-next-line
   }), [analysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);

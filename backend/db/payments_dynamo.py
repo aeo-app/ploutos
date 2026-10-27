@@ -236,6 +236,7 @@ def set_user_paid(
         "auto_renew": auto_renew if auto_renew is not None else existing.get("auto_renew", False),
         "renewal_status": existing.get("renewal_status"),  # only set_renewal_status touches this
         "renewal_failure_reason": existing.get("renewal_failure_reason"),
+        "last_renewal_attempt_at": existing.get("last_renewal_attempt_at"),
         "updated_at": _now_iso(),
     }
     try:

@@ -2,6 +2,8 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAeo } from '../../aeo/AeoContext';
 import { fmtDate } from '../../aeo/utils';
+import Logo from '../../assets/screens/aeo-icon.png';
+
 
 export function Sidebar({ open, onClose }) {
   const { state, setPage } = useApp();
@@ -49,7 +51,7 @@ export function Sidebar({ open, onClose }) {
       <div className={`ae-overlay ${open ? 'open' : ''}`} onClick={onClose} />
       <aside className={`ae-side ${open ? 'open' : ''}`}>
         <div className="ae-brand">
-          <div className="ae-brand-mark"><i /></div>
+          <div className="ae-brand-mark"><img src={Logo} alt="AEO-APP.ai" /></div> 
           <div><span className="ae-brand-name">AEO-APP.ai</span><span className="ae-brand-sub">Answer Engine Optimisation</span></div>
         </div>
 

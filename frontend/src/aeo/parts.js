@@ -1,3 +1,4 @@
+import { isActingAs } from '../api/seoApi';
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { socialPublishApi } from '../api/socialPublishApi';
@@ -166,7 +167,12 @@ const FOUND_KEY = { fb: 'facebook', ig: 'instagram', li: 'linkedin', yt: 'youtub
 const OTHER_NETWORKS = { x: 'X (Twitter)', tiktok: 'TikTok', pinterest: 'Pinterest', threads: 'Threads', whatsapp: 'WhatsApp' };
 const shortLink = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
 
+/** Connecting accounts belongs to the customer: an admin viewing a customer never sees (or can disconnect) these. */
 export function SocialChannelsCard() {
+  return isActingAs() ? null : <SocialChannelsCardInner />;
+}
+
+function SocialChannelsCardInner() {
   const { setPage, state, toast } = useApp();
   const { brand, detecting, detectBrand } = useAeo();
   const found = (brand.data && brand.data.socials) || {};

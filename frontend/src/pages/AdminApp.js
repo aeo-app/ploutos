@@ -3,6 +3,7 @@ import { AdminShell } from '../components/layout/AdminShell';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import { AdminAeoBlogsPage } from './adminAeo/AdminAeoBlogsPage';
 import { AdminAeoCalendarPage } from './adminAeo/AdminAeoCalendarPage';
+import { AdminAeoAnalysisPage } from './adminAeo/AdminAeoAnalysisPage';
 
 /**
  * Completely separate from the regular user app (App.js's <AppShell>
@@ -24,6 +25,7 @@ export function AdminApp({ onExitToUserView }) {
   return (
     <AdminShell page={page} onNavigate={setPage} onExitToUserView={onExitToUserView}>
       {page === 'dashboard' && <AdminDashboardPage onSelectUser={handleSelectUserFromDashboard} onReview={(u) => { setSelectedUser(u); setPage('blogs'); }} />}
+      {page === 'analysis' && <AdminAeoAnalysisPage selectedUser={selectedUser} onSelectUser={setSelectedUser} />}
       {page === 'calendars' && <AdminAeoCalendarPage selectedUser={selectedUser} onSelectUser={setSelectedUser} />}
       {page === 'blogs' && <AdminAeoBlogsPage selectedUser={selectedUser} onSelectUser={setSelectedUser} />}
     </AdminShell>

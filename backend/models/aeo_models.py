@@ -216,6 +216,7 @@ class AeoState(BaseModel):
     brand: dict = Field(default_factory=dict)                                       # logo_url, phone, email, website, address (server-owned; see /aeo/brand)
     calendar_keywords: list[str] = Field(default_factory=list, max_length=20)       # keywords the social calendar is built around
     calendar_start: str = Field(default="", max_length=10)                           # YYYY-MM-DD: the Monday month 1 of the calendar starts on
+    custom_blog_topics: list[dict] = Field(default_factory=list, max_length=100)    # topics typed in by the customer/admin: [{"prompt","title","type"}]
 
 
 class AeoStatePatch(BaseModel):
@@ -227,6 +228,7 @@ class AeoStatePatch(BaseModel):
     selected_prompts: Optional[list[str]] = Field(default=None, max_length=20)
     calendar_keywords: Optional[list[str]] = Field(default=None, max_length=20)
     calendar_start: Optional[str] = Field(default=None, max_length=10)
+    custom_blog_topics: Optional[list[dict]] = Field(default=None, max_length=100)
     blog_state: Optional[dict[str, dict]] = None
     post_state: Optional[dict[str, dict]] = None
 

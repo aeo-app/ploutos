@@ -55,6 +55,7 @@ export const aeoApi = {
   prompts:     (req) => call("POST", "/prompts", req),
   strategy:    (req) => call("POST", "/strategy", req),
   blogDraft:   (req) => call("POST", "/blog-draft", req),
+  editBlog:    (req) => call("PUT", "/blog-draft", req),
   socialPosts: (req) => call("POST", "/social-posts", req),
   siteChecks:  (url) => call("POST", "/site-checks", { url }),
   getState:    () => call("GET", "/state"),

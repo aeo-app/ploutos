@@ -1,7 +1,24 @@
-// const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
-const BASE_URL = "https://api.aeo-app.com/api/v1";
-
-
+// Configurable via REACT_APP_API_BASE_URL (set in .env.production or your
+// CI/CD build environment) — CRA embeds this at BUILD TIME, so a production
+// build needs this set before building, not just in a runtime .env file.
+// Previously this was hardcoded to the local dev URL with the production
+// URL commented out above it — meaning any production build could never
+// reach the real backend at all, and every request failed as a generic
+// network error regardless of what actually went wrong (login, signup,
+// anything). That's likely why error messages looked wrong or generic in
+// production — the app was silently trying to call the tester's own
+// machine, not the real API.
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+// const BASE_URL = "https://api.aeo-app.com/api/v1";
+// 🔹 Error message mapping
+// Matches routers/auth_router.py's _STATUS dict exactly — these are the
+// REAL Cognito exception codes the backend actually sends in
+// {"detail": {"code": "...", "message": "..."}}. Previously this mapping
+// (and the specific-code checks in LoginPage.js/SignupPage.js) used
+// different, made-up codes like "InvalidCredentials"/"UserNotFound" that
+// never actually matched anything the backend sent — every login/signup
+// failure silently fell through to a generic fallback message instead of
+// the intended specific one.
 const ERROR_MESSAGES = {
   UsernameExistsException:
     "This email is already registered. Please sign in instead.",

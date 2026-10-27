@@ -1410,7 +1410,7 @@ AEO_STATE_MAX_BYTES = 300_000
 _AEO_DEFAULT_STATE = {
     "custom_prompts": [], "custom_competitors": [], "hidden_competitors": [], "hidden_prompts": [], "selected_prompts": [],
     "social_links": {}, "blog_state": {}, "post_state": {},
-    "brand": {}, "calendar_keywords": [], "calendar_start": "",
+    "brand": {}, "calendar_keywords": [], "calendar_start": "", "custom_blog_topics": [],
 }
 
 

@@ -4,6 +4,7 @@ import s from './AdminShell.module.css';
 
 const ADMIN_NAV = [
   { id: 'dashboard', label: '📊 Dashboard' },
+  { id: 'analysis',  label: '🔎 Analysis & Keywords' },
   { id: 'calendars', label: '📅 Social Media Calendars' },
   { id: 'blogs',     label: '📝 Blogs' },
 ];

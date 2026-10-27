@@ -11,6 +11,7 @@ import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
 import { BrandKitCard, KeywordsPanel, ShortPlayer } from '../BrandKit';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
+import { exportMarkdown, exportPdf, exportWord } from '../blogExport';
 import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
 
 
@@ -25,8 +26,8 @@ function useTargets() {
   const [idx, setIdx] = useState(0);
   const list = useMemo(() => {
     if (saved.selected_prompts.length) return saved.selected_prompts;
-    const first = (analysis?.prompts || []).find(p => !p.locked);
-    return first ? [first.text] : [];
+    // Nothing chosen yet → work on the top 5 prompts so the customer always has content to review.
+    return (analysis?.prompts || []).filter(p => !p.locked).slice(0, 5).map(p => p.text);
   }, [saved.selected_prompts, analysis]);
   const active = list[Math.min(idx, Math.max(list.length - 1, 0))] || null;
   const row = (analysis?.prompts || []).find(p => p.text === active);
@@ -38,7 +39,7 @@ function TargetChips({ t }) {
     <div className="ae-target">
       <span className="ae-eyebrow">Target prompt</span>
       {t.list.map((p, i) => <button key={p} className={`ae-tchip ${p === t.active ? 'on' : ''}`} onClick={() => t.setIdx(i)}>{p}</button>)}
-      <a onClick={() => t.setPage('aeoPrompts')} style={{ fontSize: 13, fontWeight: 700, marginLeft: 4 }}>{t.hasSelection ? 'Change prompts' : 'Showing your #1 prompt — choose prompts →'}</a>
+      <a onClick={() => t.setPage('aeoPrompts')} style={{ fontSize: 13, fontWeight: 700, marginLeft: 4 }}>{t.hasSelection ? 'Change prompts' : `Showing your top ${t.list.length} prompts — choose your own →`}</a>
     </div>
   );
 }
@@ -155,8 +156,23 @@ function StrategyBlock({ t }) {
 }
 
 /* ── Blogs ──────────────────────────────────────────────────────────────── */
-function BlogReader({ item, draft, onClose, onApprove, onRequest }) {
+function BlogReader({ item, draft, prompt, onClose, onApprove, onRequest, onSave }) {
   const tag = BLOG_TAG[item.origin];
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [intro, setIntro] = useState('');
+  const [secs, setSecs] = useState([]);
+  const { toast } = useApp();
+  const doc = { title: item.title, type: item.type, prompt, intro: draft.intro, sections: draft.sections };
+  const startEdit = () => { setIntro(draft.intro || ''); setSecs((draft.sections || []).map(x => ({ h: x.h, p: x.p }))); setEditing(true); };
+  const setSec = (i, k, v) => setSecs(l => l.map((x, j) => j === i ? { ...x, [k]: v } : x));
+  const save = async () => {
+    setSaving(true);
+    const ok = await onSave({ intro, sections: secs });
+    setSaving(false);
+    if (ok) { setEditing(false); toast({ type: 'success', message: 'Your changes are saved.' }); }
+  };
+  const doPdf = () => { if (!exportPdf(doc)) toast({ type: 'info', message: 'Your browser blocked the print window. Allow pop-ups for this site and try again.' }); };
   return (
     <div className="ae-reader-bg" onClick={onClose}>
       <article className="ae-reader" onClick={e => e.stopPropagation()}>
@@ -171,13 +187,39 @@ function BlogReader({ item, draft, onClose, onApprove, onRequest }) {
           <span className="ae-eyebrow">{item.type}</span>
           <h1>{item.title}</h1>
           <span className="ae-sub">{item.meta}</span>
-          <p style={{ fontSize: 17, fontWeight: 500 }}>{draft.intro}</p>
-          {draft.sections.map((s, i) => <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}><h3>{s.h}</h3><p>{s.p}</p></div>)}
+          {!editing && <>
+            <p style={{ fontSize: 17, fontWeight: 500 }}>{draft.intro}</p>
+            {draft.sections.map((s, i) => <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}><h3>{s.h}</h3><p>{s.p}</p></div>)}
+          </>}
+          {editing && <>
+            <label className="ae-col" style={{ gap: 6 }}><span className="ae-eyebrow">Introduction</span>
+              <textarea className="ae-input" rows={4} value={intro} onChange={e => setIntro(e.target.value)} style={{ lineHeight: 1.6, resize: 'vertical' }} /></label>
+            {secs.map((x, i) => (
+              <div key={i} className="ae-col" style={{ gap: 6, padding: 12, border: '1px solid var(--ae-line)', borderRadius: 12 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input className="ae-input" style={{ flex: 1, fontWeight: 700 }} value={x.h} placeholder="Section heading" maxLength={200} onChange={e => setSec(i, 'h', e.target.value)} />
+                  <button type="button" className="ae-btn sm" onClick={() => setSecs(l => l.filter((_, j) => j !== i))}>Remove</button>
+                </div>
+                <textarea className="ae-input" rows={5} value={x.p} placeholder="Write this section…" onChange={e => setSec(i, 'p', e.target.value)} style={{ lineHeight: 1.6, resize: 'vertical' }} />
+              </div>
+            ))}
+            <div><button type="button" className="ae-btn sm" onClick={() => setSecs(l => [...l, { h: '', p: '' }])}>+ Add section</button></div>
+          </>}
         </div>
         <div className="ae-reader-f">
           <span className="ae-note" style={{ marginRight: 'auto', fontSize: 12.5 }}>{item.origin === 'pending' ? 'Team review requested — our team will check and edit this for you.' : item.origin === 'verified' ? 'Checked and finalised by our team.' : item.origin === 'edited' ? 'Written or edited by our team.' : 'Written by AI from your website and market data. Check facts before publishing.'}</span>
-          {item.origin === 'ai' && !item.approved && <button className="ae-btn" onClick={onRequest}>Request team review</button>}
-          <button className="ae-btn" style={{ borderColor: '#10b981', fontWeight: 800, padding: '10px 20px', background: item.approved ? '#ecfdf5' : '#10b981', color: item.approved ? '#047857' : '#fff' }} onClick={onApprove}>{item.approved ? 'Approved ✓' : 'Approve blog'}</button>
+          {!editing && <>
+            <button className="ae-btn" onClick={startEdit}>✎ Edit</button>
+            <button className="ae-btn" title="Opens in Word or Google Docs" onClick={() => exportWord(doc)}>⬇ Word</button>
+            <button className="ae-btn" onClick={() => exportMarkdown(doc)}>⬇ Markdown</button>
+            <button className="ae-btn" title="Choose “Save as PDF” in the print window" onClick={doPdf}>⬇ PDF</button>
+          </>}
+          {editing && <>
+            <button className="ae-btn" disabled={saving} onClick={() => setEditing(false)}>Cancel</button>
+            <button className="ae-btn primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</button>
+          </>}
+          {!editing && item.origin === 'ai' && !item.approved && <button className="ae-btn" onClick={onRequest}>Request team review</button>}
+          {!editing && <button className="ae-btn" style={{ borderColor: '#10b981', fontWeight: 800, padding: '10px 20px', background: item.approved ? '#ecfdf5' : '#10b981', color: item.approved ? '#047857' : '#fff' }} onClick={onApprove}>{item.approved ? 'Approved ✓' : 'Approve blog'}</button>}
         </div>
       </article>
     </div>
@@ -185,18 +227,21 @@ function BlogReader({ item, draft, onClose, onApprove, onRequest }) {
 }
 
 function BlogsBlock({ t }) {
-  const { content, busy, saved, loadStrategy, loadBlogDraft, setBlogState } = useAeo();
+  const { content, busy, saved, loadStrategy, loadBlogDraft, editBlog, removeBlogTopic, setBlogState } = useAeo();
   const { requirePayment } = useApp();
   const [reader, setReader] = useState(null);
   const data = content.strategy[t.active];
   const retry = useAutoLoad('strategy', t.active, !!data, () => loadStrategy(t.active));
   if (!data) return busy['strategy|' + t.active] ? <Generating title="Finding blog topics" text="Matching topics to what AI engines are being asked…" /> : <Retry title="Blog topics" text={`Get blog topic ideas written to win “${t.active}”. You can then draft and approve each one.`} label="Generate blog topics" onRetry={retry} />;
 
-  const items = data.blog_topics.map(b => {
+  // Topics typed in by the customer / admin sit after the AI's ideas.
+  const mine = (saved.custom_blog_topics || []).filter(x => x.prompt === t.active && !data.blog_topics.some(b => b.title.trim().toLowerCase() === x.title.toLowerCase()))
+    .map(x => ({ type: x.type || 'Blog', title: x.title, words: 1000, mine: true }));
+  const items = [...data.blog_topics, ...mine].map(b => {
     const k = hkey('blog', t.active, b.title);
     const st = saved.blog_state[k] || {};
     const origin = st.team === 'verified' ? 'verified' : st.team === 'edited' ? 'edited' : st.pending ? 'pending' : st.drafted ? 'ai' : 'idea';
-    return { ...b, k, origin, approved: !!st.approved, drafted: !!st.drafted,
+    return { ...b, k, origin, mine: !!b.mine, approved: !!st.approved, drafted: !!st.drafted,
       meta: `${b.words.toLocaleString()} words · ${Math.ceil(b.words / 230)} min read · targets “${t.active}”` };
   });
   const drafts = items.filter(b => b.origin !== 'idea');
@@ -229,6 +274,7 @@ function BlogsBlock({ t }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 <span className="ae-eyebrow" style={{ letterSpacing: '.06em' }}>{b.type}</span>
                 <span className="ae-pill" style={{ background: tag[1], color: tag[2], fontSize: 11 }}>{tag[0]}</span>
+                {b.mine && <span className="ae-pill" style={{ background: '#fef3c7', color: '#92400e', fontSize: 11 }}>Your topic</span>}
                 {b.approved && <span className="ae-pill" style={{ background: '#10b981', color: '#fff', fontSize: 11 }}>Approved</span>}
               </div>
               <span style={{ fontSize: 15, fontWeight: 700 }}>{b.title}</span>
@@ -236,13 +282,16 @@ function BlogsBlock({ t }) {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {b.origin === 'idea'
-                ? <button className="ae-btn outline" disabled={!!bz} onClick={() => generate(b)}>{bz ? 'Writing…' : 'Generate draft'}</button>
+                ? <>
+                    {b.mine && <button className="ae-linkbtn" disabled={!!bz} onClick={() => removeBlogTopic(t.active, b.title)}>Remove</button>}
+                    <button className="ae-btn outline" disabled={!!bz} onClick={() => generate(b)}>{bz ? 'Writing…' : 'Generate draft'}</button>
+                  </>
                 : <button className="ae-btn primary" disabled={!!bz} onClick={() => read(b)}>{bz ? 'Opening…' : b.approved ? 'Read' : 'Read & approve'}</button>}
             </div>
           </div>
         );
       })}
-      {open && draft && <BlogReader item={open} draft={draft} onClose={() => setReader(null)}
+      {open && draft && <BlogReader item={open} draft={draft} prompt={t.active} onSave={(f) => editBlog(t.active, open.title, f)} onClose={() => setReader(null)}
         onApprove={() => setBlogState(open.k, { approved: !open.approved })} onRequest={() => setBlogState(open.k, { pending: true })} />}
     </section>
   );
@@ -738,6 +787,98 @@ function Tabs({ tabs, value, onChange }) {
   return <div className="ae-seg">{tabs.map(([id, label]) => <button key={id} className={value === id ? 'on' : ''} onClick={() => onChange(id)}>{label}</button>)}</div>;
 }
 
+/** Blog topics and drafts for EVERY target prompt (the customer's selection, else the top 5), one section each. */
+function BlogsAll({ t }) {
+  const { content, loadStrategy, loadBlogDraft, setBlogStates, addBlogTopic } = useAeo();
+  const { requirePayment, toast } = useApp();
+  const ready = Object.entries(content.blog).filter(([k, d]) => d && d.title && d.sections && t.list.includes(k.split('|')[0])).map(([, d]) => d);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(0);
+  const [topic, setTopic] = useState('');
+  const [forPrompt, setForPrompt] = useState('');
+  const [adding, setAdding] = useState(false);
+  const target = t.list.includes(forPrompt) ? forPrompt : t.list[0];
+  /** Save the typed topic under the chosen prompt; with `write`, also generate its blog right away. */
+  const addTopic = async (write) => {
+    const added = addBlogTopic(target, topic);
+    if (!added) { toast({ type: 'info', message: 'Type a topic of at least 3 characters.' }); return; }
+    setTopic('');
+    if (!write) { if (!content.strategy[target]) loadStrategy(target); return; }   // the section needs its topic list to show the new topic
+    setAdding(true);
+    const data = content.strategy[target] || await loadStrategy(target);   // lists the topic under its prompt
+    if (data?.limited) requirePayment('aeoBlog');
+    else {
+      const d = await loadBlogDraft(target, { type: added.type, title: added.title, words: 1000 });
+      if (d) setBlogStates({ [hkey('blog', target, added.title)]: { drafted: true } });
+    }
+    setAdding(false);
+  };
+  const run = async () => {
+    setRunning(true); setDone(0);
+    const queue = [...t.list];
+    const drafted = {};
+    let stop = false;
+    // Two prompts at a time: quick enough, gentle on the AI provider.
+    const worker = async () => {
+      while (queue.length && !stop) {
+        const p = queue.shift();
+        try {
+          const data = content.strategy[p] || await loadStrategy(p);
+          if (data?.limited) { stop = true; requirePayment('aeoBlog'); break; }
+          const topic = data?.blog_topics?.[0];
+          if (topic && !content.blog[`${p}|${topic.title}`]) {
+            const d = await loadBlogDraft(p, topic);
+            if (d) drafted[hkey('blog', p, topic.title)] = { drafted: true };
+          }
+        } catch (_) { /* that prompt can be retried from its own section */ }
+        setDone(n => n + 1);
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    if (Object.keys(drafted).length) await setBlogStates(drafted);
+    setRunning(false);
+  };
+  return (
+    <>
+      <section className="ae-card" style={{ padding: 20, gap: 10 }}>
+        <div className="ae-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div className="ae-col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
+            <span className="ae-eyebrow p">Blogs</span>
+            <h2 className="lg" style={{ margin: 0 }}>Blogs for {t.list.length} prompt{t.list.length > 1 ? 's' : ''}</h2>
+            <span className="ae-sub" style={{ fontSize: 13 }}>{t.hasSelection ? 'Written for the prompts you selected.' : 'You have not selected prompts, so we use your top 5.'} One click writes the lead blog for each.</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {ready.length > 0 && <>
+              <button className="ae-btn" title={`Every written blog in one Word file (${ready.length})`} onClick={() => exportWord(ready, 'blogs')}>⬇ Export all (Word)</button>
+              <button className="ae-btn" onClick={() => exportMarkdown(ready, 'blogs')}>⬇ Markdown</button>
+              <button className="ae-btn" onClick={() => { if (!exportPdf(ready)) toast({ type: 'info', message: 'Your browser blocked the print window. Allow pop-ups for this site and try again.' }); }}>⬇ PDF</button>
+            </>}
+            <button className="ae-btn primary" disabled={running} onClick={run}>{running ? `Writing blogs… ${done}/${t.list.length}` : `Generate blogs for all ${t.list.length}`}</button>
+          </div>
+        </div>
+      </section>
+      <section className="ae-card" style={{ padding: 20, gap: 10 }}>
+        <b style={{ fontSize: 15 }}>Write about your own topic</b>
+        <span className="ae-sub" style={{ fontSize: 13 }}>Type any blog topic. It is saved under the prompt you pick, and we can write the blog for you.</span>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input className="ae-input" style={{ flex: '2 1 260px', minWidth: 0 }} value={topic} maxLength={200} placeholder="e.g. How to choose a relocation company in Singapore"
+            onChange={e => setTopic(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTopic(true); } }} />
+          {t.list.length > 1 && <select className="ae-input" style={{ flex: '1 1 200px', minWidth: 0 }} value={target} onChange={e => setForPrompt(e.target.value)} aria-label="Prompt for this topic">
+            {t.list.map(p => <option key={p} value={p}>{p}</option>)}</select>}
+          <button type="button" className="ae-btn" disabled={!topic.trim() || adding} onClick={() => addTopic(false)}>Add topic</button>
+          <button type="button" className="ae-btn primary" disabled={!topic.trim() || adding} onClick={() => addTopic(true)}>{adding ? 'Writing…' : 'Add & write blog'}</button>
+        </div>
+      </section>
+      {t.list.map(p => (
+        <div key={p} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="ae-target"><span className="ae-eyebrow">Prompt</span><b style={{ fontSize: 14 }}>{p}</b></div>
+          <BlogsBlock t={{ ...t, active: p }} />
+        </div>
+      ))}
+    </>
+  );
+}
+
 export function BlogsAeoPage() {
   const t = useTargets();
   const { refreshTeamWork } = useAeo();
@@ -747,7 +888,7 @@ export function BlogsAeoPage() {
     <>
       <Tabs value={tab} onChange={setTab} tabs={[['ai', 'Topics for my prompts'], ['team', 'From our team']]} />
       {tab === 'team' && <BlogTopicsPage />}
-      {tab === 'ai' && (t.active ? <><TargetChips t={t} /><BlogsBlock t={t} /></> : <NeedAnalysis setPage={t.setPage} />)}
+      {tab === 'ai' && (t.active ? <BlogsAll t={t} /> : <NeedAnalysis setPage={t.setPage} />)}
     </>
   );
 }

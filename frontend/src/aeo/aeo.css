@@ -15,7 +15,8 @@
 .ae-shell { display: flex; min-height: 100vh; }
 .ae-side { width: 248px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--ae-line); display: flex; flex-direction: column; gap: 20px; padding: 22px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; z-index: 40; }
 .ae-brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
-.ae-brand-mark { width: 36px; height: 36px; border-radius: 10px; background: var(--ae-primary); display: flex; align-items: center; justify-content: center; }
+.ae-brand-mark { width: 36px; height: 36px; border-radius: 10px; background: var(--ae-primary); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.ae-brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .ae-brand-mark i { width: 14px; height: 14px; border: 2.5px solid #fff; border-radius: 50%; display: block; }
 .ae-brand-name { font-weight: 800; font-size: 16px; display: block; }
 .ae-brand-sub { font-size: 11.5px; color: var(--ae-mute); display: block; }
