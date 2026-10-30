@@ -30,9 +30,6 @@ export function Sidebar({ open, onClose }) {
       { id: 'aeoBlogs', label: 'Blog Topics' },
       { id: 'aeoCalendar', label: 'Social Media Calendar' },
     ] },
-    { section: 'More tools', items: [
-      { id: 'articleGenerator', label: 'Article Generator' },
-    ] },
     { section: 'Account', items: [
       { id: 'history', label: 'History' },
       { id: 'billing', label: 'Billing & Plans' },

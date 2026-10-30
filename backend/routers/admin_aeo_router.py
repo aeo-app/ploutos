@@ -148,6 +148,49 @@ def _prompt_options(user_id: str, state: dict) -> list[str]:
 
 
 # ── One customer's AEO workspace ─────────────────────────────────────────────
+def _customer_country(user_id: str, u: dict) -> str:
+    """Country the customer signed up with: our own record, else Cognito, else the market of their last analysis."""
+    country = u.get("country") or u.get("custom:country") or ""
+    if not country:
+        try:
+            from services.cognito_service import get_user_country_admin
+            country = get_user_country_admin(u.get("email", ""), user_id)
+        except Exception:  # noqa: BLE001
+            country = ""
+    if not country:
+        try:
+            items = (list_analyses(user_id, analysis_type="aeo_prompts", limit=1) or {}).get("items") or []
+            country = (items[0].get("market") if items else "") or ""
+        except Exception:  # noqa: BLE001
+            country = ""
+    return "" if country.lower() == "global" else country
+
+
+@router.get("/users/{user_id}/billing", summary="A customer's plan and payments (read-only)")
+def customer_billing(user_id: str, admin_id: str = Depends(require_admin)):
+    from datetime import datetime, timezone
+    from db.payments_dynamo import get_user_entitlement, list_user_payments
+    from services.airwallex_service import PLANS
+    ent = get_user_entitlement(user_id)
+    plan_id = ent.get("plan")
+    is_paid, until = bool(ent.get("is_paid", False)), ent.get("paid_until")
+    if is_paid and until:
+        try:
+            is_paid = datetime.fromisoformat(str(until).replace("Z", "+00:00")) > datetime.now(timezone.utc)
+        except ValueError:
+            is_paid = False
+    return {
+        "is_paid": is_paid, "paid_until": until, "plan": plan_id,
+        "plan_name": PLANS.get(plan_id, {}).get("name") if plan_id else None,
+        "auto_renew": bool(ent.get("auto_renew", False)), "payment_method_summary": ent.get("payment_method_summary"),
+        "renewal_status": ent.get("renewal_status"), "renewal_failure_reason": ent.get("renewal_failure_reason"),
+        "paid_since": ent.get("paid_since"),
+        "items": [{"payment_intent_id": i.get("payment_intent_id"), "plan_id": i.get("plan_id"), "amount": i.get("amount"),
+                   "currency": i.get("currency"), "status": i.get("status"), "created_at": i.get("created_at"),
+                   "is_renewal": bool(i.get("is_renewal", False))} for i in list_user_payments(user_id)],
+    }
+
+
 @router.get("/users/{user_id}", summary="A customer's prompts, saved state and generated content")
 def workspace(user_id: str, admin_id: str = Depends(require_admin)):
     u = _user_row(user_id)
@@ -162,7 +205,8 @@ def workspace(user_id: str, admin_id: str = Depends(require_admin)):
     return {
         "prompt_options": _prompt_options(user_id, state),
         "user": {"user_id": user_id, "email": u.get("email", ""), "full_name": u.get("full_name", ""),
-                 "company_name": u.get("company_name", ""), "domain": u.get("domain", ""), "is_paid": is_user_paid(user_id)},
+                 "company_name": u.get("company_name", ""), "domain": u.get("domain", ""), "country": _customer_country(user_id, u),
+                 "is_paid": is_user_paid(user_id)},
         "state": state, "content": content,
         "brand_complete": not brand_svc.missing_fields(state.get("brand") or {}),
     }

@@ -95,12 +95,15 @@ async def list_plans(
     registered_country = _country_from_authorization(authorization, access_token)
     # Where the visitor is right now wins (CDN header, then the browser's hint); the registered country is the fallback.
     currency = currency_for_country(viewer_country_from_headers(request.headers) or country or registered_country)
+    # Signed-out visitors (the landing page) always see the real price list; the autopay test
+    # price (Starter = 1, 1 day) only appears for signed-in users, in the dashboard.
+    marketing = not (authorization or access_token)
     try:
-        localized_plans = _localized_plans(currency)
+        localized_plans = _localized_plans(currency, marketing)
     except LookupError as exc:
         logger.warning("[payment] %s; falling back to %s", exc, DEFAULT_CURRENCY)
         currency = DEFAULT_CURRENCY
-        localized_plans = _localized_plans(currency)
+        localized_plans = _localized_plans(currency, marketing)
     return {
         "currency": currency,
         "billing_cycle_days": PAID_ACCESS_DAYS,
@@ -108,18 +111,18 @@ async def list_plans(
     }
 
 
-def _localized_plans(currency: str) -> list[dict]:
+def _localized_plans(currency: str, marketing: bool = False) -> list[dict]:
     return [
         {
             "plan_id": plan_id,
             "name": p["name"],
-            "amount": get_plan(plan_id, currency)["amount"],
+            "amount": get_plan(plan_id, currency, marketing)["amount"],
             "currency": currency,
             "blurb": p["blurb"],
             "prompts": p["prompts"],
             "features": p["features"],
             "highlight": p["highlight"],
-            "billing_days": (paid_access_delta(plan_id).total_seconds() / 86400) if paid_access_delta(plan_id) else 0,
+            "billing_days": PAID_ACCESS_DAYS if marketing else ((paid_access_delta(plan_id).total_seconds() / 86400) if paid_access_delta(plan_id) else 0),
         }
         for plan_id, p in PLANS.items()
     ]
@@ -262,8 +265,14 @@ async def payment_status(
             logger.warning(f"[payment] unparseable paid_until={paid_until!r} for user={user_id} in status check; reporting as expired")
             is_paid = False
 
+    from core.paywall import subscription_state
+    sub = subscription_state(user_id)
     return {
         "is_paid": is_paid,
+        # Paid before and no active access now: paid actions are blocked until a plan is bought again.
+        "lapsed": bool(sub["lapsed"]),
+        "lapse_reason": sub["reason"],
+        "ever_paid": bool(sub["ever_paid"]),
         "paid_until": paid_until,
         "plan": plan_id,
         "plan_name": PLANS.get(plan_id, {}).get("name") if plan_id else None,

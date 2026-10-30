@@ -19,11 +19,11 @@ export function AdminApp({ onExitToUserView }) {
 
   const handleSelectUserFromDashboard = (user) => {
     setSelectedUser(user);
-    setPage('calendars');
+    setPage('analysis');
   };
 
   return (
-    <AdminShell page={page} onNavigate={setPage} onExitToUserView={onExitToUserView}>
+    <AdminShell page={page} onNavigate={setPage} onExitToUserView={onExitToUserView} bleed={page === 'analysis' && !!selectedUser}>
       {page === 'dashboard' && <AdminDashboardPage onSelectUser={handleSelectUserFromDashboard} onReview={(u) => { setSelectedUser(u); setPage('blogs'); }} />}
       {page === 'analysis' && <AdminAeoAnalysisPage selectedUser={selectedUser} onSelectUser={setSelectedUser} />}
       {page === 'calendars' && <AdminAeoCalendarPage selectedUser={selectedUser} onSelectUser={setSelectedUser} />}

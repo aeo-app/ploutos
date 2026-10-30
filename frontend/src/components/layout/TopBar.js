@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp }  from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { useViewAs } from '../../context/ViewAsContext';
 import { useAeo } from '../../aeo/AeoContext';
 
 const META = {
@@ -30,11 +31,14 @@ const RERUN_PAGES = new Set(['home', 'aeoPrompts', 'aeoCompetitors', 'aeoEngines
 export function TopBar({ onMenu, onEnterAdminView }) {
   const { state } = useApp();
   const { auth, logout } = useAuth();
-  const { runAnalysis, loading } = useAeo();
+  const { runAnalysis, loading, quota } = useAeo();
+  const locked = !!quota && quota.can_run === false;
+  const lockedUntil = locked && quota.next_available ? new Date(quota.next_available).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [title, sub] = META[state.page] || META.home;
-  const user = auth.user;
+  const viewAs = useViewAs();               // admin inside a customer's app: show the customer, not the admin
+  const user = viewAs || auth.user;
   const initials = user?.name
     ? user.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
     : user?.email?.[0]?.toUpperCase() || 'U';
@@ -49,7 +53,7 @@ export function TopBar({ onMenu, onEnterAdminView }) {
         {state.isAdmin && onEnterAdminView && <button className="ae-btn" onClick={onEnterAdminView}>Admin Dashboard</button>}
         <button className="ae-btn" onClick={() => window.print()}>Export PDF</button>
         {RERUN_PAGES.has(state.page) && (
-          <button className="ae-btn primary" disabled={loading} onClick={runAnalysis}>{loading ? 'Analysing…' : 'Re-run analysis'}</button>
+          <button className="ae-btn primary" disabled={loading || locked} title={locked ? `An analysis can be run once every ${quota.interval_days || 30} days.` : undefined} onClick={runAnalysis}>{loading ? 'Analysing…' : locked ? `Next analysis ${lockedUntil}` : 'Re-run analysis'}</button>
         )}
         <div className="ae-user">
           <button className="ae-avatar" onClick={() => setMenuOpen(v => !v)} aria-haspopup="true" aria-expanded={menuOpen} title={user?.email || ''}>{initials}</button>
@@ -59,7 +63,9 @@ export function TopBar({ onMenu, onEnterAdminView }) {
               <div className="ae-drop">
                 {user?.name && <div style={{ color: 'var(--ae-text)', fontWeight: 700 }}>{user.name}</div>}
                 {user?.email && <div>{user.email}</div>}
-                <button onClick={() => { setMenuOpen(false); logout(); }}>↩ Sign out</button>
+                {viewAs
+                  ? <div style={{ fontSize: 12, marginTop: 6 }}>Admin view of this customer</div>
+                  : <button onClick={() => { setMenuOpen(false); logout(); }}>↩ Sign out</button>}
               </div>
             </>
           )}

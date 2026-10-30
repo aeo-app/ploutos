@@ -403,7 +403,7 @@ function CalendarBlock({ t }) {
   const brandRef = useRef(null);
   const acting = isActingAs();   // an admin viewing a customer: connecting and publishing stay with the customer
   const progress = useConnectProgress();
-  useEffect(() => { let off = false; (isActingAs() ? Promise.resolve(null) : socialPublishApi.status()).then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
+  useEffect(() => { let off = false; socialPublishApi.statusForView().then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (!isActingAs() && x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
 
   // Month 1 starts on the first Monday we planned for. Every later month is the next 4 weeks.
   const start0 = useMemo(() => parseIso(saved.calendar_start) || calendarStart(), [saved.calendar_start]);
@@ -677,7 +677,7 @@ function CalendarBlock({ t }) {
           <span><i style={{ background: '#ecfdf5', border: '1.5px solid #34d399' }} />Published, with the date</span>
           <span>Round badges show the platforms. A ✓ means it is published there.</span>
         </div>
-        {data.limited && <PreviewBanner what="You get one item per channel. Paid plans include a full month: every week, 3 posters and 2 reels on each channel (YouTube: 2 reels), for as many months as you like." />}
+        {data.limited && <PreviewBanner what="You get one poster and one reel, the same on every channel (YouTube: the reel). Paid plans include a full month: every week, 3 posters and 2 reels on each channel (YouTube: 2 reels), for as many months as you like." />}
       </section>
 
       {selGroup && (
@@ -702,7 +702,7 @@ function CalendarBlock({ t }) {
                   <b style={{ fontSize: 13 }}>{p.c.name}</b>
                   <span style={{ fontSize: 11.5, fontWeight: 700, color: p.st.published ? '#047857' : p.st.approved ? '#1d4ed8' : '#64748b' }}>
                     {p.st.published ? `● Published ${fmtWhen(p.st.pub_at)}` : p.st.approved ? `Scheduled · ${p.c.time}` : 'Needs approval'}</span>
-                  {!acting && <span style={{ fontSize: 10.5, fontWeight: 700, color: cs.color }}>{cs.label}</span>}
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: cs.color }}>{cs.label}</span>
                 </span>
               </button>
             );

@@ -214,6 +214,20 @@ def set_user_paid(
     """
     table = _get_payments_table()
     existing = get_user_entitlement(user_id)
+    # paid_since = when this stretch of paid access began (a free user upgrading, or someone coming back after
+    # access lapsed). Renewals keep it. The analysis limit uses it to give one fresh run after upgrading.
+    paid_since = existing.get("paid_since")
+    if is_paid:
+        lapsed = not existing.get("is_paid")
+        until = existing.get("paid_until")
+        if not lapsed and until:
+            try:
+                u = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
+                lapsed = (u if u.tzinfo else u.replace(tzinfo=timezone.utc)) < datetime.now(timezone.utc)
+            except ValueError:
+                pass
+        if lapsed:
+            paid_since = _now_iso()
     item = {
         "PK": _pk(user_id),
         "SK": _entitlement_sk(),
@@ -237,6 +251,7 @@ def set_user_paid(
         "renewal_status": existing.get("renewal_status"),  # only set_renewal_status touches this
         "renewal_failure_reason": existing.get("renewal_failure_reason"),
         "last_renewal_attempt_at": existing.get("last_renewal_attempt_at"),
+        "paid_since": paid_since,
         "updated_at": _now_iso(),
     }
     try:

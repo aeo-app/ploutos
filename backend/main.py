@@ -192,6 +192,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.responses import JSONResponse
+from core.paywall import SubscriptionRequired
+
+
+@app.exception_handler(SubscriptionRequired)
+async def _subscription_required(request, exc: SubscriptionRequired):
+    """A customer who paid before and whose access has ended: tell the app to show the plans (code is what it keys on)."""
+    return JSONResponse(
+        status_code=402,
+        content={"detail": exc.detail, "code": "subscription_required", "reason": exc.reason, "feature": exc.feature},
+    )
+
+
+@app.middleware("http")
+async def _no_shared_caching(request, call_next):
+    """Signed-in responses are per person (and, for an admin acting as a customer, per customer): never let a
+    browser, CDN or proxy reuse one for someone else."""
+    response = await call_next(request)
+    if request.headers.get("authorization") and "cache-control" not in response.headers:
+        response.headers["Cache-Control"] = "private, no-store"
+        existing = response.headers.get("vary")
+        response.headers["Vary"] = (existing + ", " if existing else "") + "Authorization, X-Act-As-User, X-User-ID"
+    return response
+
+
 from routers.auth_router import router as auth_router
 from routers.seo_router  import router as seo_router
 from routers.social_router import router as social_router

@@ -18,6 +18,7 @@ async function call(method, path, body) {
       throw new ApiError("TokenExpired", "Your session has expired. Please sign in again.");
     }
     if (res.status === 402) throw new ApiError("PaymentRequired", data?.detail || "Payment required to access this feature.");
+    if (res.status === 429) throw new ApiError("AnalysisLimit", data?.detail || "You have reached the limit for now. Please try again later.");
     if (res.status === 403) throw new ApiError("DomainMismatch", data?.detail || "This account is linked to a different domain.");
     if (!res.ok) {
       const detail = Array.isArray(data?.detail) ? data.detail.map(d => d.msg).join("; ") : data?.detail;
@@ -64,6 +65,7 @@ export const aeoApi = {
   downloadBlob:(url) => fetchImageBlob("/aeo/image-download", { url }),
   editPost:    (prompt, channel, index, post, cycle = 0) => call("PUT", "/social-post", { prompt, channel, index, post, cycle }),
   teamIndex:   () => call("GET", "/team-index"),
+  analysisQuota: () => call("GET", "/analysis-quota"),
   // Brand kit — logo + contact details printed on every generated image / Short
   getBrand:    () => call("GET", "/brand"),
   saveBrand:   (b) => call("PUT", "/brand", b),

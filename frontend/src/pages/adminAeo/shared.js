@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { adminAeoApi } from '../../api/adminApi';
 import { withTokenExpiry } from '../../api/authApi';
 import { useAuth } from '../../context/AuthContext';
@@ -61,15 +61,20 @@ export function useWorkspace(user) {
   const call = useAdminCall();
   const [ws, setWs] = useState(null);
   const [loading, setLoading] = useState(false);
+  const latest = useRef('');   // the customer we are loading now — an answer for anyone else is ignored
   const load = useCallback(async () => {
+    latest.current = user?.user_id || '';
     if (!user?.user_id) { setWs(null); return; }
+    const asked = user.user_id;
     setLoading(true);
-    const d = await call(adminAeoApi.workspace(user.user_id));
+    const d = await call(adminAeoApi.workspace(asked));
+    if (latest.current !== asked) return;      // admin already picked someone else
     setWs(d);
     setLoading(false);
   }, [user?.user_id, call]);
   useEffect(() => { setWs(null); load(); }, [load]);
-  return { ws, setWs, loading, reload: load };
+  const mine = ws && user?.user_id && ws.user?.user_id === user.user_id ? ws : null;
+  return { ws: mine, setWs, loading, reload: load };
 }
 
 /** Prompts worth showing for a customer: the ones they selected, plus any that already have content. */

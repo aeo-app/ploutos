@@ -23,13 +23,15 @@ export function Kpi({ label, value, color, delta, deltaColor, sub }) {
 }
 
 export function EmptyAnalysis({ title, text }) {
-  const { runAnalysis, loading } = useAeo();
+  const { runAnalysis, loading, quota } = useAeo();
+  const locked = !!quota && quota.can_run === false;
   return (
     <div className="ae-empty">
       <h2>{loading ? 'Analysing how AI sees your business…' : (title || 'Run your first analysis')}</h2>
       <p>{loading ? 'This usually takes under a minute. We are building your prompt list, estimating visibility in each engine and sizing up your competitors.'
         : (text || 'We will build the list of questions people ask AI about your business, estimate where you appear in ChatGPT, Perplexity, Gemini and AI Overviews, and compare you with competitors.')}</p>
       {loading ? <div className="ae-dots"><i /><i /><i /></div>
+        : locked ? <span className="ae-note">An analysis can be run once every {quota.interval_days || 30} days.{quota.next_available ? ` Your next one is available on ${new Date(quota.next_available).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}.` : ''}</span>
         : <button className="ae-btn primary" onClick={runAnalysis}>Run analysis</button>}
     </div>
   );
@@ -167,12 +169,14 @@ const FOUND_KEY = { fb: 'facebook', ig: 'instagram', li: 'linkedin', yt: 'youtub
 const OTHER_NETWORKS = { x: 'X (Twitter)', tiktok: 'TikTok', pinterest: 'Pinterest', threads: 'Threads', whatsapp: 'WhatsApp' };
 const shortLink = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
 
-/** Connecting accounts belongs to the customer: an admin viewing a customer never sees (or can disconnect) these. */
+/** Connecting accounts belongs to the customer: an admin viewing a customer sees the customer's channels and links
+ *  (and can re-scan the website) but never connects or disconnects an account. */
 export function SocialChannelsCard() {
-  return isActingAs() ? null : <SocialChannelsCardInner />;
+  return <SocialChannelsCardInner />;
 }
 
 function SocialChannelsCardInner() {
+  const acting = isActingAs();
   const { setPage, state, toast } = useApp();
   const { brand, detecting, detectBrand } = useAeo();
   const found = (brand.data && brand.data.socials) || {};
@@ -205,11 +209,11 @@ function SocialChannelsCardInner() {
 
   useEffect(() => {
     let off = false;
-    socialPublishApi.status().then(d => {
+    socialPublishApi.statusForView().then(d => {
       if (off) return;
       const m = {}; (d?.platforms || []).forEach(p => { m[p.platform] = p; });
       setStatus(m);
-      Object.values(m).forEach(p => { if (p.connected && !p.needs_reconnect) clearConnectInProgress(p.platform); });
+      Object.values(m).forEach(p => { if (!acting && p.connected && !p.needs_reconnect) clearConnectInProgress(p.platform); });
     }).catch(() => {});
     return () => { off = true; };
   }, []);
@@ -219,7 +223,7 @@ function SocialChannelsCardInner() {
       <div className="ae-row" style={{ alignItems: 'baseline' }}><h2>Social media channels</h2><a onClick={() => { setPage('aeoCalendar'); window.scrollTo(0, 0); }} style={{ fontSize: 13, fontWeight: 700 }}>Open calendar →</a></div>
       <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '9px 12px', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <span>{detecting ? <b>Reading your website for social accounts…</b>
-          : foundCount ? <><b>We found {foundCount} social account{foundCount > 1 ? 's' : ''} on {hostOf(state.request.url) || 'your website'}.</b> Connect each one below so we can publish for you.</>
+          : foundCount ? <><b>We found {foundCount} social account{foundCount > 1 ? 's' : ''} on {hostOf(state.request.url) || 'your website'}.</b> {acting ? 'The customer connects each one from their own sign-in.' : 'Connect each one below so we can publish for you.'}</>
           : brand.data?.detected ? <>We did not find social account links on {hostOf(state.request.url) || 'your website'}. You can still connect your accounts below.</> : <>We will look for your social accounts on your website.</>}</span>
         <button type="button" className="ae-btn sm" disabled={detecting || !state.request.url} onClick={rescan}>{detecting ? 'Reading…' : '🔎 Scan website again'}</button>
       </div>
@@ -240,11 +244,11 @@ function SocialChannelsCardInner() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: cs.color }}>{cs.label.replace(/^[●○◐] /, '')}</span>
-                {!connected && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : cs.key === 'reconnect' ? 'Reconnect' : cs.key === 'progress' ? 'Try again' : 'Connect account'}</button>}
-                {connected && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
+                {!acting && !connected && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : cs.key === 'reconnect' ? 'Reconnect' : cs.key === 'progress' ? 'Try again' : 'Connect account'}</button>}
+                {!acting && connected && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
               </div>
             </div>
-            {cs.key === 'progress' && <span className="ae-note" style={{ color: '#3730a3' }}>This connection is in progress. You can keep writing and approving {ch.name} posts — we will publish them once it is ready.</span>}
+            {!acting && cs.key === 'progress' && <span className="ae-note" style={{ color: '#3730a3' }}>This connection is in progress. You can keep writing and approving {ch.name} posts — we will publish them once it is ready.</span>}
           </div>
         );
       })}

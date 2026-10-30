@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 import os
+import re
 import uuid
 
 import boto3
@@ -24,7 +25,7 @@ from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 
 BUCKET_NAME = os.getenv("MEDIA_UPLOAD_BUCKET", "aeo-app-media-uploads")
-MEDIA_UPLOAD_REGION = os.getenv("MEDIA_UPLOAD_REGION", "ap-southeast-2")
+MEDIA_UPLOAD_REGION = os.getenv("MEDIA_UPLOAD_REGION") or os.getenv("AWS_REGION", "ap-southeast-1")
 MOVERSLY_AWS_ACCESS_KEY_ID = os.getenv("MOVERSLY_AWS_ACCESS_KEY_ID")
 MOVERSLY_AWS_SECRET_ACCESS_KEY = os.getenv("MOVERSLY_AWS_SECRET_ACCESS_KEY")
 
@@ -78,15 +79,38 @@ def _raise_clean_upload_error(action: str, e: ClientError) -> None:
     raise MediaUploadError(error.get("Message") or str(e))
 
 
+def _detect_bucket_region() -> str | None:
+    try:
+        probe = boto3.client("s3", region_name="us-east-1",
+                             aws_access_key_id=MOVERSLY_AWS_ACCESS_KEY_ID,
+                             aws_secret_access_key=MOVERSLY_AWS_SECRET_ACCESS_KEY)
+        try:
+            resp = probe.head_bucket(Bucket=BUCKET_NAME)
+        except ClientError as e:
+            resp = e.response
+        return (resp.get("ResponseMetadata", {}).get("HTTPHeaders", {}) or {}).get("x-amz-bucket-region")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[media_upload] could not detect bucket region: {e}")
+        return None
+
+
 def _get_s3_client():
     """Mirrors db.dynamo._get_table()'s connection logic (local vs. single
     AWS account). Single account for this service now — no more STS
     assume_role cross-account hop, so there are no temporary credentials to
     expire and refresh; the client is built once and cached for the life of
     the process."""
-    global _s3
+    global _s3, MEDIA_UPLOAD_REGION
     if _s3 is None:
         endpoint = os.getenv("S3_ENDPOINT_URL")  # for local dev against a fake S3 (e.g. moto/localstack)
+        if not endpoint:
+            # S3 answers "PermanentRedirect" when the client is pointed at a different region from the bucket's.
+            # Ask S3 where the bucket really lives (head_bucket reports it even when it refuses the request)
+            # and use that, so a wrong or missing MEDIA_UPLOAD_REGION setting can't break uploads.
+            real = _detect_bucket_region()
+            if real and real != MEDIA_UPLOAD_REGION:
+                logger.warning(f"[media_upload] bucket {BUCKET_NAME!r} is in {real}, not {MEDIA_UPLOAD_REGION!r} — using {real}")
+                MEDIA_UPLOAD_REGION = real
         if endpoint:
             _s3 = boto3.client("s3", region_name=MEDIA_UPLOAD_REGION, endpoint_url=endpoint)
         else:
@@ -114,6 +138,37 @@ def _put_object(key: str, body: bytes, content_type: str) -> None:
                 raise
     except ClientError as e:
         _raise_clean_upload_error("put_object", e)
+
+
+def put_temp_part(key: str, body: bytes) -> None:
+    """A piece of a chunked upload, kept privately until the upload is completed."""
+    try:
+        _get_s3_client().put_object(Bucket=BUCKET_NAME, Key=key, Body=body, ContentType="application/octet-stream")
+    except ClientError as e:
+        _raise_clean_upload_error("put_object", e)
+
+
+def read_temp_parts(prefix: str, total: int) -> bytes:
+    """All pieces of a chunked upload, in order. Raises MediaUploadError if one is missing."""
+    client = _get_s3_client()
+    out = bytearray()
+    for i in range(total):
+        try:
+            out += client.get_object(Bucket=BUCKET_NAME, Key=f"{prefix}{i:05d}")["Body"].read()
+        except ClientError as e:
+            if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+                raise MediaUploadError(f"Part {i + 1} of {total} did not arrive. Please try the upload again.")
+            _raise_clean_upload_error("get_object", e)
+    return bytes(out)
+
+
+def delete_temp_parts(prefix: str, total: int) -> None:
+    client = _get_s3_client()
+    for i in range(total):
+        try:
+            client.delete_object(Bucket=BUCKET_NAME, Key=f"{prefix}{i:05d}")
+        except Exception:  # noqa: BLE001 — leftovers are harmless; a bucket lifecycle rule can expire tmp/
+            pass
 
 
 def upload_image(image_bytes: bytes, filename: str, user_id: str) -> str:
@@ -172,10 +227,8 @@ def _key_from_url(image_url: str) -> str | None:
     None for anything that doesn't match (a Canva-hosted URL, someone
     else's bucket, a malformed value), so callers can reject deletion of
     anything this service doesn't actually own."""
-    prefix = f"https://{BUCKET_NAME}.s3.{MEDIA_UPLOAD_REGION}.amazonaws.com/"
-    if not image_url.startswith(prefix):
-        return None
-    return image_url[len(prefix):]
+    m = re.match(rf"^https://{re.escape(BUCKET_NAME)}\.s3[.-][a-z0-9-]+\.amazonaws\.com/(.+)$", image_url or "")
+    return m.group(1) if m else None
 
 
 def delete_image(image_url: str, user_id: str) -> None:

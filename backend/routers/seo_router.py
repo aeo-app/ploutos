@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from core.security import get_current_user_id
+from core.paywall import paywall_guard
 from db import (
     check_and_lock_domain,
     delete_analysis,
@@ -92,7 +93,7 @@ def _enforce_domain(user_id: str, req: AnalyseRequest) -> None:
 
 # ── Analysis endpoints ────────────────────────────────────────────────────────
 
-@router.post("/api/v1/seo/competitors", summary="Competitor analysis (Bedrock + web search)")
+@router.post("/api/v1/seo/competitors", dependencies=[Depends(paywall_guard)], summary="Competitor analysis (Bedrock + web search)")
 async def competitor_analysis(
     req: AnalyseRequest,
     user_id: str = Depends(get_current_user_id),
@@ -110,7 +111,7 @@ async def competitor_analysis(
     return _response(result, aid, user_id, token_usage=token_usage)
 
 
-@router.post("/api/v1/seo/keywords", summary="Keyword volume (Bedrock + web search)")
+@router.post("/api/v1/seo/keywords", dependencies=[Depends(paywall_guard)], summary="Keyword volume (Bedrock + web search)")
 async def keyword_volume(
     req: AnalyseRequest,
     user_id: str = Depends(get_current_user_id),
@@ -128,7 +129,7 @@ async def keyword_volume(
     return _response(result, aid, user_id, token_usage=token_usage)
 
 
-@router.post("/api/v1/seo/profile", summary="Company profile (Bedrock + web search)")
+@router.post("/api/v1/seo/profile", dependencies=[Depends(paywall_guard)], summary="Company profile (Bedrock + web search)")
 async def company_profile(
     req: AnalyseRequest,
     user_id: str = Depends(get_current_user_id),
@@ -146,7 +147,7 @@ async def company_profile(
     return _response(result, aid, user_id, token_usage=token_usage)
 
 
-@router.post("/api/v1/seo/domain-authority", summary="DA strategy (Bedrock + web search)")
+@router.post("/api/v1/seo/domain-authority", dependencies=[Depends(paywall_guard)], summary="DA strategy (Bedrock + web search)")
 async def domain_authority(
     req: AnalyseRequest,
     user_id: str = Depends(get_current_user_id),
@@ -164,7 +165,7 @@ async def domain_authority(
     return _response(result, aid, user_id, token_usage=token_usage)
 
 
-@router.post("/api/v1/seo/full-report", summary="Full SEO report — all 4 analyses (Bedrock)")
+@router.post("/api/v1/seo/full-report", dependencies=[Depends(paywall_guard)], summary="Full SEO report — all 4 analyses (Bedrock)")
 async def full_report(
     req: AnalyseRequest,
     user_id: str = Depends(get_current_user_id),
@@ -183,7 +184,7 @@ async def full_report(
 
 
 @router.post(
-    "/api/v1/seo/content-strategy",
+    "/api/v1/seo/content-strategy", dependencies=[Depends(paywall_guard)],
     summary="Keyword → competitor → content strategy generator (Bedrock)",
 )
 async def content_strategy(
@@ -237,7 +238,7 @@ async def content_strategy(
 
 
 @router.post(
-    "/api/v1/seo/content-strategy/stream",
+    "/api/v1/seo/content-strategy/stream", dependencies=[Depends(paywall_guard)],
     summary="Content strategy generator — streamed via Server-Sent Events",
 )
 async def content_strategy_stream(

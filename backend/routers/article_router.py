@@ -15,6 +15,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.security import get_current_user_id
+from core.paywall import paywall_guard
 from db import check_and_lock_domain, DomainMismatchError
 from db.dynamo import save_analysis
 from models.article_models import (
@@ -40,7 +41,7 @@ def _enforce_domain(user_id: str, brief) -> None:
 
 
 @router.post(
-    "/research-brief",
+    "/research-brief", dependencies=[Depends(paywall_guard)],
     response_model=ResearchBriefResponse,
     summary="Phase 1: research plan for an article topic — search intent, content gaps, subtopics, sources, content pillars",
 )
@@ -56,7 +57,7 @@ async def research_brief(req: ResearchBriefRequest, user_id: str = Depends(get_c
 
 
 @router.post(
-    "/generate",
+    "/generate", dependencies=[Depends(paywall_guard)],
     response_model=ArticleResponse,
     summary="Phase 2: write the full article using a research brief from /research-brief",
 )

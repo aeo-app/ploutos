@@ -3,8 +3,8 @@ import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class 
 // export const BASE = "https://api.aeo-app.ai/api/v1";
 // Configurable via REACT_APP_API_BASE_URL — see authApi.js's BASE_URL for
 // the full explanation of why this must not be hardcoded to localhost.
-// export const BASE = "https://api.aeo-app.com/api/v1";
-export const BASE = "http://localhost:8000/api/v1"; // for local dev, override with REACT_APP_API_BASE_URL
+export const BASE = "https://api.aeo-app.com/api/v1";
+// export const BASE = "http://localhost:8000/api/v1"; // for local dev, override with REACT_APP_API_BASE_URL
 
 // 🔹 Check Token & User Validity (forcefully redirect to login if missing)
 // Exported so every other API module (socialApi.js, etc.) reuses THIS exact
@@ -43,8 +43,31 @@ function isTokenExpired(token) {
 // Admin "act as customer": while set, every request carries X-Act-As-User and the
 // server (which re-checks the caller is an admin) works on that customer's data.
 let _actAs = "";
-export const setActAs = (userId) => { _actAs = userId || ""; };
+let _owner = null;        // which customer view set it, so a view that is closing can't switch off the one that just opened
+let _origFetch = null;
+export const getActAs = () => _actAs;
 export const isActingAs = () => !!_actAs;
+// While acting as a customer, every call to our API also carries the customer in the URL and is never served from the
+// browser cache. That keeps one customer's answer from ever being reused for another, and still works if a gateway
+// drops the custom X-Act-As-User header.
+export const clearActAs = (owner) => { if (owner === undefined || owner === _owner) setActAs(""); };
+export const setActAs = (userId, owner) => {
+  _actAs = userId || "";
+  _owner = _actAs ? (owner || null) : null;
+  if (typeof window === "undefined") return;
+  if (_actAs && !_origFetch) {
+    _origFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      if (_actAs && url.startsWith(BASE) && !/[?&]act_as=/.test(url) && typeof input === "string") {
+        return _origFetch(url + (url.includes("?") ? "&" : "?") + "act_as=" + encodeURIComponent(_actAs), { ...(init || {}), cache: "no-store" });
+      }
+      return _origFetch(input, init);
+    };
+  } else if (!_actAs && _origFetch) {
+    window.fetch = _origFetch; _origFetch = null;
+  }
+};
 
 export const getAuthHeaders = () => {
   const { idToken, userId } = checkAuthTokens(); // This will throw if tokens missing

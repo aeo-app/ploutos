@@ -28,13 +28,16 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timezone
 
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from core.security import get_real_user_id as get_current_user_id  # never "act as" a customer here
+from core.paywall import paywall_guard
 from db import (
     cancel_scheduled_post,
     delete_social_connection,
@@ -356,12 +359,10 @@ async def upload_media(user_id: str = Depends(get_current_user_id), file: Upload
     return UploadMediaResponse(image_url=url)
 
 
-@router.post("/uploads/video", summary="Upload your own YouTube Short (vertical or square video, up to 3 minutes)")
-async def upload_short_video(user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+def _finish_short(data: bytes, user_id: str):
     from services.media_upload_service import signed_view_url, upload_video
     from services.shorts_service import ShortError, check_uploaded_short, to_mp4
 
-    data = await file.read()
     try:
         info = check_uploaded_short(data)
         video_url = upload_video(to_mp4(data), user_id)
@@ -373,6 +374,64 @@ async def upload_short_video(user_id: str = Depends(get_current_user_id), file: 
     return {"video_url": video_url, "thumb_url": thumb_url, "duration": round(info["duration"], 1),
             "video_view_url": signed_view_url(video_url, user_id) or video_url,
             "thumb_view_url": signed_view_url(thumb_url, user_id) or thumb_url}
+
+
+@router.post("/uploads/video", summary="Upload your own YouTube Short (vertical or square video, up to 3 minutes)")
+async def upload_short_video(user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+    return _finish_short(await file.read(), user_id)
+
+
+# A big video can be refused by whatever sits in front of the app (nginx, a load balancer, API Gateway) with
+# "413 Request Entity Too Large". So the browser sends it in small pieces and then asks us to put them together.
+MAX_VIDEO_BYTES = 125 * 1024 * 1024
+MAX_VIDEO_PARTS = 400
+
+
+def _upload_prefix(user_id: str, upload_id: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9-]{8,64}", upload_id or ""):
+        raise HTTPException(status_code=422, detail="Invalid upload id.")
+    return f"tmp/{user_id}/{upload_id}/"
+
+
+@router.post("/uploads/video/part", summary="One piece of a large video upload")
+async def upload_video_part(upload_id: str = Query(...), index: int = Query(..., ge=0), user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+    from services.media_upload_service import put_temp_part
+
+    if index >= MAX_VIDEO_PARTS:
+        raise HTTPException(status_code=413, detail="That video is too large.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Empty piece.")
+    try:
+        put_temp_part(f"{_upload_prefix(user_id, upload_id)}{index:05d}", data)
+    except MediaUploadError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {"ok": True, "index": index}
+
+
+class VideoCompleteRequest(BaseModel):
+    upload_id: str
+    parts: int
+
+
+@router.post("/uploads/video/complete", summary="Put the pieces of a large video together and finish the upload")
+async def upload_video_complete(req: VideoCompleteRequest, user_id: str = Depends(get_current_user_id)):
+    from services.media_upload_service import delete_temp_parts, read_temp_parts
+
+    if not 1 <= req.parts <= MAX_VIDEO_PARTS:
+        raise HTTPException(status_code=422, detail="Invalid number of parts.")
+    prefix = _upload_prefix(user_id, req.upload_id)
+    try:
+        data = read_temp_parts(prefix, req.parts)
+    except MediaUploadError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if len(data) > MAX_VIDEO_BYTES:
+        delete_temp_parts(prefix, req.parts)
+        raise HTTPException(status_code=413, detail="Please choose a video under 120 MB.")
+    try:
+        return _finish_short(data, user_id)
+    finally:
+        delete_temp_parts(prefix, req.parts)
 
 
 @router.delete("/uploads", summary="Delete a previously uploaded image, if it's yours and not needed anymore")
@@ -737,7 +796,7 @@ def _invite_redirect(invite_token: str, error: bool = False, reason: str | None 
 
 
 # ── Publish now ──────────────────────────────────────────────────────────────
-@router.post("/publish", response_model=PublishResponse, summary="Post a poster (Canva or your own upload) directly to one or more platforms, right now")
+@router.post("/publish", dependencies=[Depends(paywall_guard)], response_model=PublishResponse, summary="Post a poster (Canva or your own upload) directly to one or more platforms, right now")
 async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_id)):
     image_url = req.video_url if req.video_url else _resolve_image_url(user_id, req.poster_id, req.image_url)
     results = publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url,
@@ -772,7 +831,7 @@ async def publish(req: PublishRequest, user_id: str = Depends(get_current_user_i
 
 
 # ── Scheduling (Facebook + Instagram) ───────────────────────────────────────
-@router.post("/schedule", response_model=ScheduleResponse, summary="Schedule a poster (Canva or your own upload) to post at a future time")
+@router.post("/schedule", dependencies=[Depends(paywall_guard)], response_model=ScheduleResponse, summary="Schedule a poster (Canva or your own upload) to post at a future time")
 async def schedule(req: ScheduleRequest, user_id: str = Depends(get_current_user_id)):
     try:
         scheduled_dt = datetime.fromisoformat(req.scheduled_time.replace("Z", "+00:00"))
@@ -814,7 +873,7 @@ async def cancel_scheduled(schedule_id: str, user_id: str = Depends(get_current_
     return CancelScheduledPostResponse(cancelled=True)
 
 
-@router.post("/scheduled/{schedule_id}/retry", response_model=ScheduledPostSummary, summary="Retry a failed or partially-failed post")
+@router.post("/scheduled/{schedule_id}/retry", dependencies=[Depends(paywall_guard)], response_model=ScheduledPostSummary, summary="Retry a failed or partially-failed post")
 async def retry_scheduled(schedule_id: str, user_id: str = Depends(get_current_user_id)):
     post = get_scheduled_post(schedule_id)
     if not post or post.get("user_id") != user_id:

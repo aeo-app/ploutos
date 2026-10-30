@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from core.security import get_current_user_id
+from core.paywall import paywall_guard
 from db import check_and_lock_domain, DomainMismatchError, is_user_paid, save_analysis
 from models.social_models import SocialCalendarRequest
 from services.social_service import (
@@ -64,7 +65,7 @@ def _save_social(
 
 
 @router.post(
-    "/api/v1/social/relocation-calendar",
+    "/api/v1/social/relocation-calendar", dependencies=[Depends(paywall_guard)],
     summary="Relocation social media content calendar for a custom date range (Bedrock, blocking)",
 )
 async def relocation_calendar(
@@ -110,7 +111,7 @@ async def relocation_calendar(
 
 
 @router.post(
-    "/api/v1/social/relocation-calendar/stream",
+    "/api/v1/social/relocation-calendar/stream", dependencies=[Depends(paywall_guard)],
     summary="Relocation social media content calendar — streamed via Server-Sent Events",
 )
 async def relocation_calendar_stream(

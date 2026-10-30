@@ -23,6 +23,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import RedirectResponse
 
 from core.security import get_current_user_id, require_admin
+from core.paywall import paywall_guard
 from db import (
     get_canva_connection,
     get_canva_pkce,
@@ -393,7 +394,7 @@ async def upload_asset(user_id: str = Depends(get_current_user_id), file: Upload
     return AssetUploadResponse(asset_id=asset_id, name=file.filename or "upload.jpg")
 
 
-@router.post("/posters", response_model=PosterResponse, summary="Create a poster from a brand template for one calendar post")
+@router.post("/posters", dependencies=[Depends(paywall_guard)], response_model=PosterResponse, summary="Create a poster from a brand template for one calendar post")
 async def create_poster(req: CreatePosterRequest, user_id: str = Depends(get_current_user_id)):
     token = _get_valid_access_token(user_id)
     try:
@@ -419,7 +420,7 @@ async def create_poster(req: CreatePosterRequest, user_id: str = Depends(get_cur
 
 
 @router.post(
-    "/posters/auto-generate",
+    "/posters/auto-generate", dependencies=[Depends(paywall_guard)],
     response_model=PosterResponse,
     summary="Fully automatic poster: picks a Brand Template and generates a new image from visual_suggestion — no manual template/field selection needed",
 )
@@ -428,7 +429,7 @@ async def auto_generate_poster(req: AutoGeneratePosterRequest, user_id: str = De
 
 
 @router.post(
-    "/posters/generate",
+    "/posters/generate", dependencies=[Depends(paywall_guard)],
     response_model=PosterResponse,
     summary="Generate a poster via OpenAI — the primary poster-generation path for every user, no Canva involved",
 )
@@ -587,7 +588,7 @@ async def sync_poster_from_canva(req: EditInCanvaRequest, admin_id: str = Depend
 
 
 @router.post(
-    "/posters/{poster_id}/regenerate",
+    "/posters/{poster_id}/regenerate", dependencies=[Depends(paywall_guard)],
     response_model=PosterResponse,
     summary="Replace images (and/or text) and recreate the poster from the same brand template",
 )

@@ -13,6 +13,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.security import get_current_user_id
+from core.paywall import paywall_guard
 from db import check_and_lock_domain, DomainMismatchError, is_user_paid
 from db.dynamo import save_analysis
 from models.blog_models import (
@@ -37,7 +38,7 @@ def _enforce_domain(user_id: str, req) -> None:
 
 
 @router.post(
-    "/suggest-topics",
+    "/suggest-topics", dependencies=[Depends(paywall_guard)],
     response_model=SuggestBlogTopicsResponse,
     summary="Suggest SEO-informed blog topic ideas for a company",
 )
@@ -53,7 +54,7 @@ async def suggest_topics(req: SuggestBlogTopicsRequest, user_id: str = Depends(g
 
 
 @router.post(
-    "/generate",
+    "/generate", dependencies=[Depends(paywall_guard)],
     response_model=GenerateBlogResponse,
     summary="Write a full, ready-to-publish blog post for one topic",
 )

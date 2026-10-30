@@ -4,7 +4,7 @@ import s from './AdminShell.module.css';
 
 const ADMIN_NAV = [
   { id: 'dashboard', label: '📊 Dashboard' },
-  { id: 'analysis',  label: '🔎 Analysis & Keywords' },
+  { id: 'analysis',  label: '👤 Customer view' },
   { id: 'calendars', label: '📅 Social Media Calendars' },
   { id: 'blogs',     label: '📝 Blogs' },
 ];
@@ -16,7 +16,7 @@ const ADMIN_NAV = [
  * default (see App.js's Root()); "Exit to my account" switches to the
  * regular AppShell if they need to use the tools for their own company.
  */
-export function AdminShell({ page, onNavigate, onExitToUserView, children }) {
+export function AdminShell({ page, onNavigate, onExitToUserView, bleed = false, children }) {
   const { logout } = useAuth();
 
   return (
@@ -48,7 +48,7 @@ export function AdminShell({ page, onNavigate, onExitToUserView, children }) {
         </div>
       </header>
 
-      <main className={s.content}>{children}</main>
+      <main className={bleed ? s.contentBleed : s.content}>{children}</main>
     </div>
   );
 }

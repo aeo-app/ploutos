@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { usePayment } from '../../context/PaymentContext';
 import { seoApi } from '../../api/seoApi';
 import { aeoApi } from '../../api/aeoApi';
 import { useAeo } from '../AeoContext';
@@ -22,13 +23,25 @@ export function DomainAuthorityAeoPage() {
   const { analysis } = useAeo();
   const da = state.results.domainAuthority || state.results.fullReport?.domain_authority_strategy;
   const loading = state.loading.domainAuthority;
+  const { isPaid } = usePayment();
   const run = () => runApi('domainAuthority', seoApi.domainAuthority, state.request).catch(() => {});
+
+  const staleNow = !!da && isPaid && [da.gap_analysis, da.backlink_opportunities, da.top_5_priority_actions].some(l => (l || []).some(x => x.locked));
+  const refreshed = useRef(false);
+  // A report made on the free plan still has locked rows after upgrading: build the full one once, automatically.
+  useEffect(() => {
+    if (staleNow && !loading && !refreshed.current) { refreshed.current = true; run(); }
+  }, [staleNow, loading]);
 
   if (!da) {
     return <RunCard loading={loading} title="Analyse your domain authority" label="Run domain authority analysis"
       text="We estimate your domain authority, set 6 and 12-month targets, and list the backlink opportunities most likely to move it." onRun={run} />;
   }
 
+  // A paid account never sees locked placeholders: those only exist in a report made while on the free plan.
+  const keep = (list) => (list || []).filter(x => !(isPaid && x.locked));
+  const gaps = keep(da.gap_analysis), links = keep(da.backlink_opportunities), actions = keep(da.top_5_priority_actions);
+  const staleLocked = isPaid && [da.gap_analysis, da.backlink_opportunities, da.top_5_priority_actions].some(l => (l || []).some(x => x.locked));
   const me = (analysis?.competitors || []).find(c => c.is_you);
   const bars = [
     { name: 'You', da: da.current_da, you: true },
@@ -38,6 +51,12 @@ export function DomainAuthorityAeoPage() {
 
   return (
     <>
+      {staleLocked && (
+        <section className="ae-card ae-row" style={{ flexWrap: 'wrap', gap: 10 }}>
+          <span className="ae-sub">{loading ? 'Building your full report…' : 'This report was made before your upgrade, so some rows were hidden. Refresh it to get the full report.'}</span>
+          <button className="ae-btn sm primary" disabled={loading} onClick={run}>{loading ? 'Refreshing…' : 'Refresh report'}</button>
+        </section>
+      )}
       <section className="ae-kpis" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
         <div className="ae-kpi"><span className="ae-eyebrow">Current DA</span><b style={{ fontSize: 38, fontWeight: 800, color: '#4f46e5' }}>{da.current_da}</b><span className="ae-sub">Estimated{me ? '' : ''}</span></div>
         <div className="ae-kpi"><span className="ae-eyebrow">6-month target</span><b style={{ fontSize: 38, fontWeight: 800 }}>{da.target_da_6m}</b><span className="ae-sub">Realistic with steady link building</span></div>
@@ -58,7 +77,7 @@ export function DomainAuthorityAeoPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--ae-line2)', paddingTop: 14 }}>
             <span className="ae-eyebrow">Roadmap to {da.target_da_12m}</span>
             <div className="ae-road">
-              {(da.gap_analysis || []).slice(0, 4).map(g => (
+              {gaps.slice(0, 4).map(g => (
                 <div key={g.metric} onClick={g.locked ? () => requirePayment('domainAuthority') : undefined} style={g.locked ? { cursor: 'pointer', opacity: .7 } : undefined}>
                   <span style={{ fontSize: 11.5, fontWeight: 700, color: '#4f46e5' }}>{g.metric}</span>
                   <b style={{ fontSize: 18, fontWeight: 800 }}>{g.locked ? '🔒' : `${g.current} → ${g.twelve_month_target}`}</b>
@@ -71,7 +90,7 @@ export function DomainAuthorityAeoPage() {
 
         <section className="ae-card">
           <div className="ae-col"><h2>Backlink opportunities</h2><span className="ae-sub">Where to earn links that lift your domain authority</span></div>
-          {(da.backlink_opportunities || []).map((b, i) => (
+          {links.map((b, i) => (
             <div key={i} onClick={b.locked ? () => requirePayment('domainAuthority') : undefined}
               style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 50px 90px', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--ae-line2)', fontSize: 13.5, cursor: b.locked ? 'pointer' : 'default', opacity: b.locked ? .7 : 1 }}>
               <div className="ae-col"><b>{b.locked ? '🔒 Locked' : b.platform_or_target}</b><span style={{ fontSize: 12, color: 'var(--ae-faint)' }}>{b.locked ? 'Unlock to see this opportunity' : `${b.pillar} · ${b.action}`}</span></div>
@@ -82,10 +101,10 @@ export function DomainAuthorityAeoPage() {
         </section>
       </div>
 
-      {(da.top_5_priority_actions || []).length > 0 && (
+      {actions.length > 0 && (
         <section className="ae-card">
           <h2>Priority actions</h2>
-          {da.top_5_priority_actions.map((a, i) => (
+          {actions.map((a, i) => (
             <div key={i} className="ae-line" style={{ flexDirection: 'column', gap: 2 }}><b>{a.locked ? '🔒 Locked' : a.insight}</b>{!a.locked && <span className="ae-sub">{a.detail}</span>}</div>
           ))}
         </section>
@@ -139,11 +158,12 @@ export function CompanyAeoPage() {
     ['TAGLINE', prof?.tagline],
   ].filter(([, v]) => v);
 
+  const { isPaid } = usePayment();
   const descs = prof ? [
     ['Tagline · short', prof.tagline, false],
     ['Google Business Profile description', prof.google_business_description, locked.has('google_business_description')],
     ['LinkedIn About', prof.linkedin_overview, locked.has('linkedin_overview')],
-  ].filter(([, t]) => t) : [];
+  ].filter(([, t, isLocked]) => t && !(isPaid && isLocked)) : [];
 
   const copy = async (i, text) => {
     const ok = await copyToClipboard(text);

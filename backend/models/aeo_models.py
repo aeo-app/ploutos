@@ -31,11 +31,14 @@ POSTS_PER_CHANNEL = WEEKS_PER_MONTH * CORES_PER_WEEK      # the most any channel
 
 def channel_cores(channel: str, limited: bool = False) -> list[tuple[int, int, str]]:
     """[(core_id, week, kind)] a channel carries, in posting order. core_id = week * 5 + slot, the same on every channel.
-    The free preview is one item per channel (a poster; a reel for YouTube)."""
+    The free preview is one poster and one reel per channel, the SAME poster and the SAME reel everywhere (core ids 0 and 1);
+    YouTube is video-only, so it carries that reel."""
     out = [(w * CORES_PER_WEEK + j, w, k) for w in range(WEEKS_PER_MONTH) for j, k in enumerate(CORE_KINDS)]
     if channel == "yt":
         out = [c for c in out if c[2] == "reel"]
-    return out[:1] if limited else out
+    if limited:
+        return out[:1] if channel == "yt" else out[:2]
+    return out
 
 
 WEEKLY_PLAN: dict[str, list[str]] = {c: [k for _, w, k in channel_cores(c) if w == 0] for c in ("fb", "ig", "li", "gbp", "yt")}

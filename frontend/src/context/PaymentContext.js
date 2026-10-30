@@ -9,7 +9,7 @@ export const PaymentContext = PaymentCtx;
 export function PaymentProvider({ children }) {
   const { goScreen, logout } = useAuth();
   const [status, setStatus] = useState({
-    is_paid: false, paid_until: null, plan: null, plan_name: null,
+    is_paid: false, lapsed: false, lapse_reason: null, ever_paid: false, paid_until: null, plan: null, plan_name: null,
     auto_renew: false, payment_method_summary: null, renewal_status: null,
     renewal_failure_reason: null, last_renewal_attempt_at: null,
   });
@@ -30,7 +30,7 @@ export function PaymentProvider({ children }) {
       if (e?.code !== 'TokenExpired') {
         setError(e.message || 'Could not check payment status.');
         setStatus({
-          is_paid: false, paid_until: null, plan: null, plan_name: null,
+          is_paid: false, lapsed: false, lapse_reason: null, ever_paid: false, paid_until: null, plan: null, plan_name: null,
           auto_renew: false, payment_method_summary: null, renewal_status: null,
           renewal_failure_reason: null, last_renewal_attempt_at: null,
         });
@@ -46,7 +46,7 @@ export function PaymentProvider({ children }) {
 
   return (
     <PaymentCtx.Provider value={{
-      isPaid: status.is_paid, paidUntil: status.paid_until, plan: status.plan, planName: status.plan_name,
+      isPaid: status.is_paid, lapsed: !!status.lapsed, lapseReason: status.lapse_reason, everPaid: !!status.ever_paid, paidUntil: status.paid_until, plan: status.plan, planName: status.plan_name,
       autoRenew: status.auto_renew, paymentMethodSummary: status.payment_method_summary,
       renewalStatus: status.renewal_status, renewalFailureReason: status.renewal_failure_reason,
       lastRenewalAttemptAt: status.last_renewal_attempt_at,

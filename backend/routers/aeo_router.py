@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timezone
+import os
+from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
 
-from core.security import get_current_user_id, require_paid_access
+from core.security import get_current_user_id, get_real_user_id, require_paid_access
+from core.paywall import paywall_guard, payment_required, raise_if_lapsed, subscription_state
 from db import (
     AeoStateTooLargeError,
     DomainMismatchError,
@@ -33,6 +35,7 @@ from db import (
     get_aeo_state,
     list_aeo_content,
     get_user_domain_lock,
+    list_analyses,
     is_user_paid,
     save_aeo_content,
     save_aeo_state,
@@ -118,9 +121,64 @@ def _cached_or_generate(
 
 
 # ── Prompt visibility ─────────────────────────────────────────────────────────
-@router.post("/prompts", summary="Top prompts, per-engine visibility estimates and competitor share of voice")
-def prompts(req: AeoPromptsRequest, user_id: str = Depends(get_current_user_id)):
+# Every account, free or paid, can run one analysis per ANALYSIS_INTERVAL_DAYS (default 30). Set 0 to switch the gap off.
+# An admin acting as a customer is not limited.
+# An admin running it for a customer is never limited (they are doing the customer's setup).
+FREE_ANALYSIS_INTERVAL_DAYS = int(os.getenv("ANALYSIS_INTERVAL_DAYS", os.getenv("FREE_ANALYSIS_INTERVAL_DAYS", "30")))
+
+
+def _parse_ts(v):
+    try:
+        d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _analysis_quota(user_id: str, acting_admin: bool = False) -> dict:
+    paid = is_user_paid(user_id)
+    last = None
+    try:
+        items = (list_analyses(user_id, analysis_type="aeo_prompts", limit=1) or {}).get("items") or []
+        last = _parse_ts(items[0].get("created_at")) if items else None
+        # Upgrading earns one fresh analysis (so the previously locked rows can be seen): a run made before
+        # the account became paid does not count toward the 30-day gap.
+        if last and paid:
+            from db.payments_dynamo import get_user_entitlement
+            since = _parse_ts(get_user_entitlement(user_id).get("paid_since"))
+            if since and last < since:
+                last = None
+    except Exception as e:      # never block someone because the history lookup failed
+        logger.warning(f"[aeo] analysis quota lookup failed: {e}")
+    nxt = (last + timedelta(days=FREE_ANALYSIS_INTERVAL_DAYS)) if last else None
+    limited = FREE_ANALYSIS_INTERVAL_DAYS > 0 and not acting_admin
+    can_run = (not limited) or nxt is None or datetime.now(timezone.utc) >= nxt
+    lapsed = False
+    if not paid and not acting_admin:
+        lapsed = subscription_state(user_id)["lapsed"]
+    if lapsed:
+        can_run = True      # the button stays usable; pressing it shows the plans (the server refuses the run itself)
+    return {"paid": paid, "lapsed": lapsed, "can_run": can_run, "interval_days": FREE_ANALYSIS_INTERVAL_DAYS,
+            "last_run": last.isoformat() if last else None,
+            "next_available": nxt.isoformat() if (limited and nxt and not can_run) else None}
+
+
+def _acting_admin(real: str = Depends(get_real_user_id), current: str = Depends(get_current_user_id)) -> bool:
+    return real != current        # get_current_user_id only differs for a verified admin acting as a customer
+
+
+@router.get("/analysis-quota", summary="Can this account run an analysis now? (free: once every 30 days)")
+def analysis_quota(user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
+    return _analysis_quota(user_id, acting)
+
+
+@router.post("/prompts", dependencies=[Depends(paywall_guard)], summary="Top prompts, per-engine visibility estimates and competitor share of voice")
+def prompts(req: AeoPromptsRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     _enforce_domain(user_id, req.url, req.company_name)
+    q = _analysis_quota(user_id, acting)
+    if not q["can_run"]:
+        when = _parse_ts(q["next_available"]).strftime("%d %b %Y")
+        raise HTTPException(status_code=429, detail=f"An analysis can be run once every {FREE_ANALYSIS_INTERVAL_DAYS} days. Your next analysis is available on {when}.")
     try:
         tracker = TokenUsageTracker()
         result = generate_aeo_prompts(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
@@ -163,10 +221,15 @@ def _with_team_blogs(user_id: str, prompt: str, result):
 
 
 @router.post("/strategy", response_model=AeoStrategyResponse, summary="Strategy and blog topics for one prompt")
-def strategy(req: AeoStrategyRequest, user_id: str = Depends(get_current_user_id)):
+def strategy(req: AeoStrategyRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     # Free accounts get a trimmed preview (cheaper to generate); paid accounts get everything.
     _enforce_domain(user_id, req.url, req.company_name)
     limited = not is_user_paid(user_id)
+    if limited and not acting:
+        # Someone who paid before and has lapsed can still open what a free account would see, but a new
+        # generation (or a refresh) is a paid action.
+        if req.refresh or not get_aeo_content(user_id, "strategy", req.prompt + "|free"):
+            raise_if_lapsed(user_id)
     result = _cached_or_generate(
         user_id, "strategy", req.prompt + ("|free" if limited else ""), req.refresh, AeoStrategyResponse,
         lambda t: generate_aeo_strategy(req, usage_tracker=t, limited=limited),
@@ -179,7 +242,7 @@ def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user
     _enforce_domain(user_id, req.url, req.company_name)
     # Reading an existing draft (including one written by our team) is free; generating a new one is paid.
     if not get_aeo_content(user_id, "blog", f"{req.prompt}|{req.title}") and not is_user_paid(user_id):
-        raise HTTPException(status_code=402, detail="Blog drafts are part of a paid plan.")
+        raise payment_required(user_id, "Blog drafts are part of a paid plan.")
     return _cached_or_generate(
         user_id, "blog", f"{req.prompt}|{req.title}", req.refresh, AeoBlogDraftResponse,
         lambda t: generate_aeo_blog_draft(req, usage_tracker=t),
@@ -236,12 +299,14 @@ def _adopt_team_calendar(user_id: str, key: str, limited: bool) -> None:
 
 
 @router.post("/social-posts", response_model=AeoSocialResponse, summary="A month of posters and reels for each channel, for one prompt")
-def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id)):
+def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     _enforce_domain(user_id, req.url, req.company_name)
     limited = not is_user_paid(user_id)
     if limited and req.cycle:
-        raise HTTPException(status_code=402, detail="Later months are part of the paid plans.")
+        raise payment_required(user_id, "Later months are part of the paid plans.")
     key = _social_key(req.prompt, limited, req.cycle)
+    if limited and not acting and (req.refresh or not get_aeo_content(user_id, "social", key)):
+        raise_if_lapsed(user_id)        # a lapsed subscriber cannot generate a new calendar or refresh one
     if req.prompt == CALENDAR_PROMPT and not req.cycle and not get_aeo_content(user_id, "social", key):
         _adopt_team_calendar(user_id, key, limited)
     res = _cached_or_generate(
@@ -270,7 +335,7 @@ class KeywordSuggestRequest(BaseModel):
     industry: str = "General"
 
 
-@router.post("/keywords/suggest", summary="Top 10 keywords for this business, taken from its own website")
+@router.post("/keywords/suggest", dependencies=[Depends(paywall_guard)], summary="Top 10 keywords for this business, taken from its own website")
 def keywords_suggest(req: KeywordSuggestRequest, user_id: str = Depends(get_current_user_id)):
     _enforce_domain(user_id, req.url, req.company_name)
     kws = suggest_site_keywords(req.company_name, req.url, req.market, req.industry, usage_tracker=TokenUsageTracker())
@@ -441,7 +506,7 @@ class ShortRequest(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=20)
 
 
-@router.post("/short-video", summary="Start creating a YouTube Short (vertical video) for a post; poll GET /short-video/{job_id}")
+@router.post("/short-video", dependencies=[Depends(paywall_guard)], summary="Start creating a YouTube Short (vertical video) for a post; poll GET /short-video/{job_id}")
 def start_short(req: ShortRequest, background: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
     params = req.model_dump()
     params["keywords"] = clean_keywords(params.get("keywords"))
@@ -499,6 +564,11 @@ def _clean_str_list(values: list[str], limit: int, max_len: int = 300) -> list[s
             seen.add(v.lower())
             out.append(v)
     return out[:limit]
+
+
+@router.get("/whoami", summary="Whose data the server will use for this request (lets an admin's customer view prove it is acting as the customer)")
+def whoami(real: str = Depends(get_real_user_id), current: str = Depends(get_current_user_id)):
+    return {"signed_in_as": real, "working_on": current, "acting": real != current}
 
 
 @router.get("/state", response_model=AeoState, summary="Saved custom prompts/competitors, selection, links and approvals")

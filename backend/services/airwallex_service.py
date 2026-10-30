@@ -78,12 +78,12 @@ PAYMENT_CURRENCY = "SGD"
 # then only charges once the paid period has actually ended (no 24h early window)
 # and, if the day is too long to wait, PAID_ACCESS_MINUTES=5 makes a period 5 minutes.
 # TURN OFF BEFORE LAUNCH: set AUTOPAY_TEST_MODE=false (prices and 30-day access return).
-AUTOPAY_TEST_MODE = os.getenv("AUTOPAY_TEST_MODE", "true").lower() == "true"
+AUTOPAY_TEST_MODE = os.getenv("AUTOPAY_TEST_MODE", "false").lower() == "true"
 AUTOPAY_TEST_STARTER_PRICE = os.getenv("AUTOPAY_TEST_STARTER_PRICE", "1.00")
 PAID_ACCESS_MINUTES = int(os.getenv("PAID_ACCESS_MINUTES", "0"))   # optional: even shorter Starter period, for quick tests
 PAID_ACCESS_DAYS = int(os.getenv("PAID_ACCESS_DAYS", "30"))        # Growth / Scale (and any plan without its own length)
-# Per-plan access length in days. Starter is 1 day for now (autopay testing); set STARTER_ACCESS_DAYS=30 for the real plan.
-PLAN_ACCESS_DAYS = {"starter": int(os.getenv("STARTER_ACCESS_DAYS", "1"))}
+# Per-plan access length in days. Starter defaults to 30 days like the others; set STARTER_ACCESS_DAYS=1 (with AUTOPAY_TEST_MODE=true) to test autopay.
+PLAN_ACCESS_DAYS = {"starter": int(os.getenv("STARTER_ACCESS_DAYS", "30"))}
 # How long before paid_until the renewal job starts charging. Test mode: only once it has ended.
 RENEWAL_WINDOW_HOURS = float(os.getenv("RENEWAL_WINDOW_HOURS", "24"))   # plans with a period under 2 days renew only once it has ended
 # A charge left "pending" is not charged again for this long; a failed one is retried no sooner than this.
@@ -221,7 +221,7 @@ _catalog_prices: dict[str, dict[str, str]] = {}
 _catalog_loaded_at = 0.0
 
 
-def get_plan_price(plan_id: str, currency: str | None = None) -> str:
+def get_plan_price(plan_id: str, currency: str | None = None, marketing: bool = False) -> str:
     """Return the configured product price for a plan and currency.
     Tries, in order: (1) the LIVE Airwallex catalog, (2) AIRWALLEX_PRODUCT_PRICES_JSON
     as a manual override/fallback, (3) the hardcoded local amount for the
@@ -232,7 +232,7 @@ def get_plan_price(plan_id: str, currency: str | None = None) -> str:
     global _catalog_prices, _catalog_loaded_at
     plan = PLANS[plan_id]
     currency_code = (currency or PAYMENT_CURRENCY).upper()
-    if AUTOPAY_TEST_MODE and plan_id == "starter":
+    if AUTOPAY_TEST_MODE and plan_id == "starter" and not marketing:
         logger.warning(f"[airwallex] starter/{currency_code} = {AUTOPAY_TEST_STARTER_PRICE} (AUTOPAY TEST MODE — not the real price)")
         return AUTOPAY_TEST_STARTER_PRICE
     now = time.time()
@@ -354,10 +354,10 @@ def _fetch_catalog_prices() -> dict[str, dict[str, str]]:
     return prices
 
 
-def get_plan(plan_id: str, currency: str | None = None) -> dict:
+def get_plan(plan_id: str, currency: str | None = None, marketing: bool = False) -> dict:
     """Return plan metadata with the price for the requested currency."""
     plan = PLANS[plan_id]
-    return {**plan, "amount": get_plan_price(plan_id, currency)}
+    return {**plan, "amount": get_plan_price(plan_id, currency, marketing)}
 
 # IMPORTANT — these per-plan feature lists are marketing copy carried over
 # verbatim from the landing page. The backend does NOT currently enforce any

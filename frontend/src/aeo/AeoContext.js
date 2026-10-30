@@ -19,6 +19,9 @@ export function AeoProvider({ children }) {
   const [saved, setSaved] = useState(EMPTY);
   const [brand, setBrandState] = useState({ loaded: false, complete: false, missing: [], data: {} });
   const [savedLoaded, setSavedLoaded] = useState(false);
+  // Everyone (free and paid): one analysis every 30 days. { can_run, next_available, ... } (null until loaded)
+  const [quota, setQuota] = useState(null);
+  const loadQuota = useCallback(() => aeoApi.analysisQuota().then(q => setQuota(q)).catch(() => {}), []);
   // Competitors the customer removed stay out of every screen (the table, share of voice, domain authority bars).
   const hiddenKey = (saved.hidden_competitors || []).join('\u0001').toLowerCase() + '\u0002' + (saved.hidden_prompts || []).join('\u0001').toLowerCase();
   const analysis = useMemo(() => {
@@ -44,9 +47,13 @@ export function AeoProvider({ children }) {
   const contentRef = useRef(content);
   contentRef.current = content;
 
+  // Upgrading earns one fresh analysis: re-check the limit as soon as the account becomes paid.
+  useEffect(() => { loadQuota(); }, [isPaid, loadQuota]);
+
   /* ── saved dashboard state ─────────────────────────────── */
   useEffect(() => {
     let off = false;
+    loadQuota();
     aeoApi.teamIndex().then(d => { if (!off && d) setTeam({ blogs: d.blogs || [], social: d.social || [], strategy: d.strategy || [] }); }).catch(() => {});
     aeoApi.getBrand().then(d => { if (!off && d) setBrandState({ loaded: true, complete: !!d.complete, missing: d.missing || [], data: d.brand || {}, found: null }); }).catch(() => { if (!off) setBrandState(b => ({ ...b, loaded: true })); });
     aeoApi.getState()
@@ -143,13 +150,20 @@ export function AeoProvider({ children }) {
   const clearSelection = () => patch({ selected_prompts: [] });
 
   /* ── the analysis itself ───────────────────────────────── */
+  const runningRef = useRef(false);
   const runAnalysis = useCallback(async () => {
-    if (isActingAs()) { toast({ type: 'info', message: 'This customer has not run an analysis yet. They run it from their own account.' }); return null; }
+    if (quota && quota.can_run === false) {
+      const when = quota.next_available ? new Date(quota.next_available).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'later';
+      toast({ type: 'info', message: `An analysis can be run once every ${quota.interval_days || 30} days. Your next one is available on ${when}.` });
+      return null;
+    }
     const r = state.request;
     if (!r.company_name || !r.url) {
       toast({ type: 'error', message: 'Add your company name and website in your profile first.' });
       return null;
     }
+    if (runningRef.current) return null;        // one analysis at a time (e.g. a click while the plans popup is open)
+    runningRef.current = true;
     const before = state.results.aeoPrompts;
     try {
       const data = await runApi('aeoPrompts', aeoApi.prompts, {
@@ -159,10 +173,12 @@ export function AeoProvider({ children }) {
       });
       if (before) setPrev(before);
       setLastRun(new Date().toISOString());
+      loadQuota();
       // generated content is per-prompt, cached server-side; a fresh run keeps those caches.
       return data;
-    } catch (_) { return null; }
-  }, [state.request, state.results.aeoPrompts, runApi, toast]);
+    } catch (e) { if (e.code === 'AnalysisLimit') loadQuota(); return null; }
+    finally { runningRef.current = false; }
+  }, [state.request, state.results.aeoPrompts, runApi, toast, quota, loadQuota]);
 
   /* ── per-prompt generated content (paid) ───────────────── */
   const generate = useCallback(async (kind, key, payloadKey, call, refresh = false) => {
@@ -309,7 +325,7 @@ export function AeoProvider({ children }) {
   };
 
   const value = useMemo(() => ({
-    analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
+    quota, analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
     brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,

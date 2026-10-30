@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar }  from './TopBar';
 import { useApp } from '../../context/AppContext';
+import { usePayment } from '../../context/PaymentContext';
+import { openPaywall, LAPSE_TEXT } from '../../utils/paywall';
 import { UnlockModal } from '../payment/UnlockModal';
 import { PagePickerModal } from '../canva/PagePickerModal';
 import { historyApi } from '../../api/historyApi';
+import { isActingAs } from '../../api/seoApi';
 import { consumeRememberedPage, consumeConnectAttempt, markConnectInProgress, clearConnectInProgress } from '../../utils/oauthReturn';
 import '../../aeo/aeo.css';
 
@@ -33,6 +36,7 @@ export function AppShell({ children, profile, onEnterAdminView }) {
   const [disconnectedPlatforms, setDisconnectedPlatforms] = useState([]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const { state, setRequest, setResultKey, clearPaymentRequired, toast, setAdmin, setPage } = useApp();
+  const { lapsed, lapseReason } = usePayment();
 
   // Checked once on load — a SCHEDULED post can fail overnight when the
   // background scheduler runs, well after the user was last looking at
@@ -41,6 +45,7 @@ export function AppShell({ children, profile, onEnterAdminView }) {
   // toast, since toasts auto-disappear and this needs to stay visible
   // until actually addressed.
   useEffect(() => {
+    if (isActingAs()) return;   // an admin viewing a customer: connections are the customer's, not the admin's
     import('../../api/socialPublishApi').then(({ socialPublishApi }) => {
       socialPublishApi.status()
         .then(d => {
@@ -190,6 +195,14 @@ export function AppShell({ children, profile, onEnterAdminView }) {
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className="ae-main">
         <TopBar onMenu={() => setOpen(v => !v)} onEnterAdminView={onEnterAdminView} />
+        {lapsed && !isActingAs() && (
+          <div className="ae-banner" role="alert" data-testid="lapsed-banner">
+            <span>
+              🔒 {LAPSE_TEXT[lapseReason] || LAPSE_TEXT.expired} Analysis, posters, calendars and blogs are paused until you choose a plan.
+            </span>
+            <button type="button" className="ae-btn sm" onClick={() => openPaywall({ reason: lapseReason })}>Choose a plan</button>
+          </div>
+        )}
         {disconnectedPlatforms.length > 0 && !bannerDismissed && (
           <div className="ae-banner">
             <span>

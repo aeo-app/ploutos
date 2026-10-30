@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { withTokenExpiry } from '../api/authApi';
 import { useAuth } from './AuthContext';
+import { isPaywallSuppressed } from '../utils/paywall';
 
 const Ctx = createContext(null);
 export const AppCtx = Ctx;
@@ -65,7 +66,7 @@ export function AppProvider({ children }) {
 
   const clearPaymentRequired = useCallback(() => dispatch({ type: 'CLEAR_PAYMENT_REQUIRED' }), []);
   // For features that aren't run through runApi (keyed AEO content, locked rows).
-  const requirePayment = useCallback((key) => dispatch({ type: 'SET_PAYMENT_REQUIRED', key }), []);
+  const requirePayment = useCallback((key) => { if (!isPaywallSuppressed()) dispatch({ type: 'SET_PAYMENT_REQUIRED', key }); }, []);
 
   const runApi = useCallback(async (key, fn, req) => {
     dispatch({ type: 'SET_LOADING', key, val: true });
@@ -79,7 +80,7 @@ export function AppProvider({ children }) {
         // Restricted content — trigger payment here, contextually, rather
         // than blocking the whole app. No generic error toast for this one;
         // AppShell's shared UnlockModal takes over instead.
-        dispatch({ type: 'SET_PAYMENT_REQUIRED', key });
+        if (!isPaywallSuppressed()) dispatch({ type: 'SET_PAYMENT_REQUIRED', key });
       } else if (e.code !== 'TokenExpired') {
         // Only show error if not TokenExpired (withTokenExpiry already handles redirect)
         dispatch({ type: 'SET_ERROR', key, err: e.message });

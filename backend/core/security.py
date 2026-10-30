@@ -22,7 +22,7 @@ import urllib.request
 from functools import lru_cache
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,7 @@ def get_current_user_id(
     real: str = Depends(get_real_user_id),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     x_act_as_user: Optional[str] = Header(None, alias="X-Act-As-User"),
+    act_as: Optional[str] = Query(None, alias="act_as"),
 ) -> str:
     """
     The user whose data a request works on. Normally the signed-in user. When a
@@ -183,7 +184,9 @@ def get_current_user_id(
     and edits exactly what the customer would. Non-admins sending the header are
     rejected (never silently ignored) so it can't be used to probe other accounts.
     """
-    target = (x_act_as_user or "").strip()
+    # The header is the normal way; the query parameter does the same for setups where a gateway or proxy drops
+    # custom headers. Either way the caller must be a verified admin.
+    target = (x_act_as_user or act_as or "").strip()
     if not target or target == real:
         return real
     if "Admins" not in _groups_from_authorization(authorization):

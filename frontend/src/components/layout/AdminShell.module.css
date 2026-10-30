@@ -35,3 +35,5 @@
   .nav { display: none; }
   .content { padding: 16px; }
 }
+
+.contentBleed { padding: 0; max-width: none; }

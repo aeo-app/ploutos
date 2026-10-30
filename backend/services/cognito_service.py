@@ -349,6 +349,34 @@ def list_users_in_group(group_name: str = ADMIN_GROUP_NAME) -> list[dict]:
         raise _map_error(e)
 
 
+_country_cache: dict[str, str] = {}
+
+
+def get_user_country_admin(username: str, sub: str = "") -> str:
+    """A customer's registered country (custom:country), read with admin rights — for the admin's customer view.
+    Tries the Cognito Username (the email in this pool) first, then the sub. Returns "" if it can't be read."""
+    key = username or sub
+    if not key:
+        return ""
+    if key in _country_cache:
+        return _country_cache[key]
+    try:
+        _require_config()
+        client = _get_client()
+    except Exception:  # noqa: BLE001
+        return ""
+    for who in [w for w in (username, sub) if w]:
+        try:
+            resp = client.admin_get_user(UserPoolId=POOL_ID, Username=who)
+            attrs = {a["Name"]: a["Value"] for a in resp.get("UserAttributes", [])}
+            country = attrs.get("custom:country", "") or ""
+            _country_cache[key] = country
+            return country
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[cognito] admin_get_user({who!r}) failed: {e}")
+    return ""
+
+
 def update_user_profile(access_token: str, company_name: str, domain: str, country: str) -> dict:
     """
     Sets custom:company_name / custom:domain for the CURRENTLY authenticated

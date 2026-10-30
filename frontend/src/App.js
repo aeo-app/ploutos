@@ -6,20 +6,12 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { PaymentProvider } from './context/PaymentContext';
 import { AppShell }              from './components/layout/AppShell';
 import { AeoProvider }           from './aeo/AeoContext';
-import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage } from './aeo/pages/AnalyticsPages';
-import { DomainAuthorityAeoPage, CompanyAeoPage } from './aeo/pages/DomainCompanyPages';
-import { StrategyAeoPage, BlogsAeoPage, CalendarAeoPage } from './aeo/pages/ContentPages';
 import { Toasts }                from './components/ui/Toast';
+import { PaywallHost }           from './components/payment/PaywallHost';
 import { authApi } from './api/authApi';
 import { CompleteProfilePage } from './pages/auth/CompleteProfilePage';
 
 // App pages
-import { CompetitorsPage }     from './pages/CompetitorsPage';
-import { KeywordsPage }        from './pages/KeywordsPage';
-import { ContentStrategyPage } from './pages/ContentStrategyPage';
-import { HistoryPage } from './pages/HistoryPage';
-import { BillingPage } from './pages/BillingPage';
-import { ArticleGeneratorPage } from './pages/ArticleGeneratorPage';
 import { AdminApp } from './pages/AdminApp';
 import { AdminErrorBoundary } from './components/AdminErrorBoundary';
 import { ConnectPageApprovalPage } from './pages/ConnectPageApprovalPage';
@@ -37,31 +29,7 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { LandingPage }      from './pages/landing/LandingPage';
 
 import { AnimatePresence, motion } from 'framer-motion';
-
-/* ── App page router ─────────────────────────────────────── */
-const APP_PAGES = {
-  // AEO dashboard
-  home:           DashboardPage,
-  aeoPrompts:     PromptsPage,
-  aeoCompetitors: CompetitorsAeoPage,
-  aeoEngines:     EnginesPage,
-  da:             DomainAuthorityAeoPage,
-  profile:        CompanyAeoPage,
-  aeoStrategy:    StrategyAeoPage,
-  aeoBlogs:       BlogsAeoPage,
-  aeoCalendar:    CalendarAeoPage,
-  // Original tools, still reachable from "More tools"
-  compete:  CompetitorsPage,
-  keywords: KeywordsPage,
-  contentStrategy: ContentStrategyPage,
-  publishCalendar: CalendarAeoPage,
-  relocationCalendar: CalendarAeoPage,
-  blogs: BlogsAeoPage,
-  history: HistoryPage,
-  billing: BillingPage,
-  blogTopics: BlogsAeoPage,
-  articleGenerator: ArticleGeneratorPage,
-};
+import { AppRouter } from './AppRouter';
 
 const AUTH_SCREENS = {
   'landing':       LandingPage,
@@ -71,24 +39,6 @@ const AUTH_SCREENS = {
   'signup':        SignupPage,
   'signup-verify': SignupVerifyPage,
 };
-
-const pageVariants = {
-  initial: { opacity: 0, y: 14 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.32, ease: [0.4, 0, 0.2, 1] } },
-  exit:    { opacity: 0, y: -8,  transition: { duration: 0.18 } },
-};
-
-function AppRouter() {
-  const { state } = useApp();
-  const Page = APP_PAGES[state.page] || DashboardPage;
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div key={state.page} variants={pageVariants} initial="initial" animate="animate" exit="exit">
-        <Page />
-      </motion.div>
-    </AnimatePresence>
-  );
-}
 
 function ProfileGate({ children }) {
   const [checking, setChecking] = useState(true);
@@ -173,6 +123,7 @@ function Root() {
               <AdminAwareRoot profile={profile} />
             </AeoProvider>
             <Toasts />
+            <PaywallHost />
           </AppProvider>
         </PaymentProvider>
       )}

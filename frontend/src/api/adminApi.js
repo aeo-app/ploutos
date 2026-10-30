@@ -104,6 +104,7 @@ export const adminApi = {
 // ── AEO dashboard: team review of blogs and social posts ─────────────────────
 export const adminAeoApi = {
   overview: () => req("GET", "/admin/aeo/overview"),
+  billing: (userId) => req("GET", `/admin/aeo/users/${encodeURIComponent(userId)}/billing`),
   workspace: (userId) => req("GET", `/admin/aeo/users/${encodeURIComponent(userId)}`),
   saveContent: (userId, body) => req("PUT", `/admin/aeo/users/${encodeURIComponent(userId)}/content`, body),
   aiBlog: (userId, body) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/blog/ai-draft`, body),

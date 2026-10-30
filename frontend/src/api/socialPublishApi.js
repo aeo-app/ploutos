@@ -1,5 +1,6 @@
 import { ApiError } from "./authApi";
-import { BASE, checkAuthTokens, getAuthHeaders } from "./seoApi";
+import { BASE, checkAuthTokens, getAuthHeaders, getActAs } from "./seoApi";
+import { adminAeoApi } from "./adminApi";
 
 async function req(method, path, body) {
   try {
@@ -47,14 +48,41 @@ async function uploadReq(path, file) {
   }
 }
 
+// Sent in small pieces so no proxy or load balancer in front of the API can answer "413 Request Entity Too Large".
+const PIECE = 700 * 1024;
+async function uploadVideoInPieces(file, onProgress) {
+  if (file.size <= PIECE) return uploadReq("/social-publish/uploads/video", file);
+  const id = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`).replace(/[^A-Za-z0-9-]/g, "");
+  const total = Math.ceil(file.size / PIECE);
+  let next = 0, done = 0, failed = null;
+  const worker = async () => {
+    while (!failed) {
+      const i = next++;
+      if (i >= total) return;
+      try {
+        for (let attempt = 0; ; attempt++) {
+          try { await uploadReq(`/social-publish/uploads/video/part?upload_id=${id}&index=${i}`, file.slice(i * PIECE, (i + 1) * PIECE)); break; }
+          catch (e) { if (attempt >= 2 || e.code === "TokenExpired") throw e; }
+        }
+        done++; if (onProgress) onProgress(done / total);
+      } catch (e) { failed = e; }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  if (failed) throw failed;
+  return req("POST", "/social-publish/uploads/video/complete", { upload_id: id, parts: total });
+}
+
 export const socialPublishApi = {
+  /** Connections of whoever is being shown: the signed-in user, or (admin in a customer's app) that customer, read-only. */
+  statusForView: () => (getActAs() ? adminAeoApi.socialStatus(getActAs()) : req("GET", "/social-publish/status")),
   status: () => req("GET", "/social-publish/status"),
   /** @param {'meta'|'linkedin'|'google_business'|'youtube'} platform - "meta" covers both Facebook + Instagram in one OAuth flow */
   connect: (platform) => req("GET", `/social-publish/${platform}/connect`),
   disconnect: (platform) => req("POST", `/social-publish/${platform}/disconnect`),
   /** @param {File} file - a browser File object, e.g. from an <input type="file"> */
   uploadMedia: (file) => uploadReq("/social-publish/uploads", file),
-  uploadVideo: (file) => uploadReq("/social-publish/uploads/video", file),
+  uploadVideo: (file, onProgress) => uploadVideoInPieces(file, onProgress),
   /** @param {string} imageUrl, @param {boolean} force - force=true overrides the "still used by a published post" safety check */
   deleteUploadedImage: (imageUrl, force = false) => req("DELETE", `/social-publish/uploads?image_url=${encodeURIComponent(imageUrl)}${force ? '&force=true' : ''}`),
   /** @param {object} payload - {poster_id?, image_url?, caption, platforms: [...], cta_url?} — exactly one of poster_id/image_url */
