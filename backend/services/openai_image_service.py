@@ -112,6 +112,10 @@ def generate_image_from_prompt(prompt: str, *, width: int | None = None, height:
             detail = resp.text[:300]
         raise OpenAIImageError(f"OpenAI image generation failed (status {resp.status_code}): {detail}")
 
+    return _image_bytes_from_response(resp)
+
+
+def _image_bytes_from_response(resp) -> bytes:
     try:
         data = resp.json()["data"][0]
     except (KeyError, IndexError, ValueError) as e:
@@ -135,3 +139,57 @@ def generate_image_from_prompt(prompt: str, *, width: int | None = None, height:
             raise OpenAIImageError(f"Could not download the generated image from OpenAI: {e}")
 
     raise OpenAIImageError("OpenAI's image API response contained neither b64_json nor url data.")
+
+
+OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
+_EDIT_TIMEOUT = 150.0
+
+
+def photo_edit_prompt(scene: str, *, heading_space: bool = False) -> str:
+    """Instruction for building an image FROM the customer's real photographs."""
+    parts = [
+        "The attached images are real photographs supplied by the business owner. Build ONE polished, realistic social media image from them.",
+        "Keep the real people, products, vehicles, premises and surroundings exactly as they appear — do not replace them with invented ones, "
+        "do not change faces, and do not add logos or text. You may crop, straighten, balance light and colour, and place them in a clean, attractive composition.",
+        f"What the image should convey: {scene.strip()[:900]}",
+        "Leave the bottom 15% of the frame uncluttered (a contact bar is added there)."
+        + (" Also leave the top 30% uncluttered (a headline is added there)." if heading_space else ""),
+        "Style: natural lighting, true-to-life colour, editorial quality. No text, captions, logos or watermarks.",
+    ]
+    return "\n".join(parts)
+
+
+def edit_image_from_photos(prompt: str, photos: list[bytes], *, width: int | None = None, height: int | None = None) -> bytes:
+    """Makes one image from the customer's own photographs (OpenAI image edits, several inputs allowed) and returns
+    the raw image bytes. Raises OpenAIImageError on any failure."""
+    if not OPENAI_API_KEY:
+        raise OpenAIImageError("OPENAI_API_KEY is not configured — set it as an environment variable before generating images.")
+    if not photos:
+        raise OpenAIImageError("No photos were supplied.")
+    model = os.getenv("OPENAI_IMAGE_EDIT_MODEL", OPENAI_IMAGE_MODEL)
+    data = {"model": model, "prompt": prompt, "size": _closest_supported_size(width, height), "n": "1"}
+    if model.startswith("gpt-image"):
+        data["quality"] = os.getenv("OPENAI_IMAGE_QUALITY", "high")
+        data["input_fidelity"] = os.getenv("OPENAI_INPUT_FIDELITY", "high")   # keep the real subjects faithful
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    field = "image[]" if len(photos) > 1 or model.startswith("gpt-image") else "image"
+
+    def attempt(payload: dict):
+        files = [(field, (f"photo{i + 1}.jpg", raw, "image/jpeg")) for i, raw in enumerate(photos)]
+        return requests.post(OPENAI_IMAGE_EDITS_URL, data=payload, files=files, headers=headers, timeout=_EDIT_TIMEOUT)
+
+    try:
+        resp = attempt(data)
+        if resp.status_code == 400 and "input_fidelity" in resp.text and "input_fidelity" in data:
+            data.pop("input_fidelity")          # an older image model that does not know the option
+            resp = attempt(data)
+    except requests.RequestException as e:
+        raise OpenAIImageError(f"Could not reach OpenAI's image API: {e}")
+    if resp.status_code != 200:
+        detail = ""
+        try:
+            detail = resp.json().get("error", {}).get("message", "")
+        except ValueError:
+            detail = resp.text[:300]
+        raise OpenAIImageError(f"OpenAI image generation failed (status {resp.status_code}): {detail}")
+    return _image_bytes_from_response(resp)

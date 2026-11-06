@@ -11,6 +11,13 @@ AEO-APP.ai is an answer-engine-optimization (AEO) and SEO platform. It audits ho
 
 ## Blog posts
 
+- [ChatGPT vs Claude Brand Citations: How Often Do They Match?](https://www.aeo-app.ai/blog/chatgpt_vs_claude_brand_citations_blog_post): ChatGPT and Claude may cite different brands. Learn why, how it affects your AI brand visibility, and how to track mentions and citations across both.
+- [ChatGPT vs Perplexity vs Gemini: Which Drives More Traffic?](https://www.aeo-app.ai/blog/chatgpt_vs_perplexity_vs_gemini_blog_post): Which AI search engine sends more brand traffic: ChatGPT, Perplexity or Gemini? See how each works and how to track your brand mentions and citations.
+- [Entity Authority: How LLMs Decide Which Brands to Trust](https://www.aeo-app.ai/blog/entity_authority_blog_post): Learn how entity authority works and which signals make ChatGPT, Claude, and Gemini trust a brand enough to recommend it. Build your AI brand visibility.
+- [How to Correct Wrong Brand Information in AI Answers](https://www.aeo-app.ai/blog/how-to-correct-wrong-brand-information-in-ai-answers): Is ChatGPT or Gemini getting your brand wrong? Learn why AI shows outdated or incorrect details and the steps that fix them at the source.
+- [Server Logs: How to Identify AI Crawler Traffic on Your Site](https://www.aeo-app.ai/blog/server_logs_ai_crawlers_blog_post): Learn how to spot GPTBot, ClaudeBot, and PerplexityBot in your server logs, tell real AI crawlers from fake ones, and check if they help your AI visibility.
+- [Updating Old Content for AI Search: Freshness Signals That Matter](https://www.aeo-app.ai/blog/updating_old_content_for_ai_search_blog_post): Learn which freshness signals matter for AI search and how to update old content so ChatGPT, Perplexity, and Gemini see your pages as current and trustworthy.
+- [Why Original Data Gets Cited More by AI Assistants](https://www.aeo-app.ai/blog/why_original_data_gets_cited_more_by_ai_assistants): Original data and research give AI assistants a reason to cite your brand. Learn why it works and how to present your data so ChatGPT and others use it.
 - [AEO vs SEO vs GEO: The Complete Guide](https://www.aeo-app.ai/blog/aeo-vs-seo-vs-geo-the-complete-guide): A clear, honest breakdown of what SEO, AEO, and GEO actually mean, where the terms genuinely overlap and disagree, and what to actually do about each one.
 - [The Complete Guide to Schema Markup for AI Search Visibility](https://www.aeo-app.ai/blog/the-complete-guide-to-schema-markup-for-ai-search-visibility): Discover how schema markup drives AI search visibility in tools like ChatGPT and Gemini. Learn page-by-page checklists and how to avoid schema errors.
 - [How to Write an llms.txt File for Your Website](https://www.aeo-app.ai/blog/how-to-write-an-llmstxt-file-for-your-website): Learn what an llms.txt file is, why businesses use it for AI search optimization, where to place it, and how to avoid setup errors.
@@ -18,6 +25,7 @@ AEO-APP.ai is an answer-engine-optimization (AEO) and SEO platform. It audits ho
 - [Why Zero-Click Search Is Reshaping B2B Buyer Journeys](https://www.aeo-app.ai/blog/why-zero-click-search-is-reshaping-b2b-buyer-journeys): Discover how AI chatbots and zero-click search are changing B2B buyer journeys. Learn the 4-part AEO framework to adapt and win AI recommendations.
 - [How ChatGPT, Perplexity, and Gemini Choose What to Recommend](https://www.aeo-app.ai/blog/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend): Learn how AI answer engines like ChatGPT, Perplexity, and Gemini recommend businesses, and discover the 5 technical AEO factors keeping your site visible.
 - [How to Add FAQ Page Schema in 10 Minutes](https://www.aeo-app.ai/blog/how-to-add-faq-page-schema-in-10-minutes): Learn how to set up FAQ page schema quickly, avoid common JSON-LD errors, and keep structured data up to date across your entire site.
+- [How to Get Your Small Business Mentioned in AI Answers](https://www.aeo-app.ai/blog/aeo_checklist_for_small_businesses): Is ChatGPT naming your competitor instead of you? Use this easy checklist to fix your details, build proof, and show up in AI search answers.
 
 ## Optional
 

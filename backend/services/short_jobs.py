@@ -17,6 +17,7 @@ from db.dynamo import get_short_job, save_short_job
 from services import brand_service as brand_svc
 from services.media_upload_service import signed_view_url, upload_image, upload_video
 from services.openai_image_service import OpenAIImageError
+from services.photo_service import PhotoError, load_photos
 from services.shorts_service import ShortError, generate_short
 
 logger = logging.getLogger(__name__)
@@ -35,9 +36,11 @@ def run_job(user_id: str, job_id: str, params: dict, on_done: Optional[Callable[
     started = time.time()
     try:
         brand, logo = brand_svc.require_brand(user_id)
+        photos = load_photos(params.get("photo_urls"), user_id)
         res = generate_short(
             user_id, params.get("company_name") or "", params.get("industry") or "", brand, logo,
             params.get("title") or "", params.get("visual") or params.get("text") or "", params.get("keywords") or [],
+            photos=photos, heading=params.get("heading") or "", subheading=params.get("subheading") or "",
         )
         video_url = upload_video(res["video"], user_id)
         thumb_url = upload_image(res["thumbnail"], "short-thumb.jpg", user_id)
@@ -46,7 +49,7 @@ def run_job(user_id: str, job_id: str, params: dict, on_done: Optional[Callable[
             on_done(done)
         save_short_job(user_id, job_id, done)
         logger.info(f"[shorts] job {job_id} done for user={user_id} in {time.time() - started:.0f}s")
-    except (ShortError, OpenAIImageError) as e:
+    except (ShortError, OpenAIImageError, PhotoError) as e:
         logger.error(f"[shorts] job {job_id} failed for user={user_id}: {e}")
         save_short_job(user_id, job_id, {"status": "error", "error": f"Could not create the video: {e}", "started": started})
     except Exception as e:  # noqa: BLE001

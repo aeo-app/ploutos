@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from services import brand_service as brand_svc
-from services.brand_overlay import brand_bar_layer, font
+from services.brand_overlay import brand_bar_layer, font, headline_layer
 from services.openai_image_service import OpenAIImageError, generate_image_from_prompt
 
 logger = logging.getLogger(__name__)
@@ -114,9 +114,15 @@ def _cover(img: Image.Image, w: int, h: int) -> Image.Image:
     return ImageOps.fit(img.convert("RGB"), (w, h), Image.LANCZOS, centering=(0.5, 0.4))
 
 
-def _caption_layer(text: str, brand: dict, logo: bytes | None) -> Image.Image:
-    """Transparent 1080x1920 layer: a big caption in the middle-lower third + the brand bar in the safe zone."""
+HEADLINE_TOP = 250     # below the Shorts player's own top controls
+
+
+def _caption_layer(text: str, brand: dict, logo: bytes | None, heading: str = "", subheading: str = "") -> Image.Image:
+    """Transparent 1080x1920 layer: the optional heading + subheading near the top, a big caption in the middle-lower
+    third, and the brand bar in the safe zone."""
     layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    if (heading or "").strip() or (subheading or "").strip():
+        layer.alpha_composite(headline_layer(W, H, heading, subheading, top=HEADLINE_TOP))
     draw = ImageDraw.Draw(layer)
     if text.strip():
         f = font(70, "Bold")
@@ -146,8 +152,8 @@ def _scene_prompts(visual: str, n: int) -> list[str]:
     return [f"{visual.strip()}\nThis is scene {i + 1} of {n} of a short video. {beats[min(i, len(beats) - 1)]}" for i in range(n)]
 
 
-def _captions(title: str, keywords: list[str], n: int) -> list[str]:
-    caps = [title.strip() or (keywords[0] if keywords else "")]
+def _captions(title: str, keywords: list[str], n: int, has_heading: bool = False) -> list[str]:
+    caps = [("" if has_heading else (title.strip() or (keywords[0] if keywords else "")))]
     for k in (keywords or [])[:max(n - 2, 0)]:
         caps.append(k.strip().title())
     while len(caps) < n - 1:
@@ -157,11 +163,26 @@ def _captions(title: str, keywords: list[str], n: int) -> list[str]:
     return caps
 
 
+MAX_PHOTO_SCENES = 5
+
+
+def photo_scene_seconds(n: int) -> float:
+    """Few photos stay on screen longer so the reel is not over in a blink: 1-2 photos 8 s each, 5 photos 5 s each."""
+    return min(8.0, max(5.0, 16.0 / max(n, 1)))
+
+
 def generate_short(user_id: str, company: str, industry: str, brand: dict, logo: bytes, title: str,
-                   visual: str, keywords: list[str] | None = None) -> dict:
-    """Returns {video(mp4 bytes), thumbnail(jpg bytes), duration}. Raises ShortError / OpenAIImageError."""
-    n = max(2, min(SCENES, 4))
+                   visual: str, keywords: list[str] | None = None, photos: list[bytes] | None = None,
+                   heading: str = "", subheading: str = "") -> dict:
+    """Returns {video(mp4 bytes), thumbnail(jpg bytes), duration}. Raises ShortError / OpenAIImageError.
+    With `photos` (up to 5 of the customer's own) they become the scenes; without, the scenes are generated."""
     keywords = keywords or []
+    has_heading = bool((heading or "").strip() or (subheading or "").strip())
+    if photos:
+        photos = photos[:MAX_PHOTO_SCENES]
+        return compose_short(photos, brand, logo, _captions(title, keywords, len(photos), has_heading),
+                             heading=heading, subheading=subheading, seconds=photo_scene_seconds(len(photos)), real_photos=True)
+    n = max(2, min(SCENES, 4))
     prompts = [brand_svc.build_photo_prompt(company, industry, brand, sc, keywords, vertical=True)
                for sc in _scene_prompts(visual or title or company, n)]
 
@@ -170,23 +191,40 @@ def generate_short(user_id: str, company: str, industry: str, brand: dict, logo:
 
     with ThreadPoolExecutor(max_workers=n) as pool:
         photos = list(pool.map(one, prompts))
-    return compose_short(photos, brand, logo, _captions(title, keywords, n))
+    return compose_short(photos, brand, logo, _captions(title, keywords, n, has_heading), heading=heading, subheading=subheading)
 
 
-def compose_short(photos: list[bytes], brand: dict, logo: bytes | None, captions: list[str]) -> dict:
+def _scene_from_photo(img: Image.Image, w: int, h: int) -> Image.Image:
+    """A real photo as a vertical scene. Tall photos fill the frame; wide ones are shown whole over a soft blurred
+    copy of themselves, so people and products are not cropped out."""
+    img = img.convert("RGB")
+    if img.width / img.height <= 0.72:
+        return _cover(img, w, h)
+    bg = ImageOps.fit(img, (w, h), Image.LANCZOS).filter(ImageFilter.GaussianBlur(36))
+    bg = Image.blend(bg, Image.new("RGB", (w, h), (12, 14, 30)), 0.35)
+    fg = img.resize((w, max(1, round(img.height * w / img.width))), Image.LANCZOS)
+    bg.paste(fg, (0, int((h - fg.height) * 0.42)))
+    return bg
+
+
+def compose_short(photos: list[bytes], brand: dict, logo: bytes | None, captions: list[str],
+                  heading: str = "", subheading: str = "", seconds: float | None = None, real_photos: bool = False) -> dict:
     n = len(photos)
-    d = SECONDS_PER_SCENE
+    d = seconds or SECONDS_PER_SCENE
     frames = int((d + XFADE) * FPS)
     total = n * d + XFADE
     with tempfile.TemporaryDirectory() as tmp:
         scene_paths, overlay_paths = [], []
         for i, raw in enumerate(photos):
-            base = _cover(Image.open(io.BytesIO(raw)), int(W * 1.12), int(H * 1.12))   # headroom for the zoom
+            src = Image.open(io.BytesIO(raw))
+            src = ImageOps.exif_transpose(src)
+            sw, sh = int(W * 1.12), int(H * 1.12)                                         # headroom for the zoom
+            base = _scene_from_photo(src, sw, sh) if real_photos else _cover(src, sw, sh)
             sp = os.path.join(tmp, f"s{i}.png")
             base.save(sp)
             scene_paths.append(sp)
             op = os.path.join(tmp, f"o{i}.png")
-            _caption_layer(captions[i] if i < len(captions) else "", brand, logo).save(op)
+            _caption_layer(captions[i] if i < len(captions) else "", brand, logo, heading, subheading).save(op)
             overlay_paths.append(op)
 
         cmd = ["ffmpeg", "-y"]

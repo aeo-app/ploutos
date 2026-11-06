@@ -258,3 +258,41 @@ class SiteChecksResponse(BaseModel):
     url: str
     checks: list[SiteCheck]
     error: Optional[str] = None
+
+
+# ── A finished website page for one strategy pillar (pillar page / FAQ / comparison / proof) ──────────────────────
+class AeoPillarAssetRequest(AnalyseRequest):
+    prompt: str = Field(..., min_length=3, max_length=300)
+    pillar_type: str = Field(..., min_length=2, max_length=40)
+    title: str = Field(..., min_length=3, max_length=300)
+    detail: str = Field(default="", max_length=600)
+    refresh: bool = False
+
+
+class PillarFaq(BaseModel):
+    q: str
+    a: str
+
+
+class PillarTable(BaseModel):
+    headers: list[str] = Field(default_factory=list)
+    rows: list[list[str]] = Field(default_factory=list)
+
+
+class AeoPillarAsset(BaseModel):
+    prompt: str
+    pillar_type: str
+    title: str
+    slug: str = ""
+    page_title: str = ""
+    meta_description: str = ""
+    where: str = ""                              # where on the site this page belongs
+    link_from: list[str] = Field(default_factory=list)
+    intro: str = ""
+    sections: list[BlogSection] = Field(default_factory=list)
+    faqs: list[PillarFaq] = Field(default_factory=list)
+    table: Optional[PillarTable] = None
+    schema_jsonld: str = ""                      # ready-to-paste <script type="application/ld+json"> block
+    steps: list[str] = Field(default_factory=list)      # how to publish it
+    checklist: list[str] = Field(default_factory=list)  # what to fill in before publishing
+    cached: bool = False

@@ -43,6 +43,7 @@ from db import (
 )
 from db.dynamo import normalize_domain
 from models.aeo_models import (
+    AeoPillarAssetRequest, AeoPillarAsset,
     CALENDAR_PROMPT,
     BlogTopicIdea,
     AeoBlogDraftRequest,
@@ -246,6 +247,20 @@ def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user
     return _cached_or_generate(
         user_id, "blog", f"{req.prompt}|{req.title}", req.refresh, AeoBlogDraftResponse,
         lambda t: generate_aeo_blog_draft(req, usage_tracker=t),
+    )
+
+
+@router.post("/strategy/page", summary="Write the full website page for one strategy pillar, with publishing steps")
+def strategy_page(req: AeoPillarAssetRequest, user_id: str = Depends(get_current_user_id)):
+    from services.aeo_service import generate_aeo_pillar_asset
+    _enforce_domain(user_id, req.url, req.company_name)
+    key = f"{req.prompt}|{req.pillar_type.upper().strip()}"
+    # Reading a page that was already written is free; writing a new one is a paid action.
+    if not get_aeo_content(user_id, "pillar", key) and not is_user_paid(user_id):
+        raise payment_required(user_id, "Writing the full page is part of a paid plan.")
+    return _cached_or_generate(
+        user_id, "pillar", key, req.refresh, AeoPillarAsset,
+        lambda t: generate_aeo_pillar_asset(req, usage_tracker=t),
     )
 
 
@@ -504,12 +519,33 @@ class ShortRequest(BaseModel):
     company_name: str = Field(default="", max_length=200)
     industry: str = Field(default="", max_length=120)
     keywords: list[str] = Field(default_factory=list, max_length=20)
+    # Optional: up to 5 of the customer's own photos (links from POST /aeo/photos) become the scenes. None = scenes are generated.
+    photo_urls: list[str] = Field(default_factory=list, max_length=5)
+    # Optional text shown on every scene of the video (drawn by the server, spelled exactly as typed).
+    heading: str = Field(default="", max_length=80)
+    subheading: str = Field(default="", max_length=160)
+
+
+@router.post("/photos", summary="Upload one of your own photos to build an image or a reel from (JPG, PNG or WebP)")
+async def upload_photo(file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)):
+    from services.photo_service import MAX_PHOTO_BYTES, PhotoError, store_photo
+    data = await file.read(MAX_PHOTO_BYTES + 1)
+    try:
+        return store_photo(data, user_id)
+    except PhotoError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/short-video", dependencies=[Depends(paywall_guard)], summary="Start creating a YouTube Short (vertical video) for a post; poll GET /short-video/{job_id}")
 def start_short(req: ShortRequest, background: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
     params = req.model_dump()
     params["keywords"] = clean_keywords(params.get("keywords"))
+    # Check the photos belong to this customer now, so a bad link fails straight away instead of inside the background job.
+    from services.photo_service import PhotoError, load_photos
+    try:
+        load_photos(params.get("photo_urls"), user_id)
+    except PhotoError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     job_id = short_jobs.start_job(user_id, params)          # 422 when the logo / phone number are missing
     background.add_task(short_jobs.run_job, user_id, job_id, params)
     return {"job_id": job_id, "status": "running"}

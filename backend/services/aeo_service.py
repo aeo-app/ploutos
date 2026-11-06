@@ -364,6 +364,94 @@ frame them as something {req.company_name} should interview a client for and pub
                                blog_topics=topics, limited=limited)
 
 
+_PILLAR_BRIEF = {
+    "PILLAR PAGE": "A long 'ultimate guide' page. 6 to 8 sections (about 1,500-2,000 words in total), each with a heading that is a real question or clear topic, the direct answer first. Also 5 FAQs.",
+    "FAQ CLUSTER": "A FAQ page. 10 to 12 FAQs, each answer 40-70 words, plain and quotable, answering the question in its first sentence. Intro of 2 sentences. 0 to 2 short sections.",
+    "COMPARISON": "A buyer's comparison page: how to choose between the realistic options in this market. A table with the criteria buyers should compare (6 to 8 rows) and 2 to 3 option columns that are KINDS of option (e.g. 'DIY', 'Specialist company'), never named competitors, plus a column for the company itself. 3 short sections and 4 FAQs.",
+    "PROOF": "A case-study / proof page TEMPLATE. 5 sections (The situation, What we did, How it went, What the customer said, What to know before you start). Every fact, name, number and quote must be a clearly marked placeholder such as [add the customer's real result]. Plus 3 FAQs.",
+}
+
+
+def _jsonld(site: str, company: str, d: dict) -> str:
+    """Schema markup is built here (not by the model) so it is always valid JSON."""
+    url = f"{site.rstrip('/')}/{d['slug']}" if d.get("slug") else site
+    graph = [{"@type": "Article", "headline": d["title"][:110], "description": d["meta_description"], "mainEntityOfPage": url,
+              "author": {"@type": "Organization", "name": company}, "publisher": {"@type": "Organization", "name": company}}]
+    if d["faqs"]:
+        graph.append({"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": f["q"],
+                      "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in d["faqs"]]})
+    body = json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False, indent=2).replace("</", "<\\/")
+    return f'<script type="application/ld+json">\n{body}\n</script>'
+
+
+def _publish_steps(company: str, d: dict) -> list[str]:
+    slug = "/" + d["slug"] if d.get("slug") else ""
+    return [
+        f"In your website editor (WordPress, Wix, Shopify, Webflow or similar) create a new page{' at ' + slug if slug else ''}. Use the page title and meta description shown above (in an SEO plugin, or the page's SEO settings).",
+        "Paste the content: the title as the page's main heading (H1), each section heading as a sub-heading (H2) and the text underneath. Keep the questions as headings so AI engines can lift each answer.",
+        "Replace every [bracketed placeholder] with your real facts: prices, areas served, years in business, customer results. Delete anything that is not true for your business.",
+        "Add the schema block: paste it into a Custom HTML / code block on the page, or into the page's 'header code' field. This tells search and AI engines which parts are questions and answers.",
+        f"Link to the new page from the places listed above, and link back from the page to your main service pages, using plain words as the link text (for example 'our {company} moving service').",
+        "Publish, then open Google Search Console, paste the page address into the search bar at the top, and press 'Request indexing'. Make sure the page is in your sitemap too (most website platforms do this automatically).",
+        "Wait one to two weeks, then ask ChatGPT, Perplexity and Gemini the target question again and use the Refresh on your analysis next month to see if you now appear.",
+    ]
+
+
+def generate_aeo_pillar_asset(req, usage_tracker: TokenUsageTracker | None = None):
+    from models.aeo_models import AeoPillarAsset, PillarFaq, PillarTable
+    from models.aeo_models import BlogSection as _BS
+    kind = req.pillar_type.upper().strip()
+    brief = _PILLAR_BRIEF.get(kind, _PILLAR_BRIEF["PILLAR PAGE"])
+    prompt = f"""
+Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
+{_site_block(req.url, req.company_name)}
+Target AI prompt: "{req.prompt}"
+Page to write: {kind} titled "{req.title}". Purpose: {req.detail or 'get the company recommended for the prompt'}
+
+{brief}
+
+Write it so an AI engine could quote it: answer first, then support. Use only what the website content above supports about {req.company_name}.
+Do NOT invent client names, quotes, prices, statistics, awards or review counts. Where a real figure or example would help, write a
+clearly marked placeholder like [add your real price range].
+Return ONE JSON object with EXACTLY these keys:
+{{
+  "slug": "short-url-slug-with-hyphens",
+  "page_title": "SEO title under 60 characters",
+  "meta_description": "under 155 characters, includes the answer's key point",
+  "where": "one sentence: where on the website this page should live (e.g. under Resources/Guides, linked from the Services menu)",
+  "link_from": ["3 to 4 specific existing pages or menu spots to link to it from"],
+  "intro": "opening paragraph, the direct answer first",
+  "sections": [ {{"h": "heading", "p": "body, plain text, paragraphs separated by \\n\\n"}} ],
+  "faqs": [ {{"q": "question as a customer would ask it", "a": "direct answer"}} ],
+  "table": {{"headers": ["..."], "rows": [["..."]]}}   // ONLY for a COMPARISON page, otherwise null
+  "checklist": ["4 to 6 things the company must fill in or confirm before publishing"]
+}}
+Plain text only, no markdown."""
+    d = _parse_json(_converse(_SYSTEM, prompt, max_tokens=6000, usage_tracker=usage_tracker))
+    slug = re.sub(r"[^a-z0-9]+", "-", str(d.get("slug") or req.title).lower()).strip("-")[:70]
+    sections = [_BS(h=str(s.get("h", ""))[:200], p=str(s.get("p", ""))) for s in (d.get("sections") or []) if isinstance(s, dict) and s.get("h")][:12]
+    faqs = [PillarFaq(q=str(f.get("q", ""))[:300], a=str(f.get("a", ""))) for f in (d.get("faqs") or []) if isinstance(f, dict) and f.get("q") and f.get("a")][:14]
+    t = d.get("table")
+    table = None
+    if kind == "COMPARISON" and isinstance(t, dict) and t.get("headers") and t.get("rows"):
+        w = len(t["headers"])
+        table = PillarTable(headers=[str(h) for h in t["headers"]][:6],
+                            rows=[[str(c) for c in (r + [""] * w)[:w]] for r in t["rows"] if isinstance(r, list)][:12])
+    if not (sections or faqs):
+        raise RuntimeError("The page came back empty — please try again.")
+    out = {"slug": slug, "title": req.title, "meta_description": str(d.get("meta_description", ""))[:170], "faqs": [f.model_dump() for f in faqs]}
+    asset = AeoPillarAsset(
+        prompt=req.prompt, pillar_type=kind, title=req.title, slug=slug, page_title=str(d.get("page_title", req.title))[:80],
+        meta_description=out["meta_description"], where=str(d.get("where", ""))[:300],
+        link_from=[str(x)[:200] for x in (d.get("link_from") or [])][:5], intro=str(d.get("intro", "")),
+        sections=sections, faqs=faqs, table=table,
+        schema_jsonld=_jsonld(req.url if req.url.startswith("http") else "https://" + req.url, req.company_name, out),
+        steps=_publish_steps(req.company_name, out),
+        checklist=[str(x)[:200] for x in (d.get("checklist") or [])][:8],
+    )
+    return asset
+
+
 def generate_aeo_blog_draft(
     req: AeoBlogDraftRequest, usage_tracker: TokenUsageTracker | None = None,
 ) -> AeoBlogDraftResponse:

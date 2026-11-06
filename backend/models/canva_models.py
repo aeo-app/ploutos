@@ -107,6 +107,11 @@ class GeneratePosterRequest(BaseModel):
     company_name: str = Field("", max_length=200, description="Used so the photo shows this company's real line of business")
     industry: str = Field("", max_length=120)
     keywords: list[str] = Field(default_factory=list, max_length=20)
+    # Optional: the customer's own photos (links returned by POST /aeo/photos) to build the image from. None = generate from the description alone.
+    photo_urls: list[str] = Field(default_factory=list, max_length=5)
+    # Optional text printed on the finished image (drawn by the server, so it is spelled exactly as typed).
+    heading: str = Field("", max_length=80)
+    subheading: str = Field("", max_length=160)
 
 
 class EditInCanvaRequest(BaseModel):

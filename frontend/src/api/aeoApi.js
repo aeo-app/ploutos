@@ -37,7 +37,7 @@ async function upload(path, file) {
     const headers = getAuthHeaders();
     delete headers["Content-Type"]; // the browser sets the multipart boundary itself
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", file, file.name || "photo.jpg");
     const res = await fetch(`${BASE}/aeo${path}`, { method: "POST", headers, body: form });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) {
@@ -56,6 +56,7 @@ export const aeoApi = {
   prompts:     (req) => call("POST", "/prompts", req),
   strategy:    (req) => call("POST", "/strategy", req),
   blogDraft:   (req) => call("POST", "/blog-draft", req),
+  strategyPage: (req) => call("POST", "/strategy/page", req),
   editBlog:    (req) => call("PUT", "/blog-draft", req),
   socialPosts: (req) => call("POST", "/social-posts", req),
   siteChecks:  (url) => call("POST", "/site-checks", { url }),
@@ -78,6 +79,8 @@ export const aeoApi = {
   startShort:  (req) => call("POST", "/short-video", req),
   shortStatus: (id) => call("GET", `/short-video/${encodeURIComponent(id)}`),
   uploadShort: (file) => upload("/short-upload", file),
+  // One of the customer's own photos (already shrunk by utils/photoPrep) to build an image or reel from
+  uploadPhoto: (blob) => upload("/photos", blob),
   linkSocial:  (platform, url) => call("PUT", "/social-links", { platform, url }),
   unlinkSocial:(platform) => call("DELETE", `/social-links/${encodeURIComponent(platform)}`),
 };

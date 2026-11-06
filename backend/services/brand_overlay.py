@@ -160,3 +160,89 @@ def normalise_logo(logo_bytes: bytes, max_side: int = 800) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+# ── Optional heading + subheading ────────────────────────────────────────────
+# Like the brand bar, the words are drawn here with Pillow (never by the image model, which misspells), so
+# whatever the customer typed appears exactly as typed in the final image and in every scene of a reel.
+def _wrap_px(draw: ImageDraw.ImageDraw, text: str, f, max_w: int) -> list[str]:
+    lines: list[str] = []
+    for para in str(text).split("\n"):
+        cur = ""
+        for word in para.split():
+            trial = f"{cur} {word}".strip()
+            if draw.textlength(trial, font=f) <= max_w or not cur:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = word
+        lines.append(cur)
+    return [ln for ln in lines if ln]
+
+
+def _fit_block(draw, text: str, max_w: int, start: int, min_size: int, weight: str, max_lines: int):
+    """Largest font (>= min_size) at which `text` wraps into <= max_lines lines that all fit max_w."""
+    size = start
+    while True:
+        f = font(size, weight)
+        lines = _wrap_px(draw, text, f, max_w)
+        fits = len(lines) <= max_lines and all(draw.textlength(ln, font=f) <= max_w for ln in lines)
+        if fits or size <= min_size:
+            if len(lines) > max_lines:                      # still too long at the smallest size: trim with an ellipsis
+                lines = lines[:max_lines]
+                while lines[-1] and draw.textlength(lines[-1] + "…", font=f) > max_w:
+                    lines[-1] = lines[-1][:-1]
+                lines[-1] = lines[-1].rstrip() + "…"
+            return f, lines
+        size -= 2
+
+
+def headline_layer(width: int, height: int, heading: str = "", subheading: str = "", top: int | None = None) -> Image.Image:
+    """Transparent layer with the heading (large) and subheading (smaller) centred near the top on a soft dark panel.
+    `top` is the y of the panel; default sits in the upper part of the frame, clear of the brand bar at the bottom."""
+    layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    heading, subheading = (heading or "").strip(), (subheading or "").strip()
+    if not heading and not subheading:
+        return layer
+    draw = ImageDraw.Draw(layer)
+    margin = int(width * 0.075)
+    max_w = width - 2 * margin
+    pad = int(width * 0.04)
+    inner_w = max_w - 2 * pad
+    hf, hl = (None, [])
+    sf, sl = (None, [])
+    if heading:
+        hf, hl = _fit_block(draw, heading, inner_w, int(width * 0.092), int(width * 0.045), "Bold", 3)
+    if subheading:
+        sf, sl = _fit_block(draw, subheading, inner_w, int(width * 0.043), int(width * 0.026), "Medium" if os.path.exists(os.path.join(_FONT_DIR, "Poppins-Medium.ttf")) else "Regular", 3)
+    h_lh = int(hf.size * 1.2) if hf else 0
+    s_lh = int(sf.size * 1.32) if sf else 0
+    gap = int(width * 0.018) if (hl and sl) else 0
+    block_h = h_lh * len(hl) + gap + s_lh * len(sl)
+    panel_h = block_h + 2 * pad
+    y0 = top if top is not None else int(height * 0.055)
+    panel = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    ImageDraw.Draw(panel).rounded_rectangle([margin, y0, width - margin, y0 + panel_h], radius=int(width * 0.03), fill=(10, 12, 28, 178))
+    layer.alpha_composite(panel)
+    y = y0 + pad
+    for ln in hl:
+        tw = draw.textlength(ln, font=hf)
+        draw.text(((width - tw) / 2, y), ln, font=hf, fill=(255, 255, 255, 255))
+        y += h_lh
+    y += gap
+    for ln in sl:
+        tw = draw.textlength(ln, font=sf)
+        draw.text(((width - tw) / 2, y), ln, font=sf, fill=(226, 232, 255, 255))
+        y += s_lh
+    return layer
+
+
+def apply_headline(image_bytes: bytes, heading: str = "", subheading: str = "") -> bytes:
+    """PNG of the image with the heading/subheading on it (unchanged when both are empty)."""
+    if not (heading or "").strip() and not (subheading or "").strip():
+        return image_bytes
+    base = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGBA")
+    out = Image.alpha_composite(base, headline_layer(base.width, base.height, heading, subheading)).convert("RGB")
+    buf = io.BytesIO()
+    out.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()

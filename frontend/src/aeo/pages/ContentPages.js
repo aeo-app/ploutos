@@ -10,6 +10,8 @@ import { useConnectProgress } from '../useConnectProgress';
 import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
 import { BrandKitCard, KeywordsPanel, ShortPlayer } from '../BrandKit';
+import { PillarReader } from '../PillarPage';
+import { MediaOptions, EMPTY_MEDIA, mediaPayload } from '../MediaOptions';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
 import { exportMarkdown, exportPdf, exportWord } from '../blogExport';
 import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
@@ -112,7 +114,8 @@ function Retry({ title, text, onRetry, label = 'Generate' }) {
 
 /* ── Content strategy ───────────────────────────────────────────────────── */
 function StrategyBlock({ t }) {
-  const { content, busy, loadStrategy } = useAeo();
+  const { content, busy, loadStrategy, loadPillarPage } = useAeo();
+  const [openPillar, setOpenPillar] = useState(null);     // the pillar whose page is open
   const data = content.strategy[t.active];
   const isBusy = !!busy['strategy|' + t.active];
   const retry = useAutoLoad('strategy', t.active, !!data, () => loadStrategy(t.active));
@@ -135,12 +138,17 @@ function StrategyBlock({ t }) {
       </div>
       {data.limited && <PreviewBanner what="You see the answer, one content pillar and the first two weeks. The full plan has four pillars and four weeks." />}
       <div className="ae-answer"><span className="ae-eyebrow p">The answer we want AI to give</span><span style={{ fontSize: 15, lineHeight: 1.55, fontWeight: 500 }}>{data.answer}</span></div>
+      <p className="ae-sub" style={{ margin: 0 }}>These are pages to publish on <b>your own website</b>. Press “Write this page” on each one and we write the full page, then show you exactly how to add it to your site.</p>
       <div className="ae-pillars">
         {data.pillars.map((p, i) => (
           <div key={i} className="ae-pillar">
             <span className="ae-eyebrow">{p.type}</span><span style={{ fontSize: 15, fontWeight: 800 }}>{p.title}</span>
             <span style={{ fontSize: 13, color: '#4a4966', lineHeight: 1.5 }}>{p.detail}</span>
             <span className="ae-mono" style={{ marginTop: 'auto', fontSize: 11.5, color: '#4f46e5' }}>{p.meta}</span>
+            <button className="ae-btn sm primary" style={{ alignSelf: 'flex-start' }} disabled={!!busy[`pillar|${t.active}|${String(p.type).toUpperCase()}`]}
+              onClick={async () => { const k = `${t.active}|${String(p.type).toUpperCase()}`; const a = content.pillar?.[k] || await loadPillarPage(t.active, p); if (a) setOpenPillar(k); }}>
+              {busy[`pillar|${t.active}|${String(p.type).toUpperCase()}`] ? 'Writing the page…' : content.pillar?.[`${t.active}|${String(p.type).toUpperCase()}`] ? 'Open page + how to publish' : 'Write this page'}
+            </button>
           </div>
         ))}
         {data.limited && [1, 2, 3].map(i => <LockedTile key={i} label="More content pillars" />)}
@@ -151,6 +159,10 @@ function StrategyBlock({ t }) {
         ))}
         {data.limited && [3, 4].map(n => <div key={n} style={{ cursor: 'pointer', opacity: .6 }}><span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5' }}>WEEK {n}</span><span style={{ fontSize: 13 }}>🔒 Locked</span></div>)}
       </div>
+      {openPillar && content.pillar?.[openPillar] && (
+        <PillarReader asset={content.pillar[openPillar]} onClose={() => setOpenPillar(null)} refreshing={!!busy[`pillar|${openPillar}`]}
+          onRefresh={() => { const p = data.pillars.find(x => `${t.active}|${String(x.type).toUpperCase()}` === openPillar); if (p) loadPillarPage(t.active, p, true); }} />
+      )}
     </section>
   );
 }
@@ -397,6 +409,9 @@ function CalendarBlock({ t }) {
   const [editing, setEditing] = useState({});
   const [savingPost, setSavingPost] = useState({});
   const [openVis, setOpenVis] = useState({});
+  // Optional photos / heading / subheading chosen for each post's image or reel (not saved; the photos themselves are stored when uploaded)
+  const [mediaOpts, setMediaOpts] = useState({});
+  const updateMedia = (k) => (fn) => setMediaOpts(m => ({ ...m, [k]: fn(m[k] || EMPTY_MEDIA) }));
   const [conn, setConn] = useState({});
   const [showLink, setShowLink] = useState(false);
   const [confirmPub, setConfirmPub] = useState(null);
@@ -545,7 +560,7 @@ function CalendarBlock({ t }) {
       const res = await canvaApi.generatePoster({
         day_date: `aeo-${isoDate(p.d)}-${p.c.id}`, post_number: 1,
         visual_suggestion: brief || visualOf(p.post, brand),
-        caption: p.post.text.slice(0, 500), cta: p.post.cta || '', ...bizPayload(),
+        caption: p.post.text.slice(0, 500), cta: p.post.cta || '', ...bizPayload(), ...mediaPayload(mediaOpts[p.k]),
       });
       if (res?.poster_image_url) setPostState(p.k, { img: res.poster_image_url, v: (p.st.v || 0) + 1 });
       else toast({ type: 'error', message: 'The image service returned no image. Please try again.' });
@@ -559,7 +574,7 @@ function CalendarBlock({ t }) {
     setWorking(w => ({ ...w, [p.k]: 'vid' }));
     try {
       const { job_id } = await aeoApi.startShort({
-        title: p.post.title || '', text: p.post.text.slice(0, 1500), visual: brief || visualOf(p.post, brand), ...bizPayload(),
+        title: p.post.title || '', text: p.post.text.slice(0, 1500), visual: brief || visualOf(p.post, brand), ...bizPayload(), ...mediaPayload(mediaOpts[p.k]),
       });
       const until = Date.now() + 9 * 60 * 1000;
       while (Date.now() < until) {
@@ -737,6 +752,7 @@ function CalendarBlock({ t }) {
               {editing[p.k] && <PostEditForm ch={p.c} post={p.post} reel={p.reel} saving={!!savingPost[p.k]}
                 onCancel={() => setEditing(m => ({ ...m, [p.k]: false }))}
                 onSave={async (d) => { if (await savePost(p, d)) setEditing(m => ({ ...m, [p.k]: false })); }} />}
+              <MediaOptions key={`mo-${p.k}`} kind={p.reel ? 'reel' : 'image'} value={mediaOpts[p.k]} update={updateMedia(p.k)} disabled={!!w} defaultOpen={!hasMedia(p)} />
               <div className="ae-post-actions">
                 <button className="ae-btn sm" style={{ fontWeight: 700 }} onClick={() => setEditing(m => ({ ...m, [p.k]: !m[p.k] }))}>{editing[p.k] ? 'Close editor' : '✎ Edit post'}</button>
                 {p.reel ? <>

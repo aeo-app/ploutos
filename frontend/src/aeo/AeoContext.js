@@ -39,7 +39,7 @@ export function AeoProvider({ children }) {
   const [team, setTeam] = useState({ blogs: [], social: [], strategy: [] });   // what our team has written for this customer
   const [prev, setPrev] = useState(null);                 // the analysis before the latest one → KPI deltas
   const [lastRun, setLastRun] = useState(null);           // ISO timestamp of the latest analysis
-  const [content, setContent] = useState({ strategy: {}, blog: {}, social: {} });
+  const [content, setContent] = useState({ strategy: {}, blog: {}, social: {}, pillar: {} });
   const [busy, setBusy] = useState({});                   // "strategy|prompt" → true while generating
   const inflight = useRef(new Set());                 // de-dupes concurrent generations of the same asset
   const savedRef = useRef(saved);
@@ -92,7 +92,7 @@ export function AeoProvider({ children }) {
     Object.values(contentRef.current.strategy).forEach(c => c?.prompt && jobs.push(aeoApi.strategy({ ...base, prompt: c.prompt }).then(x => ['strategy', c.prompt, x])));
     const done = await Promise.allSettled(jobs);
     setContent(c => {
-      const n = { strategy: { ...c.strategy }, blog: { ...c.blog }, social: { ...c.social } };
+      const n = { ...c, strategy: { ...c.strategy }, blog: { ...c.blog }, social: { ...c.social } };
       done.forEach(j => { if (j.status === 'fulfilled') { const [k, key, x] = j.value; n[k][key] = x; } });
       return n;
     });
@@ -196,7 +196,7 @@ export function AeoProvider({ children }) {
       if (kind === 'social' && data?.keywords?.length && !(savedRef.current.calendar_keywords || []).length) setSaved(s => ({ ...s, calendar_keywords: data.keywords }));
       return data;
     } catch (e) {
-      if (e.code === 'PaymentRequired') requirePayment(kind === 'strategy' ? 'aeoStrategy' : kind === 'blog' ? 'aeoBlog' : 'aeoSocial');
+      if (e.code === 'PaymentRequired') requirePayment(kind === 'strategy' || kind === 'pillar' ? 'aeoStrategy' : kind === 'blog' ? 'aeoBlog' : 'aeoSocial');
       else if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message });
       return null;
     } finally {
@@ -211,6 +211,8 @@ export function AeoProvider({ children }) {
   const loadSocial   = async (prompt, refresh, cycle = 0) => {
     return generate('social', socialKey(prompt, cycle), { prompt, cycle, keywords: savedRef.current.calendar_keywords || [] }, aeoApi.socialPosts, refresh);
   };
+  const loadPillarPage = (prompt, pillar, refresh) =>
+    generate('pillar', `${prompt}|${String(pillar.type).toUpperCase()}`, { prompt, pillar_type: pillar.type, title: pillar.title, detail: pillar.detail || '' }, aeoApi.strategyPage, refresh);
   const loadBlogDraft = (prompt, topic, refresh) =>
     generate('blog', `${prompt}|${topic.title}`, { prompt, type: topic.type, title: topic.title, words: topic.words || 1000 }, aeoApi.blogDraft, refresh);
 
@@ -325,6 +327,7 @@ export function AeoProvider({ children }) {
   };
 
   const value = useMemo(() => ({
+    loadPillarPage,
     quota, analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,

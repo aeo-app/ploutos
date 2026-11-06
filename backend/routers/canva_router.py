@@ -68,9 +68,10 @@ from services.canva_service import (
 from services.image_generation_service import ImageGenerationError, generate_image_from_prompt
 from services.media_upload_service import MediaUploadError, upload_image
 from services import brand_service as brand_svc
-from services.brand_overlay import apply_brand_bar
+from services.brand_overlay import apply_brand_bar, apply_headline
 from services.openai_image_service import OpenAIImageError
-from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai
+from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai, edit_image_from_photos, photo_edit_prompt
+from services.photo_service import PhotoError, load_photos
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/canva", tags=["Canva"])
@@ -447,12 +448,25 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
     """
     # A logo and a contact phone number are required — they are printed on every generated image.
     brand, logo_bytes = brand_svc.require_brand(user_id)
-    scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
+    heading, subheading = req.heading.strip(), req.subheading.strip()
     try:
-        image_bytes = generate_image_via_openai(scene, width=1080, height=1080)
+        photos = load_photos(req.photo_urls, user_id)
+    except PhotoError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    try:
+        if photos:
+            # Built from the customer's real photographs.
+            scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
+            image_bytes = edit_image_from_photos(photo_edit_prompt(req.visual_suggestion, heading_space=bool(heading or subheading)), photos, width=1080, height=1080)
+        else:
+            scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
+            if heading or subheading:
+                scene += "\nKeep the top 30% of the frame uncluttered (a headline is added there)."
+            image_bytes = generate_image_via_openai(scene, width=1080, height=1080)
     except OpenAIImageError as e:
         raise HTTPException(status_code=502, detail=f"Could not generate an image for this poster: {e}")
     try:
+        image_bytes = apply_headline(image_bytes, heading, subheading)
         image_bytes = apply_brand_bar(image_bytes, brand, logo_bytes)
     except Exception as e:  # noqa: BLE001
         logger.error(f"[canva] brand bar failed for user={user_id}: {e}", exc_info=True)
