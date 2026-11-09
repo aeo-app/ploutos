@@ -3,27 +3,32 @@ import { buildFaqPageSchema } from '../schema';
 
 const FAQ_ITEMS = [
   {
-    question: 'What is AEO, and how is it different from SEO?',
+    question: 'What content does AEO App create?',
     answer:
-      "SEO optimizes a page to rank in a list of links on a search results page. AEO (answer engine optimization) optimizes for a different outcome: being the source an AI system actually cites or recommends when someone asks it a question directly, in tools like ChatGPT, Perplexity, or Google's AI Overviews. The two overlap, but a page can rank well in traditional search and still be invisible to AI answers, or vice versa — AEO-APP.ai tracks and improves that specific gap.",
+      'Blog articles, images, social posters, carousels, short videos and reels, LinkedIn posts and Google Business Profile updates, all based on the questions your customers ask and written in your brand voice.',
   },
   {
-    question: 'Which AI platforms does AEO-APP.ai track?',
+    question: 'Can I review posts before they go live?',
     answer:
-      'AEO-APP.ai tracks visibility across the major AI answer engines, including ChatGPT, Perplexity, and Google AI Overviews, using the actual prompts a real buyer would type — not generic keyword lists.',
+      'Yes. Choose full autopilot, or approve each post with one tap. You can edit any caption or image before it publishes.',
   },
   {
-    question: 'Do I need technical or SEO experience to use this?',
+    question: 'Which channels do you post to?',
     answer:
-      "No. AEO-APP.ai audits your site, explains what's missing in plain language, and can generate and schedule the fixes, blog content, and social posts for you. You can review and approve changes at any level of technical involvement you're comfortable with.",
+      'Google Business Profile, Instagram, Facebook, YouTube (including Shorts) and LinkedIn. Connect each account once and we handle the rest.',
   },
   {
-    question: 'Do you post directly to my social accounts?',
+    question: 'What is AEO, and why does it matter?',
     answer:
-      'Yes — connect your Facebook, Instagram, LinkedIn, Google My Business and YouTube accounts once, and AEO-APP.ai schedules and publishes on your behalf.',
+      'AEO (answer engine optimisation) helps your business get named when people ask ChatGPT, Gemini or Google’s AI Overviews for a recommendation. You can rank on Google and still be invisible to AI. We track and close that gap.',
   },
   {
-    question: 'How does billing work, and is it a subscription?',
+    question: 'Do I need marketing or technical experience?',
+    answer:
+      'No. We explain everything in plain language and fix most website issues automatically.',
+  },
+  {
+    question: 'How does billing work?',
     answer:
       "Plans are billed annually and renew automatically using the payment method on file, so your access continues without interruption. You can cancel automatic renewal at any time from your billing settings — cancelling stops future charges but doesn't cut off the access you've already paid for; it simply won't renew into a new period.",
   },
@@ -36,11 +41,11 @@ const FAQ_ITEMS = [
 
 export default function Faq() {
   return (
-    <section id="faq">
+    <section id="faq" className="sec">
       <JsonLd data={buildFaqPageSchema(FAQ_ITEMS)} />
-      <div className="wrap">
-        <div className="head">
-          <span className="eyebrow">FAQ</span>
+      <div className="sec-in narrow">
+        <div className="sec-head center">
+          <p className="eyebrow">FAQ</p>
           <h2>Questions, answered.</h2>
         </div>
         <div className="faq-list">

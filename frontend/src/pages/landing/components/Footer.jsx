@@ -3,7 +3,7 @@ import { scrollToSection } from '../scrollUtils';
 function FootCol({ title, links }) {
   return (
     <div>
-      <h5>{title}</h5>
+      <p className="foot-title">{title}</p>
       <ul>
         {links.map((l) => (
           <li key={l.label}>
@@ -17,37 +17,29 @@ function FootCol({ title, links }) {
 
 export default function Footer() {
   return (
-    <footer>
-      <div className="wrap">
+    <footer className="ln-footer">
+      <div className="foot-in">
         <div className="foot-grid">
           <div>
-            <div className="foot-brand">
-              <span>AEO-APP.AI</span>
-            </div>
-            <p className="desc">Singapore HQ · serving customers in Singapore &amp; India.</p>
+            <p className="foot-brand">AEO App</p>
+            <address>2 Ang Mo Kio Street 64, #02-03A<br />Econ Building<br />Singapore 569084</address>
           </div>
           <FootCol title="Product" links={[
-            { label: 'AEO Tracking', href: '#product', section: 'product' },
-            { label: 'GEO Optimization', href: '#product', section: 'product' },
-            { label: 'SEO Audit', href: '#product', section: 'product' },
-            { label: 'Social Automation', href: '#product', section: 'product' },
+            { label: 'Content studio', href: '#studio', section: 'studio' },
+            { label: 'Features', href: '#features', section: 'features' },
             { label: 'Pricing', href: '#pricing', section: 'pricing' },
           ]} />
           <FootCol title="Company" links={[
             { label: 'About', href: '#' },
             { label: 'Blog', href: '/blog' },
-            { label: 'Careers', href: '#' },
             { label: 'Contact', href: '#cta', section: 'cta' },
           ]} />
           <FootCol title="Legal" links={[
-            { label: 'Privacy Policy', href: '/privacy/privacy-policy.html' },
-            { label: 'Terms of Service', href: '/privacy/privacy-policy.html' },
+            { label: 'Privacy policy', href: '/privacy/privacy-policy.html' },
+            { label: 'Terms of service', href: '/privacy/privacy-policy.html' },
           ]} />
         </div>
-        <div className="foot-bottom">
-          <span>© 2026 AEO-APP.AI</span>
-          <span>Made for growth teams who'd rather not hire one.</span>
-        </div>
+        <p className="foot-bottom">© 2026 AEO App. All rights reserved.</p>
       </div>
     </footer>
   );

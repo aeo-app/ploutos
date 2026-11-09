@@ -295,11 +295,12 @@
 .ae-media-mv button:disabled { opacity: .35; cursor: default; }
 @media (max-width: 720px) { .ae-media-row { grid-template-columns: 1fr; } .ae-media-sum { display: none; } }
 
-/* ── Tables inside the strategy page reader ── */
+/* ── Backlinks ── */
 .ae-bl-scroll { overflow-x: auto; }
 .ae-bl-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .ae-bl-table th { text-align: left; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ae-faint); padding: 6px 10px; border-bottom: 1px solid #ececf4; white-space: nowrap; }
 .ae-bl-table td { padding: 9px 10px; border-bottom: 1px solid #f1f1f7; vertical-align: top; }
+.ae-bl-table tr.lost td { opacity: .55; }
 
 /* ── Strategy page reader ── */
 .ae-pg-row { display: flex; gap: 10px; align-items: center; padding: 10px 12px; background: #fafafd; border: 1px solid #ececf4; border-radius: 12px; }

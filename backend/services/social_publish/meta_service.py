@@ -47,8 +47,8 @@ AUTHORIZE_URL = f"https://www.facebook.com/{GRAPH_VERSION}/dialog/oauth"
 # account. pages_manage_posts: post to the Page. instagram_basic +
 # instagram_content_publish: read/publish to the linked Instagram account.
 # SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish"
-SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management,instagram_basic,instagram_content_publish"
-
+# SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management,instagram_basic,instagram_content_publish"
+SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management"
 
 REQUEST_TIMEOUT = int(os.getenv("SOCIAL_PUBLISH_TIMEOUT_SECONDS", "20"))
 POLL_INTERVAL_SECONDS = 2
@@ -146,15 +146,86 @@ def exchange_for_long_lived_token(short_lived_token: str) -> dict:
     })
 
 
+_PAGE_FIELDS = "id,name,access_token,instagram_business_account"
+
+
+def _paged(path: str, params: dict) -> list[dict]:
+    """Follow Graph API cursor pagination and return every row."""
+    rows: list[dict] = []
+    data = _get(path, params)
+    rows.extend(data.get("data", []))
+    for _ in range(20):
+        nxt = (data.get("paging") or {}).get("next")
+        if not nxt:
+            break
+        resp = requests.get(nxt, timeout=REQUEST_TIMEOUT)
+        if not resp.ok:
+            break
+        data = resp.json()
+        rows.extend(data.get("data", []))
+    return rows
+
+
+def _pages_from_granular_scopes(user_access_token: str) -> list[dict]:
+    """Pages the user ticked in the Facebook dialog. For Pages that live in
+    a Business portfolio, /me/accounts often comes back empty even though
+    the user granted access, but the grant is still recorded here."""
+    app_token = f"{META_CLIENT_ID}|{META_CLIENT_SECRET}"
+    info = _get("/debug_token", {"input_token": user_access_token, "access_token": app_token}).get("data", {})
+    logger.info(f"[meta] token scopes={info.get('scopes')} granular={info.get('granular_scopes')}")
+    ids: list[str] = []
+    for g in info.get("granular_scopes", []) or []:
+        if g.get("scope") in ("pages_show_list", "pages_manage_posts", "pages_read_engagement"):
+            ids.extend(g.get("target_ids", []) or [])
+    pages = []
+    for pid in dict.fromkeys(ids):
+        try:
+            pages.append(_get(f"/{pid}", {"fields": _PAGE_FIELDS, "access_token": user_access_token}))
+        except MetaError as e:
+            logger.warning(f"[meta] could not read page {pid} from granular scope: {e}")
+    return pages
+
+
+def _pages_from_businesses(user_access_token: str) -> list[dict]:
+    """Pages owned by (or shared with) the user's Business portfolios.
+    Needs business_management."""
+    pages: list[dict] = []
+    for biz in _paged("/me/businesses", {"fields": "id,name", "access_token": user_access_token}):
+        for edge in ("owned_pages", "client_pages"):
+            try:
+                pages.extend(_paged(f"/{biz['id']}/{edge}", {"fields": _PAGE_FIELDS, "access_token": user_access_token}))
+            except MetaError as e:
+                logger.warning(f"[meta] {biz.get('id')}/{edge} failed: {e}")
+    return pages
+
+
 def list_pages(user_access_token: str) -> list[dict]:
     """Every Facebook Page this user manages, each with its own (effectively
     non-expiring, as long as the user token stays valid) Page access token,
-    and the linked Instagram Business Account ID if one exists."""
-    data = _get("/me/accounts", {
-        "fields": "id,name,access_token,instagram_business_account",
-        "access_token": user_access_token,
-    })
-    return data.get("data", [])
+    and the linked Instagram Business Account ID if one exists.
+
+    Tries /me/accounts first, then the Pages the user granted in the
+    dialog, then Business-portfolio Pages, because /me/accounts alone
+    returns an empty list for Pages managed through a Business portfolio."""
+    sources = (
+        ("me/accounts", lambda: _paged("/me/accounts", {"fields": _PAGE_FIELDS, "limit": 100, "access_token": user_access_token})),
+        ("granular_scopes", lambda: _pages_from_granular_scopes(user_access_token)),
+        ("businesses", lambda: _pages_from_businesses(user_access_token)),
+    )
+    found: dict[str, dict] = {}
+    for name, fetch in sources:
+        try:
+            rows = fetch()
+        except MetaError as e:
+            logger.warning(f"[meta] list_pages source {name} failed: {e}")
+            continue
+        usable = [r for r in rows if r.get("id") and r.get("access_token")]
+        logger.info(f"[meta] list_pages source={name} returned {len(rows)} page(s), {len(usable)} with a page token")
+        for r in usable:
+            found.setdefault(r["id"], r)
+        if found:
+            break
+    return list(found.values())
 
 
 def post_to_facebook_page(page_id: str, page_access_token: str, image_url: str, caption: str) -> str:

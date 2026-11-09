@@ -92,10 +92,10 @@ export default function Pricing({ onStartTrial, initialPlans }) {
   }, []);
 
   return (
-    <section id="pricing" style={{ background: 'var(--white)' }}>
+    <section id="pricing" className="sec tint bordered">
       <JsonLd data={buildSoftwareApplicationSchema(plans)} />
-      <div className="wrap">
-        <div className="head center">
+      <div className="sec-in">
+        <div className="sec-head center">
           <span className="eyebrow">Pricing</span>
           <h2>Pricing built around how often you publish.</h2>
         </div>

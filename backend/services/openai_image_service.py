@@ -28,7 +28,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1")
+OPENAI_IMAGE_MODEL = os.getenv("OPENAI_IMAGE_MODEL", "")
 OPENAI_IMAGES_URL = "https://api.openai.com/v1/images/generations"
 _REQUEST_TIMEOUT = 60.0  # image generation is genuinely slow; a short timeout would fail normal, successful calls
 
@@ -96,7 +96,7 @@ def generate_image_from_prompt(prompt: str, *, width: int | None = None, height:
         "n": 1,
     }
     if OPENAI_IMAGE_MODEL.startswith("gpt-image"):
-        body["quality"] = os.getenv("OPENAI_IMAGE_QUALITY", "high")  # low | medium | high | auto
+        body["quality"] = os.getenv("OPENAI_IMAGE_QUALITY", "low")  # low | medium | high | auto
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
 
     try:
@@ -169,8 +169,8 @@ def edit_image_from_photos(prompt: str, photos: list[bytes], *, width: int | Non
     model = os.getenv("OPENAI_IMAGE_EDIT_MODEL", OPENAI_IMAGE_MODEL)
     data = {"model": model, "prompt": prompt, "size": _closest_supported_size(width, height), "n": "1"}
     if model.startswith("gpt-image"):
-        data["quality"] = os.getenv("OPENAI_IMAGE_QUALITY", "high")
-        data["input_fidelity"] = os.getenv("OPENAI_INPUT_FIDELITY", "high")   # keep the real subjects faithful
+        data["quality"] = os.getenv("OPENAI_IMAGE_QUALITY", "low")
+        data["input_fidelity"] = os.getenv("OPENAI_INPUT_FIDELITY", "low")   # keep the real subjects faithful
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
     field = "image[]" if len(photos) > 1 or model.startswith("gpt-image") else "image"
 

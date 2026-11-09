@@ -657,7 +657,7 @@ async def _handle_meta_invite_callback(invite_token: str, code: str):
         if not pages:
             update_page_invite(invite_token, status="pending")  # stays retryable
             logger.warning(f"[social-publish] invite {invite_token}: no Facebook Pages found for this admin")
-            return _invite_redirect(invite_token, error=True, reason="No Facebook Pages were returned for this account")
+            return _invite_redirect(invite_token, error=True, reason="Facebook returned no Pages. In the Facebook dialog choose Edit settings, tick the Page(s) to connect, then try again. If the Page is in a Business portfolio, you need full control of it")
 
         available = [
             {

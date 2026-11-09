@@ -46,7 +46,7 @@ export function SignupPage() {
   const [password,        setPassword]        = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [companyName,     setCompanyName]     = useState('');
-  const [domain,          setDomain]          = useState('');
+  const [domain,          setDomain]          = useState(prefill.domain || '');
   const [country,         setCountry]         = useState(prefill.country || '');
   const [error,           setError]           = useState('');
   const [loading,         setLoading]         = useState(false);

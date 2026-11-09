@@ -30,13 +30,12 @@ export default function Blog({ initialPosts }) {
   if (posts.length === 0) return null;
 
   return (
-    <section id="blog">
-      <div className="wrap">
-        <div className="head" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24, maxWidth: 'none' }}>
-          <div style={{ maxWidth: 640 }}>
-            <span className="eyebrow">From the blog</span>
-            <h2>Practical guides on AEO, GEO and SEO.</h2>
-            <p>Written as we build the product ourselves.</p>
+    <section id="blog" className="sec tint topline">
+      <div className="sec-in">
+        <div className="blog-head">
+          <div className="blog-title">
+            <p className="eyebrow">From the blog</p>
+            <h2>Practical guides on getting found.</h2>
           </div>
           <div className="blog-nav">
             <button type="button" aria-label="Previous articles" onClick={() => scrollByCard(-1)}><ArrowIcon flip /></button>
@@ -50,18 +49,12 @@ export default function Blog({ initialPosts }) {
               <a className="blog-card" href={`/blog/${p.slug}`} key={p.slug}>
                 {p.featured_image ? (
                   <div
-                    className="ph-16x9"
-                    style={{
-                      marginBottom: 16, borderRadius: 10, overflow: 'hidden',
-                      backgroundImage: `url(${p.featured_image})`,
-                      backgroundSize: 'cover', backgroundPosition: 'center',
-                    }}
+                    className="blog-img"
+                    role="img" aria-label={p.title}
+                    style={{ backgroundImage: `url(${p.featured_image})` }}
                   />
                 ) : (
-                  <div className="img-ph ph-16x9" style={{ marginBottom: 16 }}>
-                    <span className="tag-ph">Cover</span>
-                    <span>{p.category || 'Article'}</span>
-                  </div>
+                  <div className="blog-img blog-img-ph"><span>{p.category || 'Article'}</span></div>
                 )}
                 <span className="tag">{formatBlogDate(p.date)} · {estimateReadTime(p.body)}</span>
                 <h4>{p.title}</h4>
@@ -71,7 +64,7 @@ export default function Blog({ initialPosts }) {
           </div>
         </div>
 
-        <p className="price-note" style={{ marginTop: 28 }}>
+        <p className="blog-all">
           <a href="/blog">View all articles</a>
         </p>
       </div>
