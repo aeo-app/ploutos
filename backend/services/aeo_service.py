@@ -316,13 +316,94 @@ prompts should show absent (0) or mentioned (-1) in at least some engines."""
 # ═════════════════════════════════════════════════════════════════════════════
 
 _BLOG_TYPES = ["PILLAR GUIDE", "FAQ", "CASE STUDY", "EXPLAINER", "CHECKLIST", "COMPARISON"]
-_PILLAR_TYPES = ["PILLAR PAGE", "FAQ CLUSTER", "COMPARISON", "PROOF"]
+
+# Page templates (designs) the customer can choose from. Each is both a visual design and a content structure.
+# The ids and names are mirrored in the frontend (src/aeo/pageTemplates.js) — keep the two lists in step.
+PAGE_TEMPLATES: dict[str, dict] = {
+    "service": {
+        "name": "Service landing page",
+        "brief": (
+            "A conversion-focused landing page for one service. Fill: eyebrow, headline, intro (what the service is and who it is for), "
+            "highlights = 4 benefits, steps = 3 to 5 'how it works' steps, sections = 2 short sections (e.g. 'Why choose {company}', 'Who we help'), "
+            "faqs = 5, cta. Leave areas empty and table null. About 600-900 words in total."
+        ),
+    },
+    "guide": {
+        "name": "Complete guide",
+        "brief": (
+            "A long, authoritative guide page. Fill: eyebrow, headline, intro (the direct answer), highlights = 4 'key takeaways', "
+            "sections = 6 to 8 (each heading a real question or clear topic, direct answer first; about 1,500-2,000 words in total), faqs = 5, cta. "
+            "Leave steps and areas empty and table null."
+        ),
+    },
+    "faq": {
+        "name": "FAQ page",
+        "brief": (
+            "A FAQ page. Fill: eyebrow, headline, intro (2 sentences), faqs = 10 to 12 (each answer 40-70 words, answering in the first sentence), cta ('Still have a question?'). "
+            "Highlights 0 to 3 quick facts if useful. Leave steps, sections and areas empty and table null."
+        ),
+    },
+    "comparison": {
+        "name": "Comparison page",
+        "brief": (
+            "A buyer's comparison page: how to choose between the realistic options in this market. Fill: eyebrow, headline, intro, "
+            "table = criteria rows (6 to 8) with 2 to 3 columns that are KINDS of option (e.g. 'DIY', 'Specialist company') — never named competitors — "
+            "and the LAST column is {company}. highlights = 3 'what to look for' items, sections = 2 to 3 short sections, faqs = 4, cta. Leave steps and areas empty."
+        ),
+    },
+    "location": {
+        "name": "Local area page",
+        "brief": (
+            "A page for customers in one place. Fill: eyebrow (the place, e.g. 'Serving Singapore'), headline, intro, areas = 6 to 10 places or neighbourhoods covered "
+            "(only places the website content supports; if it names none, return an empty list), highlights = 4 reasons local customers choose {company}, "
+            "sections = 2 to 3 (e.g. 'What we do in the area', 'What to know about the area'), faqs = 4, cta. Leave steps empty and table null."
+        ),
+    },
+    "how_to": {
+        "name": "Step-by-step how-to",
+        "brief": (
+            "A practical how-to page. Fill: eyebrow, headline, intro (the quick answer), highlights = 3 to 6 'what you need' items, "
+            "steps = 5 to 8 numbered steps (a clear action in the title, 1-2 sentences of detail), sections = 2 ('Common mistakes', 'When to call a professional'), "
+            "faqs = 4, cta. Leave areas empty and table null."
+        ),
+    },
+}
+# Names used before templates existed, and templates that were folded into the six above.
+_LEGACY_TEMPLATE = {"PILLAR PAGE": "guide", "FAQ CLUSTER": "faq", "COMPARISON": "comparison", "PROOF": "service",
+                    "COST": "service", "CASE_STUDY": "service"}
+
+
+def resolve_template(value: str, default: str = "") -> str:
+    """Accepts a template id ('faq'), its display name, or an older pillar name; returns the id or `default`."""
+    v = str(value or "").strip()
+    if v.lower() in PAGE_TEMPLATES:
+        return v.lower()
+    if v.upper() in _LEGACY_TEMPLATE:
+        return _LEGACY_TEMPLATE[v.upper()]
+    for tid, t in PAGE_TEMPLATES.items():
+        if t["name"].lower() == v.lower():
+            return tid
+    return default
+
+
+def _slugify(text: str, limit: int = 70) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")[:limit].strip("-")
+
+
+def page_cache_key(prompt: str, template: str, title: str) -> str:
+    """One saved page per (question, template, title) — a new title is a new page."""
+    return f"{prompt}|{template.upper()}|{_slugify(title, 50)}"
+
+
+def _site_root(url: str) -> str:
+    u = str(url or "").strip().rstrip("/")
+    return u if u.startswith("http") else "https://" + u
 
 
 def generate_aeo_strategy(
     req: AeoStrategyRequest, usage_tracker: TokenUsageTracker | None = None, limited: bool = False,
 ) -> AeoStrategyResponse:
-    scope = ("\nFREE PREVIEW: return only 1 pillar (the first type), 2 plan entries (WEEK 1, WEEK 2) and 3 blog_topics. Keep it brief.\n" if limited else "")
+    scope = ("\nFREE PREVIEW: return only 1 page suggestion (in the pillars list), 2 plan entries (WEEK 1, WEEK 2) and 3 blog_topics. Keep it brief.\n" if limited else "")
     prompt = f"""
 Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
 {_site_block(req.url, req.company_name)}
@@ -334,9 +415,9 @@ Return ONE JSON object with EXACTLY these keys:
 {{
   "answer": "2 sentences: how an AI engine SHOULD answer this prompt, naming {req.company_name} and citing its website",
   "pillars": [
-    {{"type": "one of {json.dumps(_PILLAR_TYPES)} (use each once, in this order)",
-      "title": "specific content asset title", "detail": "one sentence on what it contains",
-      "meta": "format hint e.g. '1,800 words · Article + FAQPage schema'"}}
+    {{"template": "one of {json.dumps(list(PAGE_TEMPLATES))} — the page type that suits this prompt best; use 4 DIFFERENT ones, most useful first",
+      "title": "specific page title a customer would click", "slug": "short-url-slug-with-hyphens",
+      "detail": "one plain sentence on what the page tells the customer"}}
   ],
   "plan": [
     {{"week": "WEEK 1", "task": "concrete action"}}  // exactly 4 entries, WEEK 1..WEEK 4
@@ -346,12 +427,23 @@ Return ONE JSON object with EXACTLY these keys:
       "title": "blog post title", "words": 1200}}
   ]
 }}
-For the CASE STUDY topic and the PROOF pillar, do not state any client name, result or number as fact —
+For the CASE STUDY blog topic and any customer-story page, do not state any client name, result or number as fact —
 frame them as something {req.company_name} should interview a client for and publish."""
     raw = _converse(_SYSTEM, prompt, max_tokens=1500 if limited else 3500, usage_tracker=usage_tracker)
     d = _parse_json(raw)
-    pillars = [{"type": str(p.get("type", "")), "title": str(p.get("title", "")), "detail": str(p.get("detail", "")),
-                "meta": str(p.get("meta", ""))} for p in (d.get("pillars") or [])][:6]
+    pillars, seen = [], set()
+    for p in (d.get("pillars") or []):
+        if not isinstance(p, dict):
+            continue
+        tid = resolve_template(p.get("template") or p.get("type"), "guide")
+        title = str(p.get("title", "")).strip()
+        if not title or tid in seen:
+            continue
+        seen.add(tid)
+        slug = _slugify(p.get("slug") or title)
+        pillars.append({"type": PAGE_TEMPLATES[tid]["name"], "template": tid, "title": title, "slug": slug,
+                        "link": f"{_site_root(req.url)}/{slug}", "detail": str(p.get("detail", ""))})
+    pillars = pillars[:6]
     plan = [{"week": str(p.get("week", f"WEEK {i + 1}")), "task": str(p.get("task", ""))}
             for i, p in enumerate(d.get("plan") or [])][:6]
     topics = [{"type": str(t.get("type", "")), "title": str(t.get("title", "")),
@@ -364,92 +456,99 @@ frame them as something {req.company_name} should interview a client for and pub
                                blog_topics=topics, limited=limited)
 
 
-_PILLAR_BRIEF = {
-    "PILLAR PAGE": "A long 'ultimate guide' page. 6 to 8 sections (about 1,500-2,000 words in total), each with a heading that is a real question or clear topic, the direct answer first. Also 5 FAQs.",
-    "FAQ CLUSTER": "A FAQ page. 10 to 12 FAQs, each answer 40-70 words, plain and quotable, answering the question in its first sentence. Intro of 2 sentences. 0 to 2 short sections.",
-    "COMPARISON": "A buyer's comparison page: how to choose between the realistic options in this market. A table with the criteria buyers should compare (6 to 8 rows) and 2 to 3 option columns that are KINDS of option (e.g. 'DIY', 'Specialist company'), never named competitors, plus a column for the company itself. 3 short sections and 4 FAQs.",
-    "PROOF": "A case-study / proof page TEMPLATE. 5 sections (The situation, What we did, How it went, What the customer said, What to know before you start). Every fact, name, number and quote must be a clearly marked placeholder such as [add the customer's real result]. Plus 3 FAQs.",
-}
+_BRACKETS = re.compile(r"\s*\[[^\]\n]{2,160}\]")
 
 
-def _jsonld(site: str, company: str, d: dict) -> str:
-    """Schema markup is built here (not by the model) so it is always valid JSON."""
-    url = f"{site.rstrip('/')}/{d['slug']}" if d.get("slug") else site
-    graph = [{"@type": "Article", "headline": d["title"][:110], "description": d["meta_description"], "mainEntityOfPage": url,
-              "author": {"@type": "Organization", "name": company}, "publisher": {"@type": "Organization", "name": company}}]
-    if d["faqs"]:
-        graph.append({"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": f["q"],
-                      "acceptedAnswer": {"@type": "Answer", "text": f["a"]}} for f in d["faqs"]]})
-    body = json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False, indent=2).replace("</", "<\\/")
-    return f'<script type="application/ld+json">\n{body}\n</script>'
+def _strip_placeholders(v):
+    """Safety net: the page must never contain '[add your …]' style placeholders, so any bracketed text the model
+    still writes is removed (the sentence just loses that detail) rather than shown to the customer's visitors."""
+    if isinstance(v, str):
+        t = _BRACKETS.sub("", v)
+        t = re.sub(r"\s+([.,;:!?])", r"\1", t)
+        return re.sub(r"[ \t]{2,}", " ", t).strip()
+    if isinstance(v, list):
+        return [x for x in (_strip_placeholders(i) for i in v) if x not in ("", None)]
+    if isinstance(v, dict):
+        return {k: _strip_placeholders(x) for k, x in v.items()}
+    return v
 
 
-def _publish_steps(company: str, d: dict) -> list[str]:
-    slug = "/" + d["slug"] if d.get("slug") else ""
-    return [
-        f"In your website editor (WordPress, Wix, Shopify, Webflow or similar) create a new page{' at ' + slug if slug else ''}. Use the page title and meta description shown above (in an SEO plugin, or the page's SEO settings).",
-        "Paste the content: the title as the page's main heading (H1), each section heading as a sub-heading (H2) and the text underneath. Keep the questions as headings so AI engines can lift each answer.",
-        "Replace every [bracketed placeholder] with your real facts: prices, areas served, years in business, customer results. Delete anything that is not true for your business.",
-        "Add the schema block: paste it into a Custom HTML / code block on the page, or into the page's 'header code' field. This tells search and AI engines which parts are questions and answers.",
-        f"Link to the new page from the places listed above, and link back from the page to your main service pages, using plain words as the link text (for example 'our {company} moving service').",
-        "Publish, then open Google Search Console, paste the page address into the search bar at the top, and press 'Request indexing'. Make sure the page is in your sitemap too (most website platforms do this automatically).",
-        "Wait one to two weeks, then ask ChatGPT, Perplexity and Gemini the target question again and use the Refresh on your analysis next month to see if you now appear.",
-    ]
+def _items(raw, limit: int, title_len: int = 120):
+    from models.aeo_models import PageItem
+    out = []
+    for x in (raw or []):
+        if isinstance(x, dict) and str(x.get("title", "")).strip():
+            out.append(PageItem(title=str(x["title"]).strip()[:title_len], text=str(x.get("text", "")).strip()[:600]))
+    return out[:limit]
 
 
 def generate_aeo_pillar_asset(req, usage_tracker: TokenUsageTracker | None = None):
-    from models.aeo_models import AeoPillarAsset, PillarFaq, PillarTable
+    """Writes the content of one designed web page for the template the customer chose. The frontend turns it into HTML."""
+    from models.aeo_models import AeoPillarAsset, PageCta, PillarFaq, PillarTable
     from models.aeo_models import BlogSection as _BS
-    kind = req.pillar_type.upper().strip()
-    brief = _PILLAR_BRIEF.get(kind, _PILLAR_BRIEF["PILLAR PAGE"])
+    tid = resolve_template(req.template) or resolve_template(req.pillar_type)
+    if not tid:
+        raise ValueError(f"Unknown page template: {(req.template or req.pillar_type)!r}")
+    tpl = PAGE_TEMPLATES[tid]
+    brief = tpl["brief"].replace("{company}", req.company_name)
+    answer_line = f'\nThe answer this page must support (from the content strategy): "{req.answer}"' if req.answer else ""
     prompt = f"""
 Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
 {_site_block(req.url, req.company_name)}
-Target AI prompt: "{req.prompt}"
-Page to write: {kind} titled "{req.title}". Purpose: {req.detail or 'get the company recommended for the prompt'}
+Target AI prompt: "{req.prompt}"{answer_line}
+Page to write: a "{tpl['name']}" titled "{req.title}". Purpose: {req.detail or 'get the company recommended for the prompt'}
 
-{brief}
+TEMPLATE: {brief}
 
 Write it so an AI engine could quote it: answer first, then support. Use only what the website content above supports about {req.company_name}.
-Do NOT invent client names, quotes, prices, statistics, awards or review counts. Where a real figure or example would help, write a
-clearly marked placeholder like [add your real price range].
-Return ONE JSON object with EXACTLY these keys:
+Do NOT invent client names, quotes, prices, statistics, awards, review counts, phone numbers, emails or addresses. If a figure or detail is not in the
+website content, leave it out of the sentence completely: NEVER write square-bracket placeholders such as [add your price]. The company logo and contact
+details are added to the page automatically, so do not write them out. Write for the customer, in plain words, no jargon.
+Return ONE JSON object with EXACTLY these keys (use [] or null for any the template does not use):
 {{
   "slug": "short-url-slug-with-hyphens",
   "page_title": "SEO title under 60 characters",
   "meta_description": "under 155 characters, includes the answer's key point",
   "where": "one sentence: where on the website this page should live (e.g. under Resources/Guides, linked from the Services menu)",
   "link_from": ["3 to 4 specific existing pages or menu spots to link to it from"],
-  "intro": "opening paragraph, the direct answer first",
+  "eyebrow": "short label above the headline, at most 4 words",
+  "headline": "the page's main heading, under 70 characters, written for the customer",
+  "intro": "1 to 2 sentences that answer the question directly, under 280 characters",
+  "highlights": [ {{"title": "at most 6 words", "text": "one sentence"}} ],
+  "steps": [ {{"title": "a clear action, at most 8 words", "text": "1 to 2 sentences"}} ],
   "sections": [ {{"h": "heading", "p": "body, plain text, paragraphs separated by \\n\\n"}} ],
+  "areas": ["place"],
+  "table": {{"headers": ["..."], "rows": [["..."]]}},
   "faqs": [ {{"q": "question as a customer would ask it", "a": "direct answer"}} ],
-  "table": {{"headers": ["..."], "rows": [["..."]]}}   // ONLY for a COMPARISON page, otherwise null
-  "checklist": ["4 to 6 things the company must fill in or confirm before publishing"]
+  "cta": {{"headline": "closing call to action, under 60 characters", "text": "one sentence", "button": "button label, at most 4 words"}},
+  "checklist": ["4 to 6 short facts in this page worth double-checking against the real business before publishing"]
 }}
 Plain text only, no markdown."""
-    d = _parse_json(_converse(_SYSTEM, prompt, max_tokens=6000, usage_tracker=usage_tracker))
-    slug = re.sub(r"[^a-z0-9]+", "-", str(d.get("slug") or req.title).lower()).strip("-")[:70]
-    sections = [_BS(h=str(s.get("h", ""))[:200], p=str(s.get("p", ""))) for s in (d.get("sections") or []) if isinstance(s, dict) and s.get("h")][:12]
+    d = _strip_placeholders(_parse_json(_converse(_SYSTEM, prompt, max_tokens=7000, usage_tracker=usage_tracker)))
+    slug = _slugify(d.get("slug") or req.title)
+    sections = [_BS(h=str(x.get("h", ""))[:200], p=str(x.get("p", ""))) for x in (d.get("sections") or []) if isinstance(x, dict) and x.get("h")][:12]
     faqs = [PillarFaq(q=str(f.get("q", ""))[:300], a=str(f.get("a", ""))) for f in (d.get("faqs") or []) if isinstance(f, dict) and f.get("q") and f.get("a")][:14]
+    highlights, steps = _items(d.get("highlights"), 6), _items(d.get("steps"), 10)
     t = d.get("table")
     table = None
-    if kind == "COMPARISON" and isinstance(t, dict) and t.get("headers") and t.get("rows"):
+    if tid == "comparison" and isinstance(t, dict) and t.get("headers") and t.get("rows"):
         w = len(t["headers"])
         table = PillarTable(headers=[str(h) for h in t["headers"]][:6],
                             rows=[[str(c) for c in (r + [""] * w)[:w]] for r in t["rows"] if isinstance(r, list)][:12])
-    if not (sections or faqs):
+    if not (sections or faqs or steps or highlights):
         raise RuntimeError("The page came back empty — please try again.")
-    out = {"slug": slug, "title": req.title, "meta_description": str(d.get("meta_description", ""))[:170], "faqs": [f.model_dump() for f in faqs]}
-    asset = AeoPillarAsset(
-        prompt=req.prompt, pillar_type=kind, title=req.title, slug=slug, page_title=str(d.get("page_title", req.title))[:80],
-        meta_description=out["meta_description"], where=str(d.get("where", ""))[:300],
-        link_from=[str(x)[:200] for x in (d.get("link_from") or [])][:5], intro=str(d.get("intro", "")),
-        sections=sections, faqs=faqs, table=table,
-        schema_jsonld=_jsonld(req.url if req.url.startswith("http") else "https://" + req.url, req.company_name, out),
-        steps=_publish_steps(req.company_name, out),
+    c = d.get("cta")
+    cta = PageCta(headline=str(c.get("headline", ""))[:120], text=str(c.get("text", ""))[:300], button=str(c.get("button", ""))[:40]) if isinstance(c, dict) else None
+    return AeoPillarAsset(
+        prompt=req.prompt, template=tid, template_name=tpl["name"], title=req.title, slug=slug,
+        link=f"{_site_root(req.url)}/{slug}" if slug else "",
+        page_title=str(d.get("page_title", req.title))[:80], meta_description=str(d.get("meta_description", ""))[:170],
+        where=str(d.get("where", ""))[:300], link_from=[str(x)[:200] for x in (d.get("link_from") or [])][:5],
+        eyebrow=str(d.get("eyebrow", ""))[:40], headline=str(d.get("headline", "") or req.title)[:140], intro=str(d.get("intro", "")),
+        highlights=highlights, steps=steps, sections=sections, faqs=faqs, table=table, cta=cta,
+        areas=[str(x)[:80] for x in (d.get("areas") or []) if str(x).strip()][:12],
         checklist=[str(x)[:200] for x in (d.get("checklist") or [])][:8],
     )
-    return asset
 
 
 def generate_aeo_blog_draft(

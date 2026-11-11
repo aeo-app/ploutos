@@ -16,6 +16,7 @@ instead of stalling the event loop.
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -23,7 +24,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 
 from core.security import get_current_user_id, get_real_user_id, require_paid_access
 from core.paywall import paywall_guard, payment_required, raise_if_lapsed, subscription_state
@@ -43,7 +44,7 @@ from db import (
 )
 from db.dynamo import normalize_domain
 from models.aeo_models import (
-    AeoPillarAssetRequest, AeoPillarAsset,
+    AeoPillarAssetRequest, AeoPillarAsset, SiteStyleRequest, SiteStyleResponse,
     CALENDAR_PROMPT,
     BlogTopicIdea,
     AeoBlogDraftRequest,
@@ -74,6 +75,7 @@ from services.aeo_service import _safe_get, clean_keywords, suggest_site_keyword
 from services.brand_overlay import normalise_logo, validate_logo
 from services.media_upload_service import MediaUploadError, signed_view_url, upload_image
 from services.site_contact_service import analyse_site
+from services.site_style_service import detect_site_style, detect_site_profile
 from services import short_jobs
 from services.media_upload_service import upload_video
 from services.shorts_service import ShortError, check_uploaded_short, to_mp4
@@ -250,18 +252,54 @@ def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user
     )
 
 
-@router.post("/strategy/page", summary="Write the full website page for one strategy pillar, with publishing steps")
+@router.post("/strategy/page", summary="Write a full website page from the template the customer picked")
 def strategy_page(req: AeoPillarAssetRequest, user_id: str = Depends(get_current_user_id)):
-    from services.aeo_service import generate_aeo_pillar_asset
+    from services.aeo_service import generate_aeo_pillar_asset, resolve_template, page_cache_key, PAGE_TEMPLATES
     _enforce_domain(user_id, req.url, req.company_name)
-    key = f"{req.prompt}|{req.pillar_type.upper().strip()}"
+    tid = resolve_template(req.template) or resolve_template(req.pillar_type)
+    if not tid:
+        raise HTTPException(status_code=422, detail=f"Choose one of the page templates: {', '.join(PAGE_TEMPLATES)}.")
+    key = page_cache_key(req.prompt, tid, req.title)
     # Reading a page that was already written is free; writing a new one is a paid action.
     if not get_aeo_content(user_id, "pillar", key) and not is_user_paid(user_id):
         raise payment_required(user_id, "Writing the full page is part of a paid plan.")
+    req = req.model_copy(update={"template": tid})
     return _cached_or_generate(
         user_id, "pillar", key, req.refresh, AeoPillarAsset,
         lambda t: generate_aeo_pillar_asset(req, usage_tracker=t),
     )
+
+
+@router.post("/site-style", response_model=SiteStyleResponse, summary="Read the customer's website CSS for its brand colours and fonts")
+def site_style(req: SiteStyleRequest, user_id: str = Depends(get_current_user_id)):
+    _enforce_domain(user_id, req.url, req.company_name or "Company")
+    out = dict(detect_site_style(req.url))
+    try:
+        kit = brand_svc.get_brand(user_id)
+        out.update(detect_site_profile(req.url, kit))
+        # The Brand kit is global: the logo saved there wins over the one found on the website.
+        raw = brand_svc.load_logo(user_id, kit) if kit.get("logo_url") else None
+        if raw and len(raw) <= 400_000:
+            mime = "image/png" if raw[:4] == b"\x89PNG" else "image/webp" if raw[:4] == b"RIFF" else "image/jpeg"
+            out["logo"] = f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+    except Exception as e:  # noqa: BLE001 — the style alone is still useful
+        logger.info(f"[site-style] profile skipped: {e}")
+    return SiteStyleResponse(**out)
+
+
+@router.get("/strategy/pages", summary="Pages already written for one question (so they are still there after a reload)")
+def strategy_pages(prompt: str = Query(..., min_length=3, max_length=300), user_id: str = Depends(get_current_user_id)):
+    out = []
+    for c in list_aeo_content(user_id):
+        d = c.get("data") or {}
+        if c.get("kind") != "pillar" or d.get("prompt") != prompt or not d.get("template"):
+            continue            # pages written before templates existed have no template and are not listed
+        try:
+            out.append((c.get("updated_at", ""), AeoPillarAsset(**{**d, "cached": True})))
+        except Exception:
+            logger.warning(f"[aeo] skipped a saved page for user={user_id} that no longer matches the schema")
+    out.sort(key=lambda x: x[0], reverse=True)
+    return {"pages": [a for _, a in out]}
 
 
 class BlogDraftEdit(BaseModel):

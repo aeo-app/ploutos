@@ -56,10 +56,10 @@ export function BrandKitCard({ defaultOpen = false }) {
   return (
     <section className="ae-card" style={{ padding: 22, gap: 14, border: brand.complete ? undefined : '1.5px solid #c7c9f5' }}>
       <div className="ae-col" style={{ gap: 4 }}>
-        <span className="ae-eyebrow p">Brand kit {brand.complete ? '' : '· required'}</span>
+        <span className="ae-eyebrow p">Brand kit {brand.complete ? '' : '· required'} · used everywhere</span>
         <h3 style={{ margin: 0, fontSize: 17 }}>Your logo and contact details</h3>
-        <span className="ae-sub" style={{ fontSize: 13 }}>We print your logo, phone number and email on every image and YouTube Short we create, so people can reach you straight away.
-          {!brand.complete && <b style={{ color: '#3730a3' }}> Add {missingTxt} to start creating images.</b>}</span>
+        <span className="ae-sub" style={{ fontSize: 13 }}>Set this once. We use your logo and contact details everywhere: on every image and YouTube Short, and on the website pages we build for you.
+          {!brand.complete && <b style={{ color: '#3730a3' }}> Add {missingTxt} to get started.</b>}</span>
       </div>
 
       <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -113,6 +113,23 @@ export function BrandKitCard({ defaultOpen = false }) {
         {brand.complete && <button type="button" className="ae-btn" onClick={() => setEditing(false)}>Close</button>}
       </div>
     </section>
+  );
+}
+
+/** Shown on pages that need the Brand kit: the kit itself lives once, on the Dashboard, and applies everywhere. */
+export function BrandKitGate() {
+  const { setPage } = useApp();
+  const { brand } = useAeo();
+  if (!brand.loaded || brand.complete) return null;
+  const missing = (brand.missing || []).map(m => m === 'logo' ? 'your logo' : 'a contact phone number').join(' and ');
+  return (
+    <div className="ae-card" style={{ padding: '14px 18px', flexDirection: 'row', alignItems: 'center', gap: 14, flexWrap: 'wrap', border: '1.5px solid #c7c9f5' }} data-testid="brand-gate">
+      <div className="ae-col" style={{ gap: 2, minWidth: 0, flex: 1 }}>
+        <b style={{ fontSize: 13.5 }}>Brand kit · required</b>
+        <span className="ae-sub" style={{ fontSize: 12.5 }}>Add {missing} once on your Dashboard. It is then used everywhere: images, Shorts and your website pages.</span>
+      </div>
+      <button type="button" className="ae-btn sm primary" onClick={() => { setPage('home'); window.scrollTo(0, 0); }}>Open Brand kit →</button>
+    </div>
   );
 }
 

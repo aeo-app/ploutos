@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAeo, usePromptRows } from '../AeoContext';
 import { CompetitorsMini, EmptyAnalysis, Kpi, PromptsCard, SocialChannelsCard, useCompetitorRows } from '../parts';
+import { BrandKitCard } from '../BrandKit';
 import { ENGINES, citedCount, engineStats, hostOf, isReal, overallVis, sovRank, youSov } from '../utils';
 
 const delta = (cur, prev, unit = '') => {
@@ -28,6 +29,7 @@ export function DashboardPage() {
 
   return (
     <>
+      <BrandKitCard />
       <section className="ae-card ae-facts" style={{ display: 'grid', flexDirection: 'unset' }}>
         <div className="ae-fact"><span className="ae-eyebrow">Website</span><b>{domain ? <a href={`https://${domain}`} target="_blank" rel="noreferrer">{domain}</a> : '—'}</b><span>Your account's locked domain</span></div>
         <div className="ae-fact"><span className="ae-eyebrow">Country</span><b>{r.market || '—'}</b><span>Market analysed</span></div>

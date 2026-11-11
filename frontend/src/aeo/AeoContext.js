@@ -6,6 +6,7 @@ import { historyApi } from '../api/historyApi';
 import { aeoApi } from '../api/aeoApi';
 import { seoApi, isActingAs } from '../api/seoApi';
 import { usePayment } from '../context/PaymentContext';
+import { pageKey } from './pageTemplates';
 
 const Ctx = createContext(null);
 const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], custom_blog_topics: [], calendar_start: '', brand: {} };
@@ -211,8 +212,17 @@ export function AeoProvider({ children }) {
   const loadSocial   = async (prompt, refresh, cycle = 0) => {
     return generate('social', socialKey(prompt, cycle), { prompt, cycle, keywords: savedRef.current.calendar_keywords || [] }, aeoApi.socialPosts, refresh);
   };
-  const loadPillarPage = (prompt, pillar, refresh) =>
-    generate('pillar', `${prompt}|${String(pillar.type).toUpperCase()}`, { prompt, pillar_type: pillar.type, title: pillar.title, detail: pillar.detail || '' }, aeoApi.strategyPage, refresh);
+  /** Writes one page from a template: { template, title, detail }. Saved pages come back without a charge. */
+  const loadPage = (prompt, page, refresh) =>
+    generate('pillar', pageKey(prompt, page.template, page.title), { prompt, template: page.template, title: page.title, detail: page.detail || '', answer: page.answer || '' }, aeoApi.strategyPage, refresh);
+  /** Pages already written for this question (so they are still listed after a reload). */
+  const loadSavedPages = useCallback(async (prompt) => {
+    try {
+      const r = await withTokenExpiry(aeoApi.strategyPages(prompt), { goScreen, logout });
+      const pages = r?.pages || [];
+      setContent(c => ({ ...c, pillar: { ...pages.reduce((m, a) => ({ ...m, [pageKey(a.prompt, a.template, a.title)]: a }), {}), ...c.pillar } }));
+    } catch (e) { /* the list is a convenience; a failure here should not interrupt the page */ }
+  }, [goScreen, logout]);
   const loadBlogDraft = (prompt, topic, refresh) =>
     generate('blog', `${prompt}|${topic.title}`, { prompt, type: topic.type, title: topic.title, words: topic.words || 1000 }, aeoApi.blogDraft, refresh);
 
@@ -327,7 +337,7 @@ export function AeoProvider({ children }) {
   };
 
   const value = useMemo(() => ({
-    loadPillarPage,
+    loadPage, loadSavedPages,
     quota, analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,

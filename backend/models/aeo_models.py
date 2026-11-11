@@ -121,10 +121,14 @@ class AeoStrategyRequest(AnalyseRequest):
 
 
 class StrategyPillar(BaseModel):
-    type: str
+    """One page we suggest the business publishes for this question."""
+    type: str = ""                   # plain-English template name, e.g. "Complete guide"
     title: str
     detail: str
     meta: str = ""
+    template: str = ""               # template id (see PAGE_TEMPLATES in aeo_service)
+    slug: str = ""                   # suggested URL ending
+    link: str = ""                   # full suggested page address on the customer's own site
 
 
 class StrategyStep(BaseModel):
@@ -260,12 +264,14 @@ class SiteChecksResponse(BaseModel):
     error: Optional[str] = None
 
 
-# ── A finished website page for one strategy pillar (pillar page / FAQ / comparison / proof) ──────────────────────
+# ── A finished, designed web page: content written for a template the customer picked ───────────────────────────
 class AeoPillarAssetRequest(AnalyseRequest):
     prompt: str = Field(..., min_length=3, max_length=300)
-    pillar_type: str = Field(..., min_length=2, max_length=40)
+    template: str = Field(default="", max_length=40)        # template id, e.g. "faq"
+    pillar_type: str = Field(default="", max_length=40)     # older name for the same thing; still accepted
     title: str = Field(..., min_length=3, max_length=300)
     detail: str = Field(default="", max_length=600)
+    answer: str = Field(default="", max_length=1200)        # the strategy's "answer we want AI to give" — the page must support it
     refresh: bool = False
 
 
@@ -279,20 +285,62 @@ class PillarTable(BaseModel):
     rows: list[list[str]] = Field(default_factory=list)
 
 
+class PageItem(BaseModel):
+    """A short title + sentence: a benefit, a key takeaway, a step, or an item to prepare."""
+    title: str
+    text: str = ""
+
+
+class PageCta(BaseModel):
+    headline: str = ""
+    text: str = ""
+    button: str = ""
+
+
 class AeoPillarAsset(BaseModel):
     prompt: str
-    pillar_type: str
+    template: str = ""
+    template_name: str = ""
     title: str
     slug: str = ""
+    link: str = ""                               # full address the page will have on the customer's site
     page_title: str = ""
     meta_description: str = ""
     where: str = ""                              # where on the site this page belongs
     link_from: list[str] = Field(default_factory=list)
-    intro: str = ""
+    eyebrow: str = ""                            # short label above the headline
+    headline: str = ""                           # the page's main heading
+    intro: str = ""                              # opening lead paragraph
+    highlights: list[PageItem] = Field(default_factory=list)   # benefits / key takeaways / what you need
+    steps: list[PageItem] = Field(default_factory=list)        # how it works / numbered steps
     sections: list[BlogSection] = Field(default_factory=list)
+    areas: list[str] = Field(default_factory=list)             # places covered (local page)
     faqs: list[PillarFaq] = Field(default_factory=list)
     table: Optional[PillarTable] = None
-    schema_jsonld: str = ""                      # ready-to-paste <script type="application/ld+json"> block
-    steps: list[str] = Field(default_factory=list)      # how to publish it
+    cta: Optional[PageCta] = None
     checklist: list[str] = Field(default_factory=list)  # what to fill in before publishing
     cached: bool = False
+
+
+# ── The look of the customer's own website (colours + fonts), so a new page can match it ─────────────────────────
+class SiteStyleRequest(BaseModel):
+    url: str = Field(..., min_length=3, max_length=300)
+    company_name: str = Field(default="Company", max_length=200)
+
+
+class SiteStyleResponse(BaseModel):
+    found: bool = False
+    primary: str = ""                 # main brand colour, #rrggbb
+    secondary: str = ""               # second brand colour, #rrggbb (may be empty)
+    palette: list[str] = Field(default_factory=list)   # brand-like colours found, most used first
+    text: str = ""                    # body text colour if it is dark and readable
+    font: str = ""                    # body font family name, e.g. "Poppins"
+    heading_font: str = ""
+    font_kind: str = "sans"           # "sans" or "serif"
+    note: str = ""                    # plain-language explanation when nothing usable was found
+    # Company details read from the same website. Anything not found is "" — never a placeholder.
+    logo: str = ""                    # data: URI (or https URL) of the company logo
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+    socials: dict = Field(default_factory=dict)

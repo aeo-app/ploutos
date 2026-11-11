@@ -9,8 +9,8 @@ import { useAeo } from '../AeoContext';
 import { useConnectProgress } from '../useConnectProgress';
 import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
-import { BrandKitCard, KeywordsPanel, ShortPlayer } from '../BrandKit';
-import { PillarReader } from '../PillarPage';
+import { BrandKitGate, KeywordsPanel, ShortPlayer } from '../BrandKit';
+import { PageStudio } from '../PageStudio';
 import { MediaOptions, EMPTY_MEDIA, mediaPayload } from '../MediaOptions';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
 import { exportMarkdown, exportPdf, exportWord } from '../blogExport';
@@ -88,15 +88,6 @@ function PreviewBanner({ what }) {
     </div>
   );
 }
-function LockedTile({ label }) {
-  const { requirePayment } = useApp();
-  return (
-    <div className="ae-pillar" style={{ background: '#fafaff', borderStyle: 'dashed', cursor: 'pointer', justifyContent: 'center', alignItems: 'center', textAlign: 'center', minHeight: 110 }} onClick={() => requirePayment('aeoStrategy')}>
-      <span style={{ fontSize: 20 }}>🔒</span><span className="ae-sub">{label}</span>
-    </div>
-  );
-}
-
 function Generating({ title, text }) {
   return (
     <section className="ae-loading">
@@ -114,15 +105,14 @@ function Retry({ title, text, onRetry, label = 'Generate' }) {
 
 /* ── Content strategy ───────────────────────────────────────────────────── */
 function StrategyBlock({ t }) {
-  const { content, busy, loadStrategy, loadPillarPage } = useAeo();
-  const [openPillar, setOpenPillar] = useState(null);     // the pillar whose page is open
+  const { content, busy, loadStrategy } = useAeo();
   const data = content.strategy[t.active];
   const isBusy = !!busy['strategy|' + t.active];
   const retry = useAutoLoad('strategy', t.active, !!data, () => loadStrategy(t.active));
 
   if (!data) {
-    return isBusy ? <Generating title={`Building your strategy for “${t.active}”`} text="Reading the market, then drafting the answer we want AI to give, the content pillars and a 4-week plan…" />
-      : <Retry title="Content strategy" text={`Build the answer we want AI to give for “${t.active}”, the content to publish, and a 4-week plan.`} label="Generate strategy" onRetry={retry} />;
+    return isBusy ? <Generating title={`Building your strategy for “${t.active}”`} text="Reading the market, then drafting the answer we want AI to give, the pages to publish and a 4-week plan…" />
+      : <Retry title="Content strategy" text={`Build the answer we want AI to give for “${t.active}”, the pages to publish, and a 4-week plan.`} label="Generate strategy" onRetry={retry} />;
   }
   return (
     <section className="ae-card" style={{ padding: 24, gap: 20 }}>
@@ -136,33 +126,18 @@ function StrategyBlock({ t }) {
           ))}
         </div>
       </div>
-      {data.limited && <PreviewBanner what="You see the answer, one content pillar and the first two weeks. The full plan has four pillars and four weeks." />}
+      {data.limited && <PreviewBanner what="You see the answer and the first two weeks of the plan. Writing full pages and the last two weeks are part of a paid plan." />}
       <div className="ae-answer"><span className="ae-eyebrow p">The answer we want AI to give</span><span style={{ fontSize: 15, lineHeight: 1.55, fontWeight: 500 }}>{data.answer}</span></div>
-      <p className="ae-sub" style={{ margin: 0 }}>These are pages to publish on <b>your own website</b>. Press “Write this page” on each one and we write the full page, then show you exactly how to add it to your site.</p>
-      <div className="ae-pillars">
-        {data.pillars.map((p, i) => (
-          <div key={i} className="ae-pillar">
-            <span className="ae-eyebrow">{p.type}</span><span style={{ fontSize: 15, fontWeight: 800 }}>{p.title}</span>
-            <span style={{ fontSize: 13, color: '#4a4966', lineHeight: 1.5 }}>{p.detail}</span>
-            <span className="ae-mono" style={{ marginTop: 'auto', fontSize: 11.5, color: '#4f46e5' }}>{p.meta}</span>
-            <button className="ae-btn sm primary" style={{ alignSelf: 'flex-start' }} disabled={!!busy[`pillar|${t.active}|${String(p.type).toUpperCase()}`]}
-              onClick={async () => { const k = `${t.active}|${String(p.type).toUpperCase()}`; const a = content.pillar?.[k] || await loadPillarPage(t.active, p); if (a) setOpenPillar(k); }}>
-              {busy[`pillar|${t.active}|${String(p.type).toUpperCase()}`] ? 'Writing the page…' : content.pillar?.[`${t.active}|${String(p.type).toUpperCase()}`] ? 'Open page + how to publish' : 'Write this page'}
-            </button>
-          </div>
-        ))}
-        {data.limited && [1, 2, 3].map(i => <LockedTile key={i} label="More content pillars" />)}
+      <PageStudio t={t} data={data} />
+      <div className="ae-col" style={{ gap: 8 }}>
+        <span className="ae-eyebrow p">Your 4-week plan</span>
+        <div className="ae-plan">
+          {data.plan.map((w, i) => (
+            <div key={i}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#4f46e5' }}>{w.week}</span><span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.45 }}>{w.task}</span></div>
+          ))}
+          {data.limited && [3, 4].map(n => <div key={n} style={{ cursor: 'pointer', opacity: .6 }}><span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5' }}>WEEK {n}</span><span style={{ fontSize: 13 }}>🔒 Locked</span></div>)}
+        </div>
       </div>
-      <div className="ae-plan">
-        {data.plan.map((w, i) => (
-          <div key={i}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#4f46e5' }}>{w.week}</span><span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.45 }}>{w.task}</span></div>
-        ))}
-        {data.limited && [3, 4].map(n => <div key={n} style={{ cursor: 'pointer', opacity: .6 }}><span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5' }}>WEEK {n}</span><span style={{ fontSize: 13 }}>🔒 Locked</span></div>)}
-      </div>
-      {openPillar && content.pillar?.[openPillar] && (
-        <PillarReader asset={content.pillar[openPillar]} onClose={() => setOpenPillar(null)} refreshing={!!busy[`pillar|${openPillar}`]}
-          onRefresh={() => { const p = data.pillars.find(x => `${t.active}|${String(x.type).toUpperCase()}` === openPillar); if (p) loadPillarPage(t.active, p, true); }} />
-      )}
     </section>
   );
 }
@@ -443,7 +418,7 @@ function CalendarBlock({ t }) {
   if (!data && cycle > 0) {
     const ended = cycle === currentCycle && currentCycle > 0;
     return <>
-      <BrandKitCard />
+      <BrandKitGate />
       <section className="ae-card" style={{ padding: 24, gap: 14 }}>
         <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>{monthNav}</div>
         {busy['social|' + key]
@@ -456,7 +431,7 @@ function CalendarBlock({ t }) {
     </>;
   }
 
-  if (!data) return busy['social|' + key] ? <Generating title="Writing your social media calendar" text="Drafting a full month of posters and reels for each of your channels…" /> : <><BrandKitCard /><Retry title="Social media calendar" text={`Create a 4-week calendar. Every week has 3 posters and 2 reels. We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. It is built around your keywords (or the top 10 from your website if you add none) Then generate a realistic image or reel for each item, with your logo and contact details, and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
+  if (!data) return busy['social|' + key] ? <Generating title="Writing your social media calendar" text="Drafting a full month of posters and reels for each of your channels…" /> : <><BrandKitGate /><Retry title="Social media calendar" text={`Create a 4-week calendar. Every week has 3 posters and 2 reels. We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. It is built around your keywords (or the top 10 from your website if you add none) Then generate a realistic image or reel for each item, with your logo and contact details, and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
 
   const brand = state.request.company_name || 'Your company';
   const handle = hostOf(state.request.url).split('.')[0] || 'yourcompany';
@@ -548,7 +523,7 @@ function CalendarBlock({ t }) {
   };
   const needBrand = () => {
     if (brandKit.complete) return false;
-    toast({ type: 'info', message: 'Add your logo and contact phone number first — they are printed on every image and Short.' });
+    toast({ type: 'info', message: 'Add your logo and contact phone number in the Brand kit on your Dashboard first — it is used everywhere.' });
     if (brandRef.current) brandRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return true;
   };
@@ -649,7 +624,7 @@ function CalendarBlock({ t }) {
 
   return (
     <>
-      <div ref={brandRef}><BrandKitCard /></div>
+      <div ref={brandRef}><BrandKitGate /></div>
       <section className="ae-card ae-calcard">
         <div className="ae-calhead">
           <div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
