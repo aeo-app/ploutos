@@ -39,6 +39,10 @@ async def lifespan(app: FastAPI):
             "relying on IAM role (correct for EC2/ECS/Lambda; set creds for local dev)"
         )
 
+    # Insights page: website speed tests use Google PageSpeed Insights (free, needs a key).
+    if not os.getenv("PAGESPEED_API_KEY"):
+        logger.warning("[startup] PAGESPEED_API_KEY not set — website speed tests on the Insights page will fail")
+
     # Auto-create DynamoDB tables in local dev mode — analyses table AND
     # the separate payments table (db/payments_dynamo.py).
     if os.getenv("DYNAMODB_ENDPOINT_URL"):
@@ -228,6 +232,7 @@ from routers.social_publish_router import router as social_publish_router
 from routers.article_router import router as article_router
 from routers.aeo_router import router as aeo_router
 from routers.admin_aeo_router import router as admin_aeo_router
+from routers.insights_router import router as insights_router
 
 app.include_router(auth_router)
 app.include_router(seo_router)
@@ -240,6 +245,7 @@ app.include_router(social_publish_router)
 app.include_router(article_router)
 app.include_router(aeo_router)
 app.include_router(admin_aeo_router)
+app.include_router(insights_router)
 
 
 @app.get("/", tags=["Health"])

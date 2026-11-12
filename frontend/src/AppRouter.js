@@ -4,6 +4,7 @@ import { useApp } from './context/AppContext';
 import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage } from './aeo/pages/AnalyticsPages';
 import { DomainAuthorityAeoPage, CompanyAeoPage } from './aeo/pages/DomainCompanyPages';
 import { StrategyAeoPage, BlogsAeoPage, CalendarAeoPage } from './aeo/pages/ContentPages';
+import { InsightsPage } from './aeo/pages/InsightsPage';
 import { CompetitorsPage }     from './pages/CompetitorsPage';
 import { KeywordsPage }        from './pages/KeywordsPage';
 import { ContentStrategyPage } from './pages/ContentStrategyPage';
@@ -19,6 +20,7 @@ export const APP_PAGES = {
   aeoCompetitors: CompetitorsAeoPage,
   aeoEngines:     EnginesPage,
   da:             DomainAuthorityAeoPage,
+  insights:       InsightsPage,
   profile:        CompanyAeoPage,
   aeoStrategy:    StrategyAeoPage,
   aeoBlogs:       BlogsAeoPage,
