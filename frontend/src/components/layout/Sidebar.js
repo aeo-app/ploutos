@@ -2,8 +2,11 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAeo } from '../../aeo/AeoContext';
 import { fmtDate } from '../../aeo/utils';
+import { Icon } from '../../aeo/Icon';
 import Logo from '../../assets/screens/aeo-icon.png';
 
+
+const NAV_ICON = { home: 'layout-dashboard', aeoPrompts: 'message-square-text', aeoCompetitors: 'users', aeoEngines: 'bot', da: 'gauge', profile: 'building-2', aeoStrategy: 'lightbulb', aeoBlogs: 'file-text', aeoCalendar: 'calendar-days', history: 'history', billing: 'credit-card' };
 
 export function Sidebar({ open, onClose }) {
   const { state, setPage } = useApp();
@@ -66,7 +69,7 @@ export function Sidebar({ open, onClose }) {
               <span className="ae-nav-label">{sec.section}</span>
               {sec.items.map(it => (
                 <button key={it.id} type="button" className={`ae-nav-item ${(state.page === it.id || (it.id === 'aeoCalendar' && state.page === 'publishCalendar') || (it.id === 'aeoBlogs' && (state.page === 'blogs' || state.page === 'blogTopics'))) ? 'on' : ''}`} onClick={() => go(it.id)}>
-                  {it.label}<span className="ae-nav-meta">{it.meta || ''}</span>
+                  <Icon name={NAV_ICON[it.id]} size={18} /><span>{it.label}</span><span className="ae-nav-meta">{it.meta || ''}</span>
                 </button>
               ))}
             </React.Fragment>

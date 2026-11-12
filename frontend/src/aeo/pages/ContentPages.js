@@ -9,7 +9,7 @@ import { useAeo } from '../AeoContext';
 import { useConnectProgress } from '../useConnectProgress';
 import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
-import { BrandKitGate, KeywordsPanel, ShortPlayer } from '../BrandKit';
+import { BrandKitGate, ShortPlayer } from '../BrandKit';
 import { PageStudio } from '../PageStudio';
 import { MediaOptions, EMPTY_MEDIA, mediaPayload } from '../MediaOptions';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
@@ -88,12 +88,34 @@ function PreviewBanner({ what }) {
     </div>
   );
 }
-function Generating({ title, text }) {
+function Generating({ title, text, steps }) {
+  const [i, setI] = useState(0);
+  useEffect(() => { if (!steps || steps.length < 2) return undefined; const t = setInterval(() => setI(n => Math.min(n + 1, steps.length - 1)), 14000); return () => clearInterval(t); }, [steps]);
   return (
-    <section className="ae-loading">
+    <section className="ae-loading" role="status" aria-live="polite">
       <div className="ae-dots"><i /><i /><i /></div>
       <span style={{ fontSize: 16, fontWeight: 800 }}>{title}</span>
       <span className="ae-sub">{text}</span>
+      <div className="ae-bar ind" aria-hidden="true"><i /></div>
+      {steps && (
+        <ol className="ae-steps">
+          {steps.map((x, n) => <li key={x} className={n < i ? 'done' : n === i ? 'now' : ''}><b>{n < i ? '✓' : n + 1}</b>{x}</li>)}
+        </ol>
+      )}
+    </section>
+  );
+}
+const CAL_STEPS = ['Reading the keywords you ranked', 'Writing 4 weeks of posts for each channel', 'Preparing the calendar'];
+
+/** The calendar is built from the keywords the customer ranked, so it cannot be made before they rank some. */
+function RankFirst() {
+  const { setPage } = useApp();
+  return (
+    <section className="ae-card" style={{ padding: 24, gap: 12 }} data-testid="rank-first">
+      <span className="ae-eyebrow p">Social media calendar</span>
+      <h2 className="lg">Rank your keywords first</h2>
+      <p className="ae-sub" style={{ maxWidth: 640 }}>Your social media calendar is written around the keywords you want to rank for. Go to Prompts, tick the prompts you want AI tools to recommend you for, and select <b>Rank Me High</b>. Then come back and create your calendar.</p>
+      <div><button type="button" className="ae-btn primary" onClick={() => setPage('aeoPrompts')}>Choose keywords to rank</button></div>
     </section>
   );
 }
@@ -374,10 +396,55 @@ function PostPreview({ ch, post, reel, when, short, brand, handle, img, vid, vth
 // The calendar is built around the customer's keywords, so it no longer depends on picking a target prompt.
 const CAL_TARGET = { active: CALENDAR_PROMPT };
 
+
+/** Right after a calendar is created, draws every poster of the month (once), with an animated progress bar. One picture serves all the
+ *  channels that carry the same poster. It carries on if the customer leaves and returns, and skips posters that already have a picture. */
+function AutoMonthPosters({ groups, ready, genImage, setPostStates, setBlogState, doneFlag, finished, toast }) {
+  const [prog, setProg] = useState(null);   // { done, total }
+  const running = useRef(false);
+  useEffect(() => {
+    if (!ready || finished || running.current) return;
+    const todo = groups.filter(g => !g.reel && !g.items.some(p => p.st.img));
+    if (!todo.length) { setBlogState(doneFlag, { done: true }); return; }
+    running.current = true;
+    const total = todo.length;
+    let done = 0, failed = 0, next = 0;
+    setProg({ done, total });
+    const worker = async () => {
+      while (next < todo.length) {
+        const g = todo[next++];
+        const url = await genImage(g.items[0], undefined, true);
+        if (url) { const rest = g.items.slice(1); if (rest.length) setPostStates(Object.fromEntries(rest.map(q => [q.k, { img: url, v: 1 }]))); } else failed += 1;
+        done += 1; setProg({ done, total });
+      }
+    };
+    Promise.all([worker(), worker(), worker()]).finally(() => {
+      running.current = false; setProg(null);
+      if (!failed) setBlogState(doneFlag, { done: true });
+      else toast({ type: 'info', message: `${failed} poster${failed > 1 ? 's' : ''} could not be created. Open those days and select Create poster to try again.` });
+    });
+    // eslint-disable-next-line
+  }, [ready, finished, groups.length]);
+  if (!prog) return null;
+  const pct = Math.round((prog.done / prog.total) * 100);
+  return (
+    <section className="ae-card ae-postprog" role="status" aria-live="polite" data-testid="poster-progress" style={{ padding: 18, gap: 10, position: 'sticky', top: 8, zIndex: 5, boxShadow: '0 8px 24px rgba(79,70,229,.14)' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="ae-dots"><i /><i /><i /></div>
+        <b style={{ fontSize: 15 }}>Creating your posters for the month</b>
+        <span className="ae-note" style={{ marginLeft: 'auto' }}>{prog.done} of {prog.total} ready</span>
+      </div>
+      <div className="ae-bar" aria-hidden="true"><i style={{ width: Math.max(4, pct) + '%' }} /></div>
+      <span className="ae-note">Each poster has a heading, a subheading, your logo and contact details. They appear in the calendar as they finish, so you can keep working. This can take a few minutes.</span>
+    </section>
+  );
+}
+
 function CalendarBlock({ t }) {
-  const { content, busy, saved, brand: brandKit, loadSocial, socialKey, editPost, setPostState, setPostStates, setCalendarStart } = useAeo();
+  const { content, busy, saved, savedLoaded, brand: brandKit, loadSocial, socialKey, editPost, setPostState, setPostStates, setBlogState, setCalendarStart } = useAeo();
   const { state, toast, setPage } = useApp();
   const [channel, setChannel] = useState('fb');
+  const [calFilter, setCalFilter] = useState('all');
   const [cycleSel, setCycleSel] = useState(null);
   const [selKey, setSelKey] = useState(null);
   const [working, setWorking] = useState({});
@@ -403,6 +470,8 @@ function CalendarBlock({ t }) {
   const start = useMemo(() => addDays(start0, cycle * MONTH_DAYS), [start0, cycle]);
   const key = socialKey(t.active, cycle);
   const data = content.social[key];
+  const ranked = (saved.selected_prompts || []).filter(Boolean);
+  const monthEnd = addDays(start, MONTH_DAYS - 1);
   const retry = useAutoLoad('social', key, !!data, () => loadSocial(t.active, false, cycle));
   // Remember the day month 1 began, so the calendar carries on from there in later months.
   useEffect(() => { if (content.social[t.active] && !saved.calendar_start && setCalendarStart) setCalendarStart(isoDate(start0)); }, [!!content.social[t.active], saved.calendar_start]); // eslint-disable-line
@@ -422,7 +491,8 @@ function CalendarBlock({ t }) {
       <section className="ae-card" style={{ padding: 24, gap: 14 }}>
         <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>{monthNav}</div>
         {busy['social|' + key]
-          ? <Generating title={`Writing month ${cycle + 1} of your calendar`} text="Drafting this month’s posters and reels for each of your channels…" />
+          ? <Generating title={`Writing month ${cycle + 1} of your calendar`} text="Drafting this month’s posters and reels for each of your channels…" steps={CAL_STEPS} />
+          : !ranked.length ? <RankFirst />
           : <div className="ae-col" style={{ gap: 10 }}>
               <span className="ae-sub">{ended ? `Your previous month has ended. ` : ''}Month {cycle + 1} has not been created yet. We will write a fresh set of posters and reels for each channel, built around your keywords. Your earlier months stay available.</span>
               <div><button type="button" className="ae-btn primary" onClick={retry}>Create month {cycle + 1}</button></div>
@@ -431,7 +501,10 @@ function CalendarBlock({ t }) {
     </>;
   }
 
-  if (!data) return busy['social|' + key] ? <Generating title="Writing your social media calendar" text="Drafting a full month of posters and reels for each of your channels…" /> : <><BrandKitGate /><Retry title="Social media calendar" text={`Create a 4-week calendar. Every week has 3 posters and 2 reels. We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. It is built around your keywords (or the top 10 from your website if you add none) Then generate a realistic image or reel for each item, with your logo and contact details, and approve it.`} label="Generate social media calendar" onRetry={retry} /></>;
+  if (!data) return busy['social|' + key]
+    ? <Generating title="Writing your social media calendar" text="This takes a minute or two. Your posters are created right after." steps={CAL_STEPS} />
+    : !ranked.length ? <><BrandKitGate /><RankFirst /></>
+    : <><BrandKitGate /><Retry title="Social media calendar" text={`Create your 4-week calendar from the ${ranked.length} keyword${ranked.length > 1 ? 's' : ''} you ranked. Every week has 3 posters and 2 reels. We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. All the posters for the month are then created for you, each with a heading and a subheading, with your logo and contact details. You can create one calendar per month.`} label="Generate social media calendar" onRetry={retry} /></>;
 
   const brand = state.request.company_name || 'Your company';
   const handle = hostOf(state.request.url).split('.')[0] || 'yourcompany';
@@ -471,7 +544,7 @@ function CalendarBlock({ t }) {
   const selGroup = groups.find(g => g.key === selKey) || defaultGroup;
   const selItem = selGroup ? (selGroup.items.find(p => p.c.id === channel) || selGroup.items[0]) : null;
   const ch = selItem ? selItem.c : CHANNELS[0];
-  const dayGrid = Array.from({ length: MONTH_DAYS }, (_, o) => ({ o, d: addDays(start, o), groups: groups.filter(g => g.offset === o) }));
+  const dayGrid = Array.from({ length: MONTH_DAYS }, (_, o) => ({ o, d: addDays(start, o), groups: groups.filter(g => g.offset === o && (calFilter === 'all' || g.items.some(p => p.c.id === calFilter))) }));
 
   const savePost = async (p, fields) => {
     setSavingPost(m => ({ ...m, [p.k]: true }));
@@ -528,19 +601,28 @@ function CalendarBlock({ t }) {
     return true;
   };
   const bizPayload = () => ({ company_name: state.request.company_name || '', industry: state.request.industry || '', keywords: saved.calendar_keywords || [] });
-  const genImage = async (p, brief) => {
+  /** Every poster has a main heading and a subheading: the customer's own if typed, otherwise the ones written with the post. */
+  const posterLines = (p) => {
+    const m = mediaPayload(mediaOpts[p.k]);
+    const words = (x, n) => String(x || '').replace(/\s+/g, ' ').trim().split(' ').slice(0, n).join(' ');
+    return {
+      heading: m.heading || (p.post.heading || '').trim() || words(p.post.text, 7) || brand,
+      subheading: m.subheading || (p.post.subheading || '').trim() || (p.post.cta || '').trim() || brand,
+    };
+  };
+  const genImage = async (p, brief, quiet) => {
     if (needBrand()) return;
     setWorking(w => ({ ...w, [p.k]: 'ai' }));
     try {
       const res = await canvaApi.generatePoster({
         day_date: `aeo-${isoDate(p.d)}-${p.c.id}`, post_number: 1,
         visual_suggestion: brief || visualOf(p.post, brand),
-        caption: p.post.text.slice(0, 500), cta: p.post.cta || '', ...bizPayload(), ...mediaPayload(mediaOpts[p.k]),
+        caption: p.post.text.slice(0, 500), cta: p.post.cta || '', ...bizPayload(), ...mediaPayload(mediaOpts[p.k]), ...posterLines(p),
       });
-      if (res?.poster_image_url) setPostState(p.k, { img: res.poster_image_url, v: (p.st.v || 0) + 1 });
-      else toast({ type: 'error', message: 'The image service returned no image. Please try again.' });
+      if (res?.poster_image_url) { setPostState(p.k, { img: res.poster_image_url, v: (p.st.v || 0) + 1 }); return res.poster_image_url; }
+      else if (!quiet) toast({ type: 'error', message: 'The image service returned no image. Please try again.' });
     } catch (e) {
-      if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not generate the image.' });
+      if (e.code !== 'TokenExpired' && !quiet) toast({ type: 'error', message: e.message || 'Could not generate the image.' });
     } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
   };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -586,10 +668,6 @@ function CalendarBlock({ t }) {
     } catch (_) { window.open(p.st.vid, '_blank', 'noopener'); }
     finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
   };
-  const rebuild = async (prompt) => {
-    if (!window.confirm('Rebuild the calendar around these keywords? The posts are rewritten. Images and approvals stay on the same slots.')) return;
-    await loadSocial(prompt, true, cycle);
-  };
   const upload = async (p, file) => {
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) { toast({ type: 'error', message: 'Please choose an image under 10 MB.' }); return; }
@@ -625,6 +703,7 @@ function CalendarBlock({ t }) {
   return (
     <>
       <div ref={brandRef}><BrandKitGate /></div>
+      <AutoMonthPosters groups={groups} ready={!acting && !!brandKit.complete && !!data && savedLoaded} genImage={genImage} setPostStates={setPostStates} setBlogState={setBlogState} doneFlag={hkey('autoposters', key)} finished={!!(saved.blog_state[hkey('autoposters', key)] || {}).done} toast={toast} />
       <section className="ae-card ae-calcard">
         <div className="ae-calhead">
           <div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
@@ -636,9 +715,22 @@ function CalendarBlock({ t }) {
           <span className="ae-stat"><i style={{ background: '#cbd5e1' }} /><b>{nDraft}</b> need approval</span>
           <span className="ae-note" style={{ marginLeft: 'auto' }}>{groups.length} posts this month · each goes to every platform that carries it</span>
         </div>
+        <div className="ae-calfilter" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '4px 0 12px' }}>
+          <span className="ae-note">Show:</span>
+          {[{ id: 'all', name: 'All platforms' }, ...CHANNELS.map(c => ({ id: c.id, name: c.id === 'yt' ? 'YouTube Shorts' : c.name }))].map(o => {
+            const n = o.id === 'all' ? groups.length : groups.filter(g => g.items.some(p => p.c.id === o.id)).length;
+            return <button key={o.id} type="button" className={`ae-btn sm${calFilter === o.id ? ' good' : ''}`} onClick={() => { setCalFilter(o.id); if (o.id !== 'all') setChannel(o.id); }}>{o.name} · {n}</button>;
+          })}
+        </div>
         <details className="ae-kwdet">
-          <summary>Keywords this calendar is built around{(saved.calendar_keywords || []).length ? ` · ${(saved.calendar_keywords || []).length}` : ''}</summary>
-          <KeywordsPanel prompt={t.active} onRegenerate={rebuild} regenerating={!!busy['social|' + key]} />
+          <summary>Keywords this calendar is built around{(data.keywords || saved.calendar_keywords || []).length ? ` · ${(data.keywords || saved.calendar_keywords || []).length}` : ''}</summary>
+          <div className="ae-col" style={{ gap: 8, padding: '12px 14px', background: '#f8f8fd', border: '1px solid var(--ae-line2)', borderRadius: 12 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {(data.keywords || saved.calendar_keywords || []).map(k => <span key={k} className="ae-pill" style={{ background: '#eef0ff', color: '#3730a3' }}>{k}</span>)}
+            </div>
+            <span className="ae-note">These are the keywords you ranked. Your calendar is created once a month, so a new one can be created after {fmtDate(monthEnd, { day: 'numeric', month: 'long' })}.
+              {' '}<a role="link" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => setPage('aeoPrompts')}>Change the keywords you rank</a></span>
+          </div>
         </details>
         <div className="ae-cal2">
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <span key={d} className="ae-cal2-h">{d}</span>)}
@@ -727,7 +819,7 @@ function CalendarBlock({ t }) {
               {editing[p.k] && <PostEditForm ch={p.c} post={p.post} reel={p.reel} saving={!!savingPost[p.k]}
                 onCancel={() => setEditing(m => ({ ...m, [p.k]: false }))}
                 onSave={async (d) => { if (await savePost(p, d)) setEditing(m => ({ ...m, [p.k]: false })); }} />}
-              <MediaOptions key={`mo-${p.k}`} kind={p.reel ? 'reel' : 'image'} value={mediaOpts[p.k]} update={updateMedia(p.k)} disabled={!!w} defaultOpen={!hasMedia(p)} />
+              <MediaOptions key={`mo-${p.k}`} defaults={p.reel ? undefined : posterLines(p)} kind={p.reel ? 'reel' : 'image'} value={mediaOpts[p.k]} update={updateMedia(p.k)} disabled={!!w} defaultOpen={!hasMedia(p)} />
               <div className="ae-post-actions">
                 <button className="ae-btn sm" style={{ fontWeight: 700 }} onClick={() => setEditing(m => ({ ...m, [p.k]: !m[p.k] }))}>{editing[p.k] ? 'Close editor' : '✎ Edit post'}</button>
                 {p.reel ? <>

@@ -21,6 +21,7 @@ import threading
 import os
 from concurrent.futures import ThreadPoolExecutor
 import logging
+from datetime import datetime, timezone
 import re
 import socket
 import time
@@ -678,23 +679,39 @@ def _core_week(req: AeoSocialRequest, week: int, keywords: list[str], usage_trac
 Write the CORE content for the week. These items are shared by every social channel, so write them channel-neutral: the idea, the key
 message and the visual. Each item has a different angle. A "poster" is one image post. A "reel" is a vertical video of 15-20 seconds.
 `topic`: the angle in a few words. `message`: the key message in 2-3 plain sentences (facts that can be said on any channel).
-`cta`: a short call to action. `hook`: a punchy line under 60 characters (the on-screen hook for a reel; the headline for a poster).
+`cta`: a short call to action. `hook`: a punchy line under 60 characters (the on-screen hook for a reel; the MAIN HEADING printed on a poster).
+`subhead`: a supporting line under 90 characters that completes the hook (the SUBHEADING printed under the heading on a poster). Both are required for every item.
 `visual`: for a poster, ONE realistic photograph (real people, places, products or services; no text in the image); for a reel, 3 realistic
 scenes in order. Never cartoons or illustrations. `duration`: for a reel like '0:18', for a poster empty.
 
 Write exactly these {len(todo)} items, in this order:
 {chr(10).join(f"{i + 1}. {k}" for i, k in enumerate(todo))}
 
-Return ONE JSON object: {{"items": [{{"topic": "...", "message": "...", "cta": "...", "hook": "...", "visual": "...", "duration": "..."}}, ...]}}."""
+Return ONE JSON object: {{"items": [{{"topic": "...", "message": "...", "cta": "...", "hook": "...", "subhead": "...", "visual": "...", "duration": "..."}}, ...]}}."""
         with _BEDROCK_SLOTS:
             raw = _converse(_SYSTEM, prompt, max_tokens=900 + 450 * len(todo), usage_tracker=usage_tracker)
         out = []
         for p in list(_parse_json(raw).get("items") or []):
             if not isinstance(p, dict) or not str(p.get("message", "")).strip():
                 break
-            out.append({k: str(p.get(k, "")).strip() for k in ("topic", "message", "cta", "hook", "visual", "duration")})
+            out.append({k: str(p.get(k, "")).strip() for k in ("topic", "message", "cta", "hook", "subhead", "visual", "duration")})
         return out
     return _with_retries(call, CORES_PER_WEEK, f"core items for week {week + 1}")
+
+
+def _first_words(text: str, n: int) -> str:
+    words = re.sub(r"\s+", " ", str(text or "")).strip().strip("\"'").split(" ")
+    return " ".join(words[:n]).rstrip(",;:-– ")
+
+
+def _poster_lines(core: dict, company: str) -> tuple[str, str]:
+    """The heading and subheading printed on a poster. Every poster has both: if the model left one out we build it from the post itself."""
+    heading = (core.get("hook") or "").strip() or _first_words(core.get("topic") or core.get("message"), 7) or company
+    sub = (core.get("subhead") or "").strip()
+    if not sub:
+        sentences = re.split(r"(?<=[.!?])\s+", str(core.get("message") or "").strip())
+        sub = next((x for x in sentences if x and x.lower().rstrip(".!?") != heading.lower().rstrip(".!?")), "") or core.get("cta") or f"{company}: here to help"
+    return heading[:70], _first_words(sub, 16)[:110]
 
 
 def _adapt_week(req: AeoSocialRequest, c: str, week: int, items: list[tuple[int, str, dict]], keywords: list[str],
@@ -731,6 +748,7 @@ Return ONE JSON object: {{"posts": [{{"text": "...", "cta": "...", "tags": "#a #
                 kind=k, week=week, core=cid, text=str(p.get("text", ""))[:2000], cta=str(p.get("cta") or core["cta"])[:60],
                 tags=str(p.get("tags", ""))[:200], visual=(core["visual"] or core["message"])[:600],
                 title=(str(p.get("title") or core["hook"])[:120] if reel else ""), duration=core["duration"][:10] if reel else "",
+                **({} if reel else dict(zip(("heading", "subheading"), _poster_lines(core, req.company_name)))),
             ))
         return out
     return _with_retries(call, len(items), f"{CHANNEL_NAMES[c]} items for week {week + 1}")
@@ -756,7 +774,8 @@ def generate_aeo_social(
         channels: dict[str, list[AeoSocialPost]] = {c: [] for c in CHANNELS}
         for c, w, f in done:
             channels[c] += f.result()
-    return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited, keywords=keywords, cycle=req.cycle)
+    return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited, keywords=keywords, cycle=req.cycle,
+                             generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
 
 def social_shape_ok(doc: dict, limited: bool) -> bool:

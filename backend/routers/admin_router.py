@@ -435,6 +435,7 @@ async def user_social_status(user_id: str, admin_id: str = Depends(require_admin
         platforms.append(SocialPlatformStatus(
             platform=platform, connected=conn is not None,
             account_label=(conn or {}).get("extra", {}).get("label", ""),
+            needs_reconnect=bool((conn or {}).get("needs_reconnect", False)),
         ))
     return SocialConnectionsStatusResponse(platforms=platforms)
 

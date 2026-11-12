@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import s from './Auth.module.css';
+import aeoIcon from '../../assets/screens/aeo-icon.png';
 
 const FEATURES = [
   { icon: '⚔', title: 'Answer-Engine Ranking', text: 'See where you surface across ChatGPT, Perplexity, Claude & Gemini' },
@@ -8,12 +9,9 @@ const FEATURES = [
   { icon: '📈', title: 'Content Automation',    text: 'Audits, briefs & social posts shipped on a schedule' },
 ];
 
-function SearchIcon() {
-  return (
-    <svg className={s.sonarCenterIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-    </svg>
-  );
+/** The AEO icon, used wherever the sign-in pages used to show a search icon. */
+function AeoIcon({ className }) {
+  return <img src={aeoIcon} alt="AEO-APP.ai" className={className} draggable="false" />;
 }
 
 export function AuthLayout({ children }) {
@@ -27,21 +25,21 @@ export function AuthLayout({ children }) {
         {/* Logo */}
         <div className={s.brandLogo}>
           <div className={s.brandLogoMark}>
-            <SearchIcon />
+            <AeoIcon className={s.brandLogoImg} />
           </div>
           <div>
-            <div className={s.brandLogoText}>aeo-app<span style={{ color: '#B5AEFF' }}>.ai</span></div>
+            <div className={s.brandLogoText}>AEO_APP<span style={{ color: '#B5AEFF' }}>.com</span></div>
             <div className={s.brandLogoSub}>Your AI Growth Hacker</div>
           </div>
         </div>
 
         {/* Sonar animation */}
-        <div className={s.sonarArea}>
-          <div className={s.sonarCenter}><SearchIcon /></div>
+        {/* <div className={s.sonarArea}>
+          <div className={s.sonarCenter}><AeoIcon className={s.sonarCenterImg} /></div>
           {[0.7, 1.4, 2.1].map((delay, i) => (
             <div key={i} className={s.sonarRing} style={{ animationDelay: `${delay}s` }} />
           ))}
-        </div>
+        </div> */}
 
         {/* Headline */}
         <h1 className={s.brandHeadline}>

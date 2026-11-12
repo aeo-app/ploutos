@@ -351,6 +351,23 @@ def _adopt_team_calendar(user_id: str, key: str, limited: bool) -> None:
         logger.info(f"[aeo] could not carry over the team's calendar: {e}")
 
 
+def _calendar_locked_until(user_id: str, saved: dict, cycle: int):
+    """The date a saved calendar may be created again, or None when it may be now. A calendar covers one month (4 weeks from the day the
+    customer's calendar began); calendars made before this rule carry no creation date and are not locked."""
+    gen = _parse_ts(saved.get("generated_at"))
+    if not gen:
+        return None
+    try:
+        start0 = datetime.strptime(str(get_aeo_state(user_id).get("calendar_start") or ""), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        start0 = None
+    if start0:
+        end = start0 + timedelta(days=28 * (cycle + 1))
+    else:   # no start day recorded yet: the end of the calendar month it was created in
+        end = (gen.replace(day=1) + timedelta(days=32)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return end if datetime.now(timezone.utc) < end else None
+
+
 @router.post("/social-posts", response_model=AeoSocialResponse, summary="A month of posters and reels for each channel, for one prompt")
 def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     _enforce_domain(user_id, req.url, req.company_name)
@@ -362,6 +379,17 @@ def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_
         raise_if_lapsed(user_id)        # a lapsed subscriber cannot generate a new calendar or refresh one
     if req.prompt == CALENDAR_PROMPT and not req.cycle and not get_aeo_content(user_id, "social", key):
         _adopt_team_calendar(user_id, key, limited)
+    saved_cal = get_aeo_content(user_id, "social", key)
+    will_build = not saved_cal or req.refresh or not social_shape_ok(saved_cal, limited)
+    if will_build and not acting:
+        # The calendar is built from the keywords the customer ranked (Rank Me High), so it cannot be made without them.
+        if not clean_keywords(req.keywords):
+            raise HTTPException(status_code=422, detail="Rank at least one keyword first. Choose the prompts you want to rank on and select Rank Me High, then create your calendar.")
+        # One calendar per month: once made, it cannot be rebuilt until its month ends.
+        if saved_cal and not saved_cal.get("team"):
+            until = _calendar_locked_until(user_id, saved_cal, req.cycle)
+            if until:
+                raise HTTPException(status_code=409, detail=f"Your calendar for this month is already created. You can create a new one after {until.strftime('%d %b %Y')}.")
     res = _cached_or_generate(
         user_id, "social", key, req.refresh, AeoSocialResponse,
         lambda t: generate_aeo_social(req, usage_tracker=t, limited=limited),
@@ -373,7 +401,7 @@ def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_
         kws = clean_keywords(getattr(res, "keywords", []))
         if kws:
             st = get_aeo_state(user_id)
-            if not (st.get("calendar_keywords") or []):
+            if not getattr(res, "cached", False) or not (st.get("calendar_keywords") or []):
                 st["calendar_keywords"] = kws
                 save_aeo_state(user_id, AeoState(**st).model_dump())
     except Exception as e:  # noqa: BLE001 — never fail a generation over this

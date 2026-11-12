@@ -149,6 +149,7 @@ export function AeoProvider({ children }) {
     patch({ selected_prompts: on ? saved.selected_prompts.filter(p => p !== text) : [...saved.selected_prompts, text] });
   };
   const clearSelection = () => patch({ selected_prompts: [] });
+  const setSelectedPrompts = (list) => patch({ selected_prompts: [...new Set(list)].slice(0, 20) });
 
   /* ── the analysis itself ───────────────────────────────── */
   const runningRef = useRef(false);
@@ -175,6 +176,8 @@ export function AeoProvider({ children }) {
       if (before) setPrev(before);
       setLastRun(new Date().toISOString());
       loadQuota();
+      // Domain Authority is part of every analysis: run it alongside, without making the analysis wait or fail because of it.
+      runApi('domainAuthority', seoApi.domainAuthority, state.request).catch(() => {});
       // generated content is per-prompt, cached server-side; a fresh run keeps those caches.
       return data;
     } catch (e) { if (e.code === 'AnalysisLimit') loadQuota(); return null; }
@@ -194,7 +197,7 @@ export function AeoProvider({ children }) {
       }), { goScreen, logout });
       setContent(c => ({ ...c, [kind]: { ...c[kind], [key]: data } }));
       // The server remembers the keywords it built the calendar around (top 10 from the website when none were given).
-      if (kind === 'social' && data?.keywords?.length && !(savedRef.current.calendar_keywords || []).length) setSaved(s => ({ ...s, calendar_keywords: data.keywords }));
+      if (kind === 'social' && data?.keywords?.length && (!data.cached || !(savedRef.current.calendar_keywords || []).length)) setSaved(s => ({ ...s, calendar_keywords: data.keywords }));
       return data;
     } catch (e) {
       if (e.code === 'PaymentRequired') requirePayment(kind === 'strategy' || kind === 'pillar' ? 'aeoStrategy' : kind === 'blog' ? 'aeoBlog' : 'aeoSocial');
@@ -210,7 +213,9 @@ export function AeoProvider({ children }) {
   // Month 1 is stored under the prompt itself (so our team's edits stay attached); later months under "<prompt>#m<n>".
   const socialKey = (prompt, cycle = 0) => (cycle ? `${prompt}#m${cycle}` : prompt);
   const loadSocial   = async (prompt, refresh, cycle = 0) => {
-    return generate('social', socialKey(prompt, cycle), { prompt, cycle, keywords: savedRef.current.calendar_keywords || [] }, aeoApi.socialPosts, refresh);
+    // The calendar is built from the keywords the customer ranked (Rank Me High).
+    const ranked = (savedRef.current.selected_prompts || []).slice(0, 20);
+    return generate('social', socialKey(prompt, cycle), { prompt, cycle, keywords: ranked }, aeoApi.socialPosts, refresh);
   };
   /** Writes one page from a template: { template, title, detail }. Saved pages come back without a charge. */
   const loadPage = (prompt, page, refresh) =>
@@ -284,11 +289,25 @@ export function AeoProvider({ children }) {
     }
   };
 
-  const setBlogState = (k, p) => { const cur = savedRef.current.blog_state || {}; const next = { ...cur, [k]: { ...(cur[k] || {}), ...p } }; savedRef.current = { ...savedRef.current, blog_state: next }; return patch({ blog_state: next }); };
+  const setBlogState = (k, p) => writeMap('blog_state', { [k]: p });
   // Several blogs at once ("generate for all"): one save, so parallel saves can't overwrite each other.
   const setBlogStates = (map) => { const cur = savedRef.current.blog_state || {}; return patch({ blog_state: { ...cur, ...Object.fromEntries(Object.entries(map).map(([k, p]) => [k, { ...(cur[k] || {}), ...p }])) } }); };
-  const setPostState = (k, p) => patch({ post_state: { ...saved.post_state, [k]: { ...(saved.post_state[k] || {}), ...p } } });
-  const setPostStates = (map) => patch({ post_state: { ...saved.post_state, ...Object.fromEntries(Object.entries(map).map(([k, p]) => [k, { ...(saved.post_state[k] || {}), ...p }])) } });
+  /* post_state / blog_state are written one at a time and merged in memory, so several things finishing together (e.g. a month of posters
+     being created) never overwrite each other's saved result. */
+  const mapLatest = useRef({});
+  const mapChain = useRef(Promise.resolve());
+  const writeMap = (field, changes) => {
+    const base = mapLatest.current[field] || savedRef.current[field] || {};
+    const merged = { ...base, ...Object.fromEntries(Object.entries(changes).map(([k, p]) => [k, { ...(base[k] || {}), ...p }])) };
+    mapLatest.current[field] = merged;
+    savedRef.current = { ...savedRef.current, [field]: merged };
+    setSaved(s => ({ ...s, [field]: merged }));
+    mapChain.current = mapChain.current.then(() => withTokenExpiry(aeoApi.putState({ [field]: mapLatest.current[field] }), { goScreen, logout }))
+      .catch(e => { if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not save that change.' }); });
+    return mapChain.current;
+  };
+  const setPostState = (k, p) => writeMap('post_state', { [k]: p });
+  const setPostStates = (map) => writeMap('post_state', map);
 
   /* ── after paying, replace the locked previews with the full results ─── */
   const unlockedOnce = useRef(false);
@@ -339,7 +358,7 @@ export function AeoProvider({ children }) {
   const value = useMemo(() => ({
     loadPage, loadSavedPages,
     quota, analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
-    addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, runAnalysis,
+    addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, setSelectedPrompts, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
     brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
     // eslint-disable-next-line

@@ -196,6 +196,8 @@ class AeoSocialPost(BaseModel):
     tags: str = ""
     visual: str = ""                 # short description of the image the post should carry
     title: str = ""                  # YouTube only
+    heading: str = ""                # posters: the main heading printed on the image (never empty)
+    subheading: str = ""             # posters: the supporting line under it (never empty)
     duration: str = ""               # YouTube only
 
 
@@ -207,6 +209,7 @@ class AeoSocialResponse(BaseModel):
     team: str = ""                   # "" | "edited" | "verified"
     keywords: list[str] = Field(default_factory=list)   # the keywords this calendar was built around
     cycle: int = 0                   # which month of the calendar this is (0 = first)
+    generated_at: str = ""           # when this calendar was created (it cannot be recreated until the month ends)
 
 
 # ── Saved dashboard state (custom prompts/competitors, selection, links, approvals) ──

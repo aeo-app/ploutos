@@ -17,7 +17,7 @@ export const mediaPayload = (o) => {
  * Everything is optional; with none of it, the image or reel is created from the description as before.
  * `update(fn)` receives the current value and returns the next one.
  */
-export function MediaOptions({ kind, value, update, disabled, defaultOpen }) {
+export function MediaOptions({ kind, value, update, disabled, defaultOpen, defaults }) {
   const { toast } = useApp();
   const [open, setOpen] = useState(!!defaultOpen);
   const [busy, setBusy] = useState(false);
@@ -80,13 +80,13 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen }) {
           <div className="ae-media-row">
             <label className="ae-media-f">
               <span>Heading</span>
-              <input type="text" maxLength={80} value={v.heading || ''} disabled={disabled} placeholder="e.g. Moving day made easy"
+              <input type="text" maxLength={80} value={v.heading || ''} disabled={disabled} placeholder={(defaults && defaults.heading) || 'e.g. Moving day made easy'}
                 onChange={e => { const x = e.target.value; update(cur => ({ ...cur, heading: x })); }} data-testid="media-heading" />
               <small>{(v.heading || '').length}/80</small>
             </label>
             <label className="ae-media-f">
               <span>Subheading</span>
-              <input type="text" maxLength={160} value={v.subheading || ''} disabled={disabled} placeholder="e.g. Fixed-price home moves across Singapore"
+              <input type="text" maxLength={160} value={v.subheading || ''} disabled={disabled} placeholder={(defaults && defaults.subheading) || 'e.g. Fixed-price home moves across Singapore'}
                 onChange={e => { const x = e.target.value; update(cur => ({ ...cur, subheading: x })); }} data-testid="media-subheading" />
               <small>{(v.subheading || '').length}/160</small>
             </label>
@@ -121,7 +121,7 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen }) {
               {reel
                 ? 'Your photos become the scenes of the reel, in this order. With no photos, we create the scenes for you.'
                 : 'We build the image from your real photos. With no photos, we create it from the description.'}
-              {' '}The heading and subheading are printed on the {word} exactly as you type them. Both are optional.
+              {' '}Every {word} gets a heading and a subheading. Leave these empty and we use the ones written for this post (shown in grey); type your own to change them.
             </p>
           </div>
         </div>

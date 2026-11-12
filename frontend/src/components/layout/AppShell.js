@@ -10,6 +10,7 @@ import { historyApi } from '../../api/historyApi';
 import { isActingAs } from '../../api/seoApi';
 import { consumeRememberedPage, consumeConnectAttempt, markConnectInProgress, clearConnectInProgress } from '../../utils/oauthReturn';
 import '../../aeo/aeo.css';
+import '../../aeo/dashboard.css';
 
 const FEATURE_LABEL = {
   competitors: 'competitor analysis', keywords: 'keyword data', profile: 'company profiles',

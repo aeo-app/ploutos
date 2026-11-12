@@ -4,7 +4,7 @@ import { useAeo } from './AeoContext';
 import { aeoApi } from '../api/aeoApi';
 
 /** Logo + contact details. Required before any image or Short is generated, and printed on every one. */
-export function BrandKitCard({ defaultOpen = false }) {
+export function BrandKitCard({ defaultOpen = false, hideWhenReady = false, onClose }) {
   const { state, toast } = useApp();
   const { brand, saveBrand, uploadLogo, detectBrand, adoptSiteLogo } = useAeo();
   const d = brand.data || {};
@@ -31,7 +31,7 @@ export function BrandKitCard({ defaultOpen = false }) {
   const save = async () => {
     if (!f.phone.trim()) { setErr('Enter your contact phone number.'); return; }
     const r = await run('save', () => saveBrand(f), 'Saved. This will be printed on every image and Short.');
-    if (r && r.complete) setEditing(false);
+    if (r && r.complete) { setEditing(false); onClose && onClose(); }
   };
   const found = brand.found || {};
   const missingTxt = (brand.missing || []).map(m => m === 'logo' ? 'your logo' : 'a contact phone number').join(' and ');
@@ -39,6 +39,8 @@ export function BrandKitCard({ defaultOpen = false }) {
   const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.value }));
 
   if (!brand.loaded) return null;
+
+  if (brand.complete && !editing && hideWhenReady) return null;
 
   if (brand.complete && !editing) {
     return (
@@ -110,7 +112,7 @@ export function BrandKitCard({ defaultOpen = false }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button type="button" className="ae-btn primary" disabled={!!busy || !f.phone.trim()} onClick={save}>{busy === 'save' ? 'Saving…' : 'Save brand kit'}</button>
         <button type="button" className="ae-btn" disabled={!!busy || !state.request.url} onClick={() => run('detect', detectBrand, 'Checked your website.')}>{busy === 'detect' ? 'Reading website…' : '🔎 Read my website again'}</button>
-        {brand.complete && <button type="button" className="ae-btn" onClick={() => setEditing(false)}>Close</button>}
+        {brand.complete && <button type="button" className="ae-btn" onClick={() => { setEditing(false); onClose && onClose(); }}>Close</button>}
       </div>
     </section>
   );

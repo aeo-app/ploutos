@@ -442,13 +442,17 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
     (no Canva design, autofill, or template involved at all), and saves
     a poster record with source="openai".
 
-    Deliberately on-demand only — nothing calls this automatically when
-    a calendar is created; it only runs when this endpoint is actually
-    hit, i.e. when the user clicks "Create Poster" for one specific day.
+    The app calls this for each poster when a calendar is created (and when the user
+    clicks "Create Poster" on one day).
     """
     # A logo and a contact phone number are required — they are printed on every generated image.
     brand, logo_bytes = brand_svc.require_brand(user_id)
     heading, subheading = req.heading.strip(), req.subheading.strip()
+    # Every poster carries a main heading and a subheading. If the caller sent none, build them from the post itself.
+    if not heading:
+        heading = " ".join((req.caption or req.company_name or "").split()[:7]).rstrip(",;:-– ")[:70] or (req.company_name or "")[:70]
+    if not subheading:
+        subheading = (req.cta or "").strip() or (req.company_name or "").strip() or "Learn more"
     try:
         photos = load_photos(req.photo_urls, user_id)
     except PhotoError as e:
