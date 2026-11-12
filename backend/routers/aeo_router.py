@@ -170,6 +170,15 @@ def _acting_admin(real: str = Depends(get_real_user_id), current: str = Depends(
     return real != current        # get_current_user_id only differs for a verified admin acting as a customer
 
 
+@router.get("/poster-status", summary="Can this account create posters now? When does the next poster generation open?")
+def poster_status(cycle: Optional[int] = None, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
+    from services import poster_months
+    out = poster_months.status(user_id, cycle)
+    if acting:
+        out.update(can_generate=True, needs_payment=False, reason="")
+    return out
+
+
 @router.get("/analysis-quota", summary="Can this account run an analysis now? (free: once every 30 days)")
 def analysis_quota(user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     return _analysis_quota(user_id, acting)
@@ -372,6 +381,13 @@ def _calendar_locked_until(user_id: str, saved: dict, cycle: int):
 def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     _enforce_domain(user_id, req.url, req.company_name)
     limited = not is_user_paid(user_id)
+    if req.cycle and not acting:    # a later month opens on its first day, not before
+        try:
+            opens = datetime.strptime(str(get_aeo_state(user_id).get("calendar_start") or ""), "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=28 * req.cycle)
+        except ValueError:
+            opens = None
+        if opens and datetime.now(timezone.utc) < opens:
+            raise HTTPException(status_code=409, detail=f"Month {req.cycle + 1} of your calendar can be created from {opens.strftime('%d %b %Y')}.")
     if limited and req.cycle:
         raise payment_required(user_id, "Later months are part of the paid plans.")
     key = _social_key(req.prompt, limited, req.cycle)

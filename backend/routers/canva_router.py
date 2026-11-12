@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
-from core.security import get_current_user_id, require_admin
+from core.security import get_current_user_id, get_real_user_id, require_admin
+from services import poster_months
 from core.paywall import paywall_guard
 from db import (
     get_canva_connection,
@@ -68,7 +69,7 @@ from services.canva_service import (
 from services.image_generation_service import ImageGenerationError, generate_image_from_prompt
 from services.media_upload_service import MediaUploadError, upload_image
 from services import brand_service as brand_svc
-from services.brand_overlay import apply_brand_bar, apply_headline
+from services.brand_overlay import apply_brand_bar, apply_headline, apply_designed_headline, apply_designed_footer, design_for, accent_for
 from services.openai_image_service import OpenAIImageError
 from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai, edit_image_from_photos, photo_edit_prompt
 from services.photo_service import PhotoError, load_photos
@@ -434,7 +435,7 @@ async def auto_generate_poster(req: AutoGeneratePosterRequest, user_id: str = De
     response_model=PosterResponse,
     summary="Generate a poster via OpenAI — the primary poster-generation path for every user, no Canva involved",
 )
-async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get_current_user_id)):
+async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get_current_user_id), real_user_id: str = Depends(get_real_user_id)):
     """
     The new "Create Poster" button's actual target. Generates one image
     from `visual_suggestion` (unchanged in meaning — still exactly what
@@ -445,6 +446,11 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
     The app calls this for each poster when a calendar is created (and when the user
     clicks "Create Poster" on one day).
     """
+    acting = real_user_id != user_id
+    # Posters are created one month at a time: once for the current month, a later month only from its first day and once paid.
+    monthly = str(req.day_date).startswith("aeo-")      # the AEO social calendar; other poster pages are not on this rule
+    if monthly:
+        poster_months.check(user_id, req.day_date, acting)
     # A logo and a contact phone number are required — they are printed on every generated image.
     brand, logo_bytes = brand_svc.require_brand(user_id)
     heading, subheading = req.heading.strip(), req.subheading.strip()
@@ -453,25 +459,27 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
         heading = " ".join((req.caption or req.company_name or "").split()[:7]).rstrip(",;:-– ")[:70] or (req.company_name or "")[:70]
     if not subheading:
         subheading = (req.cta or "").strip() or (req.company_name or "").strip() or "Learn more"
+    # Every poster gets its own design: layout, accent colour and photo style come from the customer and the post, never from a fixed template.
+    seed = f"{user_id}|{req.day_date}|{heading}"
+    design = design_for(seed, user_id, req.day_date)
+    accent = accent_for(seed, logo_bytes)
     try:
         photos = load_photos(req.photo_urls, user_id)
     except PhotoError as e:
         raise HTTPException(status_code=422, detail=str(e))
     try:
+        scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
+        scene += f"\nPhoto direction: {design['style']}.\n{design['space']}"
         if photos:
             # Built from the customer's real photographs.
-            scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
-            image_bytes = edit_image_from_photos(photo_edit_prompt(req.visual_suggestion, heading_space=bool(heading or subheading)), photos, width=1080, height=1080)
+            image_bytes = edit_image_from_photos(photo_edit_prompt(req.visual_suggestion, space_hint=f"{design['style']}. {design['space']}"), photos, width=1080, height=1080)
         else:
-            scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
-            if heading or subheading:
-                scene += "\nKeep the top 30% of the frame uncluttered (a headline is added there)."
             image_bytes = generate_image_via_openai(scene, width=1080, height=1080)
     except OpenAIImageError as e:
         raise HTTPException(status_code=502, detail=f"Could not generate an image for this poster: {e}")
     try:
-        image_bytes = apply_headline(image_bytes, heading, subheading)
-        image_bytes = apply_brand_bar(image_bytes, brand, logo_bytes)
+        image_bytes = apply_designed_headline(image_bytes, heading, subheading, design["layout"], accent)
+        image_bytes = apply_designed_footer(image_bytes, brand, logo_bytes, design["footer"], design["footer_text"], accent)
     except Exception as e:  # noqa: BLE001
         logger.error(f"[canva] brand bar failed for user={user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail="Generated the image but could not add your logo and contact details. Please try again.")
@@ -483,6 +491,8 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
         # (see _raise_clean_upload_error) — no raw AWS/boto3 text to strip
         # here, unlike the old bare `except Exception` this replaced.
         raise HTTPException(status_code=502, detail=f"Generated the image but could not store it. {e}")
+    if monthly:
+        poster_months.record(user_id, req.day_date, acting)
 
     # Same poster_id for the same day/post across regenerations (matches
     # the existing Canva-autofill path's behavior) — a repeat "Create
