@@ -62,6 +62,9 @@ export const aeoApi = {
   editBlog:    (req) => call("PUT", "/blog-draft", req),
   socialPosts: (req) => call("POST", "/social-posts", req),
   siteChecks:  (url) => call("POST", "/site-checks", { url }),
+  // Insights page — real measurements of the customer's own website
+  speedTest:    () => call("GET", "/insights/speed"),
+  runSpeedTest: () => call("POST", "/insights/speed"),
   posterStatus: (cycle) => call("GET", `/poster-status${cycle == null ? "" : `?cycle=${cycle}`}`),
   getState:    () => call("GET", "/state"),
   putState:    (patch) => call("PUT", "/state", patch),

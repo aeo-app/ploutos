@@ -12,6 +12,7 @@ const META = {
   aeoCompetitors: ['Competitors', 'Who AI engines recommend in your category'],
   aeoEngines:     ['AI Engines', 'Your visibility in each answer engine'],
   da:             ['Domain Authority', 'Gap analysis and backlink roadmap'],
+  insights:       ['Insights', 'Real measurements of your website, from Google'],
   profile:        ['Company Profile', 'Your website and business details, as AI engines should see them'],
   aeoStrategy:    ['Content Strategy', 'Strategy, blogs and social posts for your selected prompts'],
   aeoBlogs:       ['Blog Topics', 'Blogs written to win your selected prompts'],

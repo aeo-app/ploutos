@@ -1553,3 +1553,38 @@ def get_short_job(user_id: str, job_id: str) -> Optional[dict]:
         raise
     except json.JSONDecodeError:
         return None
+
+
+# ── Insights page: saved website measurements ─────────────────────────────────
+# One small JSON document per user and kind, e.g. SK = "INSIGHT#speed" holds the
+# last speed test plus a short score history. Like the AEO items above, these
+# carry no `analysis_id` / `analysis_type`, so they never show up in history or stats.
+def _insight_sk(kind: str) -> str:
+    if not re.fullmatch(r"[a-z_]{1,30}", kind):
+        raise ValueError(f"Invalid insight kind: {kind!r}")
+    return f"INSIGHT#{kind}"
+
+
+def get_insight(user_id: str, kind: str) -> Optional[dict]:
+    table = _get_table()
+    try:
+        item = table.get_item(Key={"PK": _pk(user_id), "SK": _insight_sk(kind)}).get("Item")
+        raw = item.get("data") if item else None
+        return json.loads(raw) if isinstance(raw, str) else None
+    except ClientError as e:
+        logger.error(f"[dynamo] get_insight failed: {e.response['Error']}")
+        raise
+    except json.JSONDecodeError:
+        return None
+
+
+def save_insight(user_id: str, kind: str, data: dict) -> None:
+    table = _get_table()
+    try:
+        table.put_item(Item={
+            "PK": _pk(user_id), "SK": _insight_sk(kind), "user_id": user_id,
+            "data": json.dumps(data, default=str), "updated_at": _now_iso(),
+        })
+    except ClientError as e:
+        logger.error(f"[dynamo] save_insight failed: {e.response['Error']}")
+        raise

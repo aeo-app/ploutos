@@ -44,6 +44,8 @@ from .dynamo import (
     list_aeo_content,
     save_aeo_content_by_sk,
     AeoStateTooLargeError,
+    get_insight,
+    save_insight,
 )
 from .payments_dynamo import (
     save_payment_intent,
@@ -68,6 +70,8 @@ __all__ = [
     "list_aeo_content",
     "save_aeo_content_by_sk",
     "AeoStateTooLargeError",
+    "get_insight",
+    "save_insight",
     "save_analysis",
     "get_analysis",
     "list_analyses",

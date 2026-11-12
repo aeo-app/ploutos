@@ -1,0 +1,19 @@
+/* Insights page — website speed card. Uses the .ae- tokens from aeo.css. */
+.ae-speed-head { display: flex; flex-direction: column; gap: 4px; }
+.ae-speed-device { display: flex; flex-direction: column; gap: 16px; padding: 18px 20px; border: 1px solid var(--ae-line); border-radius: 16px; }
+.ae-speed-score { display: flex; align-items: baseline; gap: 8px; }
+.ae-speed-score b { font-size: 40px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
+.ae-speed-score span { font-size: 13px; font-weight: 600; color: var(--ae-mute); }
+.ae-speed-label { color: #4a4966; }
+.ae-speed-note { margin: 6px 0 0; line-height: 1.5; }
+.ae-speed-change { font-size: 12px; font-weight: 700; }
+.ae-speed-change.up { color: var(--ae-good); }
+.ae-speed-change.down { color: var(--ae-bad); }
+.ae-speed-fixes { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; line-height: 1.45; }
+.ae-speed-fix-title { font-weight: 600; }
+.ae-speed-fix-text { display: block; margin-top: 2px; color: var(--ae-mute); }
+
+.ae-speed-good { color: var(--ae-good); }
+.ae-speed-warn { color: var(--ae-warn); }
+.ae-speed-bad { color: var(--ae-bad); }
+.ae-speed-info { color: var(--ae-text); }
