@@ -28,18 +28,18 @@ export function AuthLayout({ children }) {
             <AeoIcon className={s.brandLogoImg} />
           </div>
           <div>
-            <div className={s.brandLogoText}>AEO_APP<span style={{ color: '#B5AEFF' }}>.com</span></div>
+            <div className={s.brandLogoText}>aeo-app<span style={{ color: '#B5AEFF' }}>.ai</span></div>
             <div className={s.brandLogoSub}>Your AI Growth Hacker</div>
           </div>
         </div>
 
         {/* Sonar animation */}
-        {/* <div className={s.sonarArea}>
+        <div className={s.sonarArea}>
           <div className={s.sonarCenter}><AeoIcon className={s.sonarCenterImg} /></div>
           {[0.7, 1.4, 2.1].map((delay, i) => (
             <div key={i} className={s.sonarRing} style={{ animationDelay: `${delay}s` }} />
           ))}
-        </div> */}
+        </div>
 
         {/* Headline */}
         <h1 className={s.brandHeadline}>

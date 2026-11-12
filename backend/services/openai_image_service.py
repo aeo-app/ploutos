@@ -145,7 +145,7 @@ OPENAI_IMAGE_EDITS_URL = "https://api.openai.com/v1/images/edits"
 _EDIT_TIMEOUT = 150.0
 
 
-def photo_edit_prompt(scene: str, *, heading_space: bool = False) -> str:
+def photo_edit_prompt(scene: str, *, heading_space: bool = False, space_hint: str = "") -> str:
     """Instruction for building an image FROM the customer's real photographs."""
     parts = [
         "The attached images are real photographs supplied by the business owner. Build ONE polished, realistic social media image from them.",
@@ -153,7 +153,7 @@ def photo_edit_prompt(scene: str, *, heading_space: bool = False) -> str:
         "do not change faces, and do not add logos or text. You may crop, straighten, balance light and colour, and place them in a clean, attractive composition.",
         f"What the image should convey: {scene.strip()[:900]}",
         "Leave the bottom 15% of the frame uncluttered (a contact bar is added there)."
-        + (" Also leave the top 30% uncluttered (a headline is added there)." if heading_space else ""),
+        + (f" Composition: {space_hint}" if space_hint else " Also leave the top 30% uncluttered (a headline is added there)." if heading_space else ""),
         "Style: natural lighting, true-to-life colour, editorial quality. No text, captions, logos or watermarks.",
     ]
     return "\n".join(parts)

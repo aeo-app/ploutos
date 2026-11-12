@@ -9,7 +9,7 @@ export const EMPTY_MEDIA = { heading: '', subheading: '', photos: [] };
 /** What the generate calls send for the optional photos / heading / subheading. */
 export const mediaPayload = (o) => {
   const m = o || EMPTY_MEDIA;
-  return { photo_urls: (m.photos || []).map(p => p.url), heading: (m.heading || '').trim(), subheading: (m.subheading || '').trim() };
+  return { photo_urls: (m.photos || []).map(p => p.url) };
 };
 
 /**
@@ -65,32 +65,16 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen, defau
 
   const bits = [];
   if (photos.length) bits.push(`${photos.length} photo${photos.length > 1 ? 's' : ''}`);
-  if ((v.heading || '').trim()) bits.push('heading');
-  if ((v.subheading || '').trim()) bits.push('subheading');
 
   return (
     <div className="ae-media" data-testid={`media-options-${kind}`}>
       <button type="button" className="ae-media-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span>✨ Make it yours <em>(optional)</em></span>
-        <span className="ae-media-sum">{bits.length ? bits.join(' · ') : `photos, heading, subheading`}</span>
+        <span>📷 Use your own photos <em>(optional)</em></span>
+        <span className="ae-media-sum">{bits.length ? bits.join(' · ') : 'your own photos'}</span>
         <span aria-hidden="true">{open ? '▴' : '▾'}</span>
       </button>
       {open && (
         <div className="ae-media-body">
-          <div className="ae-media-row">
-            <label className="ae-media-f">
-              <span>Heading</span>
-              <input type="text" maxLength={80} value={v.heading || ''} disabled={disabled} placeholder={(defaults && defaults.heading) || 'e.g. Moving day made easy'}
-                onChange={e => { const x = e.target.value; update(cur => ({ ...cur, heading: x })); }} data-testid="media-heading" />
-              <small>{(v.heading || '').length}/80</small>
-            </label>
-            <label className="ae-media-f">
-              <span>Subheading</span>
-              <input type="text" maxLength={160} value={v.subheading || ''} disabled={disabled} placeholder={(defaults && defaults.subheading) || 'e.g. Fixed-price home moves across Singapore'}
-                onChange={e => { const x = e.target.value; update(cur => ({ ...cur, subheading: x })); }} data-testid="media-subheading" />
-              <small>{(v.subheading || '').length}/160</small>
-            </label>
-          </div>
           <div className="ae-media-photos">
             <div className="ae-media-ph-head">
               <b>Your photos</b><span className="ae-note">{photos.length}/{MAX_PHOTOS}</span>
@@ -121,7 +105,6 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen, defau
               {reel
                 ? 'Your photos become the scenes of the reel, in this order. With no photos, we create the scenes for you.'
                 : 'We build the image from your real photos. With no photos, we create it from the description.'}
-              {' '}Every {word} gets a heading and a subheading. Leave these empty and we use the ones written for this post (shown in grey); type your own to change them.
             </p>
           </div>
         </div>
