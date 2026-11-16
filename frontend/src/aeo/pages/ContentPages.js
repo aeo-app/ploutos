@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { usePayment } from '../../context/PaymentContext';
 import { canvaApi } from '../../api/canvaApi';
 import { socialPublishApi } from '../../api/socialPublishApi';
 import { isActingAs } from '../../api/seoApi';
@@ -10,11 +11,12 @@ import { useConnectProgress } from '../useConnectProgress';
 import { clearConnectInProgress } from '../../utils/oauthReturn';
 import { EngCell, SocialChannelsCard } from '../parts';
 import { BrandKitGate, ShortPlayer } from '../BrandKit';
+import { CompanyPhotos } from '../CompanyPhotos';
 import { PageStudio } from '../PageStudio';
 import { MediaOptions, EMPTY_MEDIA, mediaPayload } from '../MediaOptions';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
 import { exportMarkdown, exportPdf, exportWord } from '../blogExport';
-import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
+import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS, planWeek } from '../utils';
 
 
 // Older cached posts (or a model slip) can have an empty visual — derive one from the post so it is never blank.
@@ -239,14 +241,17 @@ function BlogsBlock({ t }) {
   const { content, busy, saved, loadStrategy, loadBlogDraft, editBlog, removeBlogTopic, setBlogState } = useAeo();
   const { requirePayment } = useApp();
   const [reader, setReader] = useState(null);
+  const [pick, setPick] = useState({});          // topics ticked for a full blog
+  const [writing, setWriting] = useState(false);
   const data = content.strategy[t.active];
   const retry = useAutoLoad('strategy', t.active, !!data, () => loadStrategy(t.active));
   if (!data) return busy['strategy|' + t.active] ? <Generating title="Finding blog topics" text="Matching topics to what AI engines are being asked…" /> : <Retry title="Blog topics" text={`Get blog topic ideas written to win “${t.active}”. You can then draft and approve each one.`} label="Generate blog topics" onRetry={retry} />;
 
   // Topics typed in by the customer / admin sit after the AI's ideas.
-  const mine = (saved.custom_blog_topics || []).filter(x => x.prompt === t.active && !data.blog_topics.some(b => b.title.trim().toLowerCase() === x.title.toLowerCase()))
+  const two = data.blog_topics.slice(0, 2);          // exactly 2 topics per prompt
+  const mine = (saved.custom_blog_topics || []).filter(x => x.prompt === t.active && !two.some(b => b.title.trim().toLowerCase() === x.title.toLowerCase()))
     .map(x => ({ type: x.type || 'Blog', title: x.title, words: 1000, mine: true }));
-  const items = [...data.blog_topics, ...mine].map(b => {
+  const items = [...two, ...mine].map(b => {
     const k = hkey('blog', t.active, b.title);
     const st = saved.blog_state[k] || {};
     const origin = st.team === 'verified' ? 'verified' : st.team === 'edited' ? 'edited' : st.pending ? 'pending' : st.drafted ? 'ai' : 'idea';
@@ -267,18 +272,28 @@ function BlogsBlock({ t }) {
     if (!d) d = await loadBlogDraft(t.active, b);   // cached server-side → no new generation cost
     if (d) setReader(b.k);
   };
+  const ideas = items.filter(b => b.origin === 'idea');
+  const ticked = ideas.filter(b => pick[b.k]);
+  const writeSelected = async () => {
+    if (data.limited) { requirePayment('aeoBlog'); return; }
+    setWriting(true);
+    for (const b of ticked) { await generate(b); }      // full, ready-to-publish blogs, one after another
+    setPick({}); setWriting(false);
+  };
   const open = items.find(b => b.k === reader);
   const draft = open && content.blog[draftKey(open)];
 
   return (
     <section className="ae-card" style={{ padding: 24 }}>
       <div className="ae-row"><div className="ae-col"><span className="ae-eyebrow p">Blogs</span><h2 className="lg">Blog topics for this prompt</h2></div>
-        <b style={{ fontSize: 13, color: '#4a4966' }}>{drafts.filter(b => b.approved).length} of {drafts.length} drafts approved</b></div>
+        <b style={{ fontSize: 13, color: '#4a4966' }}>{drafts.filter(b => b.approved).length} of {drafts.length} blogs approved</b></div>
+      <span className="ae-note">2 blog topics for this prompt, matched to your website and business. Tick the ones you want and we write the complete blog for each.</span>
       {data.limited && <PreviewBanner what="Topic ideas are free. Full blog drafts are part of a paid plan." />}
       {items.map(b => {
         const tag = BLOG_TAG[b.origin]; const bz = busy['blog|' + draftKey(b)];
         return (
           <div key={b.k} className={`ae-blog ${b.approved ? 'ok' : ''}`}>
+            {b.origin === 'idea' && <input type="checkbox" aria-label={`Select: ${b.title}`} data-testid="blog-pick" checked={!!pick[b.k]} disabled={!!bz || writing} onChange={e => setPick(m => ({ ...m, [b.k]: e.target.checked }))} style={{ width: 18, height: 18, marginTop: 3, flexShrink: 0, accentColor: '#4f46e5' }} />}
             <div className="ae-col" style={{ gap: 6, minWidth: 0 }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                 <span className="ae-eyebrow" style={{ letterSpacing: '.06em' }}>{b.type}</span>
@@ -293,13 +308,19 @@ function BlogsBlock({ t }) {
               {b.origin === 'idea'
                 ? <>
                     {b.mine && <button className="ae-linkbtn" disabled={!!bz} onClick={() => removeBlogTopic(t.active, b.title)}>Remove</button>}
-                    <button className="ae-btn outline" disabled={!!bz} onClick={() => generate(b)}>{bz ? 'Writing…' : 'Generate draft'}</button>
+                    <button className="ae-btn outline" disabled={!!bz} onClick={() => generate(b)}>{bz ? 'Writing the blog…' : 'Write full blog'}</button>
                   </>
                 : <button className="ae-btn primary" disabled={!!bz} onClick={() => read(b)}>{bz ? 'Opening…' : b.approved ? 'Read' : 'Read & approve'}</button>}
             </div>
           </div>
         );
       })}
+      {ideas.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" className="ae-btn primary" data-testid="write-selected" disabled={!ticked.length || writing} onClick={writeSelected}>{writing ? 'Writing your blogs…' : ticked.length ? `Write complete blog${ticked.length > 1 ? 's' : ''} for selected (${ticked.length})` : 'Write complete blogs for selected'}</button>
+          {!ticked.length && <span className="ae-note">Tick a topic first.</span>}
+        </div>
+      )}
       {open && draft && <BlogReader item={open} draft={draft} prompt={t.active} onSave={(f) => editBlog(t.active, open.title, f)} onClose={() => setReader(null)}
         onApprove={() => setBlogState(open.k, { approved: !open.approved })} onRequest={() => setBlogState(open.k, { pending: true })} />}
     </section>
@@ -399,70 +420,77 @@ const CAL_TARGET = { active: CALENDAR_PROMPT };
 
 /** Right after a calendar is created, draws every poster of the month (once), with an animated progress bar. One picture serves all the
  *  channels that carry the same poster. It carries on if the customer leaves and returns, and skips posters that already have a picture. */
-function AutoMonthPosters({ groups, ready, genImage, setPostStates, setBlogState, doneFlag, finished, toast, onDone }) {
+/** The posters that go on a week's calendar: spread across the days when there are more entries than the plan includes. */
+function pickEven(list, n) {
+  if (n <= 0) return [];
+  if (list.length <= n) return list;
+  const idx = [...new Set(Array.from({ length: n }, (_, i) => Math.round(i * (list.length - 1) / Math.max(1, n - 1))))];
+  return idx.map(i => list[i]);
+}
+
+/** Creates one week of posters and reels (as many as the plan includes), with a progress card. Runs when the customer asks, or right after a new calendar is made. */
+function AutoWeekRun({ groups, ready, pstat, week, genImage, genReel, setPostStates, toast, onDone }) {
   const [prog, setProg] = useState(null);   // { done, total }
   const running = useRef(false);
   useEffect(() => {
-    if (!ready || finished || running.current) return;
-    const todo = groups.filter(g => !g.reel && !g.items.some(p => p.st.img));
-    if (!todo.length) { setBlogState(doneFlag, { done: true }); return; }
+    if (!ready || running.current || !pstat) return;
+    const nP = Math.max(0, pstat.poster_limit - pstat.posters_made), nR = Math.max(0, pstat.reel_limit - pstat.reels_made);
+    const posters = pickEven(groups.filter(g => !g.reel && !g.items.some(p => p.st.img)), nP);
+    const reels = groups.filter(g => g.reel && !g.items.some(p => p.st.vid)).slice(0, nR);
+    const total = posters.length + reels.length;
+    if (!total) { if (onDone) onDone(); return; }
     running.current = true;
-    const total = todo.length;
     let done = 0, failed = 0, next = 0;
     setProg({ done, total });
-    const worker = async () => {
-      while (next < todo.length) {
-        const g = todo[next++];
+    const tick = () => { done += 1; setProg({ done, total }); };
+    const posterWorker = async () => {
+      while (next < posters.length) {
+        const g = posters[next++];
         const url = await genImage(g.items[0], undefined, true);
         if (url) { const rest = g.items.slice(1); if (rest.length) setPostStates(Object.fromEntries(rest.map(q => [q.k, { img: url, v: 1 }]))); } else failed += 1;
-        done += 1; setProg({ done, total });
+        tick();
       }
     };
-    Promise.all([worker(), worker(), worker()]).finally(() => {
+    const reelWorker = async (list) => {
+      for (const g of list) {
+        const it = g.items.find(q => q.c.id === 'yt') || g.items[0];
+        const got = await genReel(it, undefined, true);
+        if (got) { const rest = g.items.filter(q => q !== it); if (rest.length) setPostStates(Object.fromEntries(rest.map(q => [q.k, { vid: got.vid, vthumb: got.vthumb || '', v: 1 }]))); } else failed += 1;
+        tick();
+      }
+    };
+    Promise.all([posterWorker(), posterWorker(), posterWorker(), ...reels.map(g => reelWorker([g]))]).finally(() => {
       running.current = false; setProg(null); if (onDone) onDone();
-      if (!failed) setBlogState(doneFlag, { done: true });
-      else toast({ type: 'info', message: `${failed} poster${failed > 1 ? 's' : ''} could not be created. Open those days and select Create poster to try again.` });
+      if (failed) toast({ type: 'info', message: `${failed} item${failed > 1 ? 's' : ''} could not be created. Open those days and try again.` });
     });
     // eslint-disable-next-line
-  }, [ready, finished, groups.length]);
+  }, [ready, week, pstat && pstat.posters_made, pstat && pstat.reels_made]);
   if (!prog) return null;
   const pct = Math.round((prog.done / prog.total) * 100);
   return (
     <section className="ae-card ae-postprog" role="status" aria-live="polite" data-testid="poster-progress" style={{ padding: 18, gap: 10, position: 'sticky', top: 8, zIndex: 5, boxShadow: '0 8px 24px rgba(79,70,229,.14)' }}>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div className="ae-dots"><i /><i /><i /></div>
-        <b style={{ fontSize: 15 }}>Creating your posters for the month</b>
+        <b style={{ fontSize: 15 }}>Creating this week's posters and reels</b>
         <span className="ae-note" style={{ marginLeft: 'auto' }}>{prog.done} of {prog.total} ready</span>
       </div>
       <div className="ae-bar" aria-hidden="true"><i style={{ width: Math.max(4, pct) + '%' }} /></div>
-      <span className="ae-note">Each poster has a heading, a subheading, your logo and contact details. They appear in the calendar as they finish, so you can keep working. This can take a few minutes.</span>
+      <span className="ae-note">Each poster has a heading, a subheading, your logo and contact details. They appear in the calendar as they finish, so you can keep working. Reels take a little longer.</span>
     </section>
   );
-}
-
-/** One month of posters at a time: tells the customer when the next poster generation opens, or why posters cannot be created now. */
-function PosterMonthNote({ pstat, allDone, nextDate, requirePayment }) {
-  if (!pstat) return null;
-  if (allDone) return null;
-  if (!pstat.can_generate && pstat.reason) {
-    return (
-      <section className="ae-banner" data-testid="poster-locked" style={{ borderRadius: 14, border: '1px solid #fde68a' }}>
-        <span><b>Posters are created one month at a time.</b> {pstat.reason}</span>
-        {pstat.needs_payment && <button type="button" className="ae-btn sm primary" onClick={() => requirePayment('aeoSocial')}>Upgrade</button>}
-      </section>
-    );
-  }
-  return null;
 }
 
 function CalendarBlock({ t }) {
   const { content, busy, saved, savedLoaded, brand: brandKit, loadSocial, socialKey, editPost, setPostState, setPostStates, setBlogState, setCalendarStart } = useAeo();
   const { state, toast, setPage, requirePayment } = useApp();
+  const { plan: payPlan } = usePayment();
   const [channel, setChannel] = useState('fb');
   const [calFilter, setCalFilter] = useState('all');
   const [pstat, setPstat] = useState(null);   // can posters be created for this month, and when does the next generation open
-  const [wantPosters, setWantPosters] = useState(false);   // posters are drawn only after a new calendar is made, or when the customer selects Generate Posters
+  const [wantPosters, setWantPosters] = useState(false);   // a week is created only after a new calendar is made, or when the customer selects Generate
   const [cycleSel, setCycleSel] = useState(null);
+  const [weekSel, setWeekSel] = useState(null);
+  const setCycleAndWeek = (c) => { setWeekSel(null); setCycleSel(c); };
   const [selKey, setSelKey] = useState(null);
   const [working, setWorking] = useState({});
   const [editing, setEditing] = useState({});
@@ -488,10 +516,17 @@ function CalendarBlock({ t }) {
   const key = socialKey(t.active, cycle);
   const data = content.social[key];
   const ranked = (saved.selected_prompts || []).filter(Boolean);
+  const pw = planWeek(payPlan);
+  const planLine = pw ? `Every week has ${pw[0]} posters and ${pw[1]} reels on your plan.` : 'Every week has the posters and reels your plan includes.';
   const monthEnd = addDays(start, MONTH_DAYS - 1);
-  const nextDateText = fmtDate((pstat && parseIso(pstat.next_available)) || addDays(start, MONTH_DAYS), { day: 'numeric', month: 'long', year: 'numeric' });
-  const refreshPstat = () => aeoApi.posterStatus(cycle).then(setPstat).catch(() => {});
-  useEffect(() => { setPstat(null); if (data) refreshPstat(); }, [cycle, !!data]); // eslint-disable-line
+  const todayWeek = Math.floor(dayDiff(today, start0) / 7);                      // weeks since the calendar began (0 = first week)
+  const weekIn = weekSel != null ? weekSel : (cycle === currentCycle ? Math.min(3, Math.max(0, todayWeek - cycle * 4)) : 0);
+  const absWeek = cycle * 4 + weekIn;
+  const weekStart = addDays(start, weekIn * 7);
+  const longDate = (d) => fmtDate(d, { day: 'numeric', month: 'long', year: 'numeric' });
+  const nextDateText = longDate((pstat && parseIso(pstat.next_available)) || addDays(weekStart, 7));
+  const refreshPstat = () => aeoApi.posterStatus(absWeek).then(setPstat).catch(() => {});
+  useEffect(() => { setPstat(null); if (data) refreshPstat(); }, [absWeek, !!data]); // eslint-disable-line
   const retry = useAutoLoad('social', key, !!data, () => loadSocial(t.active, false, cycle));
   const buildCalendar = () => { setWantPosters(true); retry(); };
   // Remember the day month 1 began, so the calendar carries on from there in later months.
@@ -499,9 +534,9 @@ function CalendarBlock({ t }) {
 
   const monthNav = (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-      <button type="button" className="ae-btn sm" disabled={cycle <= 0} onClick={() => { setCycleSel(cycle - 1); setSelKey(null); }}>‹ Previous month</button>
+      <button type="button" className="ae-btn sm" disabled={cycle <= 0} onClick={() => { setCycleAndWeek(cycle - 1); setSelKey(null); }}>‹ Previous month</button>
       <b style={{ fontSize: 13 }}>Month {cycle + 1}{cycle === currentCycle ? ' · this month' : cycle > currentCycle ? ' · next month' : ''}</b>
-      <button type="button" className="ae-btn sm" disabled={cycle >= Math.min(23, currentCycle + 1)} onClick={() => { setCycleSel(cycle + 1); setSelKey(null); }}>Next month ›</button>
+      <button type="button" className="ae-btn sm" disabled={cycle >= Math.min(23, currentCycle + 1)} onClick={() => { setCycleAndWeek(cycle + 1); setSelKey(null); }}>Next month ›</button>
     </div>
   );
 
@@ -527,7 +562,7 @@ function CalendarBlock({ t }) {
   if (!data) return busy['social|' + key]
     ? <Generating title="Writing your social media calendar" text="This takes a minute or two. Your posters are created right after." steps={CAL_STEPS} />
     : !ranked.length ? <><BrandKitGate /><RankFirst /></>
-    : <><BrandKitGate /><Retry title="Social media calendar" text={`Create your 4-week calendar from the ${ranked.length} keyword${ranked.length > 1 ? 's' : ''} you ranked. Every week has 3 posters and 2 reels. We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. The month's posters are then created for you, each with a heading and a subheading, with your logo and contact details. You can create one calendar and one set of posters per month.`} label="Generate social media calendar" onRetry={buildCalendar} /></>;
+    : <><BrandKitGate /><CompanyPhotos /><Retry title="Social media calendar" text={`Create your 4-week calendar from the ${ranked.length} keyword${ranked.length > 1 ? 's' : ''} you ranked. ${planLine} We write each one once, then adapt the caption, hashtags and format for Facebook, Instagram, LinkedIn and Google Business. YouTube carries the 2 reels. Posters and reels are then created one week at a time, up to what your plan includes, each poster with a heading, a subheading, your logo and contact details. You can create one calendar a month.`} label="Generate social media calendar" onRetry={buildCalendar} /></>;
 
   const brand = state.request.company_name || 'Your company';
   const handle = hostOf(state.request.url).split('.')[0] || 'yourcompany';
@@ -535,7 +570,7 @@ function CalendarBlock({ t }) {
   const all = [];
   const groupMap = new Map();
   CHANNELS.forEach(c => {
-    const list = (data.channels[c.id] || []).slice(0, 20);
+    const list = (data.channels[c.id] || []).slice(0, 40);
     list.forEach((post, i) => {
       const offset = dayOffset(c, list, i);
       const d = addDays(start, offset);
@@ -633,7 +668,7 @@ function CalendarBlock({ t }) {
     };
   };
   const genImage = async (p, brief, quiet) => {
-    if (!p.reel && p.st.img && !acting) { if (!quiet) toast({ type: 'info', message: `This month's posters are already created. Your next poster generation will be available on ${nextDateText}.` }); return; }
+    if (!p.reel && p.st.img && !acting) { if (!quiet) toast({ type: 'info', message: `This poster is already created. Your next generation will be available on ${nextDateText}.` }); return; }
     if (needBrand()) return;
     setWorking(w => ({ ...w, [p.k]: 'ai' }));
     try {
@@ -649,23 +684,25 @@ function CalendarBlock({ t }) {
     } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
   };
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const genShort = async (p, brief) => {
-    if (needBrand()) return;
+  const genShort = async (p, brief, quiet) => {
+    if (needBrand()) return null;
     setWorking(w => ({ ...w, [p.k]: 'vid' }));
     try {
       const { job_id } = await aeoApi.startShort({
         title: p.post.title || '', text: p.post.text.slice(0, 1500), visual: brief || visualOf(p.post, brand), ...bizPayload(), ...mediaPayload(mediaOpts[p.k]), ...posterLines(p),
+        day_date: `aeo-${isoDate(p.d)}-${p.c.id}`,
       });
       const until = Date.now() + 9 * 60 * 1000;
       while (Date.now() < until) {
         await sleep(4000);
         const st = await aeoApi.shortStatus(job_id);
-        if (st.status === 'done') { setPostState(p.k, { vid: st.video_url, vthumb: st.thumb_url, v: (p.st.v || 0) + 1 }); toast({ type: 'success', message: `Your ${reelWord(p.c)} is ready.` }); return; }
+        if (st.status === 'done') { setPostState(p.k, { vid: st.video_url, vthumb: st.thumb_url, v: (p.st.v || 0) + 1 }); if (!quiet) toast({ type: 'success', message: `Your ${reelWord(p.c)} is ready.` }); return { vid: st.video_url, vthumb: st.thumb_url }; }
         if (st.status === 'error') throw new Error(st.error || 'Could not create the video.');
       }
       throw new Error('The video is taking longer than usual. Please try again in a few minutes.');
     } catch (e) {
-      if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not create the video.' });
+      if (e.code !== 'TokenExpired' && !quiet) toast({ type: 'error', message: e.message || 'Could not create the video.' });
+      return null;
     } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
   };
   const uploadShort = async (p, file) => {
@@ -721,15 +758,15 @@ function CalendarBlock({ t }) {
   };
   const markPosted = (p) => setPostState(p.k, { approved: true, published: true, pub_at: new Date().toISOString() });
   const hasMedia = (p) => (p.reel ? !!p.st.vid : !!p.st.img);
-  const postersDone = groups.some(g => !g.reel) && groups.filter(g => !g.reel).every(g => g.items.some(p => p.st.img));
-  const startPosters = () => { if (!brandKit.complete) { toast({ type: 'info', message: 'Complete your Brand kit on the Dashboard first, so every poster carries your logo and contact details.' }); return; } setWantPosters(true); };
+  const weekGroups = groups.filter(g => g.items[0].week === weekIn);
+  const weekFull = !!pstat && pstat.posters_made >= pstat.poster_limit && pstat.reels_made >= pstat.reel_limit;
+  const startWeek = () => { if (!brandKit.complete) { toast({ type: 'info', message: 'Complete your Brand kit on the Dashboard first, so every poster carries your logo and contact details.' }); return; } setWantPosters(true); };
   const manualOnly = (p) => p.reel && (p.c.id === 'li' || p.c.id === 'gbp');
 
   return (
     <>
       <div ref={brandRef}><BrandKitGate /></div>
-      <PosterMonthNote pstat={pstat} allDone={postersDone} nextDate={nextDateText} requirePayment={requirePayment} />
-      <AutoMonthPosters groups={groups} ready={wantPosters && !!brandKit.complete && !!data && savedLoaded && !!pstat && pstat.can_generate} onDone={() => { setWantPosters(false); refreshPstat(); }} genImage={genImage} setPostStates={setPostStates} setBlogState={setBlogState} doneFlag={hkey('autoposters', key)} finished={!!(saved.blog_state[hkey('autoposters', key)] || {}).done} toast={toast} />
+      <AutoWeekRun groups={weekGroups} week={absWeek} pstat={pstat} ready={wantPosters && !!brandKit.complete && !!data && savedLoaded && !!pstat && (pstat.can_generate || pstat.can_generate_reels)} onDone={() => { setWantPosters(false); refreshPstat(); }} genImage={genImage} genReel={genShort} setPostStates={setPostStates} toast={toast} />
       <section className="ae-card ae-calcard">
         <div className="ae-calhead">
           <div className="ae-col"><span className="ae-eyebrow p">Social media calendar</span><h2 className="lg">{fmtDate(start, { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, MONTH_DAYS - 1), { day: 'numeric', month: 'short', year: 'numeric' })}</h2></div>
@@ -741,14 +778,32 @@ function CalendarBlock({ t }) {
           <span className="ae-stat"><i style={{ background: '#cbd5e1' }} /><b>{nDraft}</b> need approval</span>
           <span className="ae-note" style={{ marginLeft: 'auto' }}>{groups.length} posts this month · each goes to every platform that carries it</span>
         </div>
-        {pstat && (pstat.can_generate || postersDone) && (
-          <div data-testid="poster-action" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '2px 0 12px' }}>
-            <button type="button" className="ae-btn primary" data-testid="gen-posters" disabled={postersDone || wantPosters} onClick={startPosters}>
-              {postersDone ? 'Posters generated' : wantPosters ? 'Generating posters…' : 'Generate Posters'}
-            </button>
-            <span className="ae-note">{postersDone ? (acting ? 'All of this month’s posters are created. Use a post’s Regenerate AI image to redo one.' : <>Next poster generation: <b>{nextDateText}</b></>) : 'Creates all of this month’s posters from the calendar below. You can do this once a month.'}</span>
+        <CompanyPhotos compact />
+        <div data-testid="poster-action" style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '12px 0' }}>
+          <div className="ae-weeks" role="tablist" aria-label="Week">
+            {[0, 1, 2, 3].map(w => (
+              <button key={w} type="button" role="tab" aria-selected={weekIn === w} className={weekIn === w ? 'on' : ''} onClick={() => setWeekSel(w)}>
+                Week {w + 1}<small>{fmtDate(addDays(start, w * 7), { day: 'numeric', month: 'short' })} – {fmtDate(addDays(start, w * 7 + 6), { day: 'numeric', month: 'short' })}</small>
+              </button>
+            ))}
           </div>
-        )}
+          {pstat && (
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              {pstat.needs_payment
+                ? <button type="button" className="ae-btn primary" data-testid="gen-posters" onClick={() => requirePayment('aeoSocial')}>Upgrade to continue</button>
+                : <button type="button" className="ae-btn primary" data-testid="gen-posters" disabled={weekFull || wantPosters || (!pstat.can_generate && !pstat.can_generate_reels)} onClick={startWeek}>
+                    {weekFull ? `Week ${weekIn + 1} created` : wantPosters ? 'Generating…' : (pstat.posters_made || pstat.reels_made) ? 'Generate the rest of this week' : 'Generate posters & reels'}
+                  </button>}
+              <span className="ae-note" data-testid="week-note">
+                {pstat.needs_payment || (!pstat.can_generate && !pstat.can_generate_reels && !weekFull)
+                  ? pstat.reason
+                  : weekFull
+                    ? <>Next generation: <b>{nextDateText}</b></>
+                    : <>Your {pstat.plan ? pstat.plan.charAt(0).toUpperCase() + pstat.plan.slice(1) : 'free'} plan: {pstat.poster_limit} poster{pstat.poster_limit > 1 ? 's' : ''} and {pstat.reel_limit} reel{pstat.reel_limit > 1 ? 's' : ''} this week. Made so far: {pstat.posters_made} poster{pstat.posters_made === 1 ? '' : 's'}, {pstat.reels_made} reel{pstat.reels_made === 1 ? '' : 's'}.</>}
+              </span>
+            </div>
+          )}
+        </div>
         <div className="ae-calfilter" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', margin: '4px 0 12px' }}>
           <span className="ae-note">Show:</span>
           {[{ id: 'all', name: 'All platforms' }, ...CHANNELS.map(c => ({ id: c.id, name: c.id === 'yt' ? 'YouTube Shorts' : c.name }))].map(o => {

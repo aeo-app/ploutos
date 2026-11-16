@@ -65,7 +65,7 @@ export const aeoApi = {
   // Insights page — real measurements of the customer's own website
   speedTest:    () => call("GET", "/insights/speed"),
   runSpeedTest: () => call("POST", "/insights/speed"),
-  posterStatus: (cycle) => call("GET", `/poster-status${cycle == null ? "" : `?cycle=${cycle}`}`),
+  posterStatus: (week) => call("GET", `/poster-status${week == null ? "" : `?week=${week}`}`),
   getState:    () => call("GET", "/state"),
   putState:    (patch) => call("PUT", "/state", patch),
   imageUrl:    (url) => call("POST", "/image-url", { url }),

@@ -89,12 +89,16 @@ export const CALENDAR_PROMPT = 'Social media calendar';   // the calendar is bui
 export const SLOT_DAYS = { fb: [0, 1, 2, 4, 5], ig: [1, 2, 3, 5, 6], li: [0, 1, 2, 3, 4], gbp: [0, 2, 3, 4, 5], yt: [1, 4] };
 export const WEEK_DAYS = 7;
 export const MONTH_DAYS = 28;
+// Posters and reels a plan includes each week: [posters, reels]. Free accounts get a one-poster, one-reel preview.
+export const PLAN_WEEK = { starter: [3, 2], growth: [5, 2], scale: [7, 2] };
+export const planWeek = (plan) => PLAN_WEEK[String(plan || '').toLowerCase()] || null;
 export const isReel = (c, post) => c.id === 'yt' || post?.kind === 'reel';
 export const reelWord = (c) => (c.id === 'yt' ? 'Short' : 'Reel');
 /** Day offset (from the first Monday of the month) of the i-th item of a channel. Calendars made before the weekly plan have no `week`. */
 export const CORE_DAYS = [0, 1, 2, 3, 4];   // one core item a day, Monday to Friday: poster, reel, poster, reel, poster
 export function dayOffset(c, list, i) {
   const post = list[i] || {};
+  if (post.day != null && post.week != null) return 7 * post.week + post.day;       // calendars made on a plan: the server says which weekday
   if (post.core != null && post.week != null) return 7 * post.week + CORE_DAYS[post.core % CORE_DAYS.length];
   if (post.week == null) return c.day + 7 * i;
   let slot = 0;

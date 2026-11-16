@@ -52,9 +52,7 @@ REALISTIC_STYLE = (
 
 def realistic_prompt(prompt: str) -> str:
     """Appends the realism style directive to a scene description."""
-    if os.getenv("IMAGE_STYLE_REALISTIC", "1") == "0":
-        return prompt
-    return f"{prompt.strip()}\n\n{REALISTIC_STYLE}"
+    return f"{prompt.strip()}\n\n{REALISTIC_STYLE}"        # always: images are real-world photographs, never cartoons or illustrations
 
 
 def _closest_supported_size(width: int | None, height: int | None) -> str:
@@ -154,7 +152,7 @@ def photo_edit_prompt(scene: str, *, heading_space: bool = False, space_hint: st
         f"What the image should convey: {scene.strip()[:900]}",
         "Leave the bottom 15% of the frame uncluttered (a contact bar is added there)."
         + (f" Composition: {space_hint}" if space_hint else " Also leave the top 30% uncluttered (a headline is added there)." if heading_space else ""),
-        "Style: natural lighting, true-to-life colour, editorial quality. No text, captions, logos or watermarks.",
+        "Style: a realistic photograph with natural lighting, true-to-life colour and editorial quality. Never a cartoon, illustration, drawing or 3D render. No text, captions, logos or watermarks.",
     ]
     return "\n".join(parts)
 

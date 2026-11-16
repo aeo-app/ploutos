@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import io
 import json
+import re
+import shutil
 import logging
 import os
 import subprocess
@@ -42,7 +44,23 @@ class ShortError(Exception):
     pass
 
 
-def _run(cmd: list[str], what: str, timeout: int = FFMPEG_TIMEOUT) -> subprocess.CompletedProcess:
+def _bin(name: str) -> str | None:
+    """The system binary, else (ffmpeg only) the one bundled with the imageio-ffmpeg pip package."""
+    found = shutil.which(name)
+    if found or name != "ffmpeg":
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _run(cmd: list[str], what: str, timeout: int = FFMPEG_TIMEOUT, ok_codes: tuple = ()) -> subprocess.CompletedProcess:
+    exe = _bin(cmd[0])
+    if not exe:
+        raise ShortError("ffmpeg is not installed on this server — it is required to create YouTube Shorts.")
+    cmd = [exe] + list(cmd[1:])
     try:
         return subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
     except FileNotFoundError:
@@ -50,18 +68,54 @@ def _run(cmd: list[str], what: str, timeout: int = FFMPEG_TIMEOUT) -> subprocess
     except subprocess.TimeoutExpired:
         raise ShortError(f"{what} took too long. Please try again.")
     except subprocess.CalledProcessError as e:
+        if e.returncode in ok_codes:
+            return subprocess.CompletedProcess(e.cmd, e.returncode, e.stdout, e.stderr)
         tail = (e.stderr or b"").decode("utf-8", errors="replace")[-600:]
         raise ShortError(f"{what} failed: {tail}")
 
 
 # ── Uploaded Shorts ──────────────────────────────────────────────────────────
+def _num(v) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):      # ffprobe prints "N/A" for unknown values
+        return 0.0
+
+
+def _probe_with_ffmpeg(path: str) -> dict:
+    """Same answer without ffprobe: read what `ffmpeg -i` prints about the file."""
+    r = _run(["ffmpeg", "-hide_banner", "-i", path], "Reading the video", timeout=60, ok_codes=(1,))
+    t = (r.stderr or b"").decode("utf-8", errors="replace")
+    m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", t)
+    dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else 0.0
+    v = re.search(r"Video:\s*([a-z0-9_]+).*?,\s*(\d{2,5})x(\d{2,5})", t)
+    w, h = (int(v.group(2)), int(v.group(3))) if v else (0, 0)
+    rot = re.search(r"rotate\s*:\s*(-?\d+)", t) or re.search(r"displaymatrix:\s*rotation of\s*(-?[\d.]+)", t)
+    if rot and int(abs(float(rot.group(1)))) % 180 == 90:
+        w, h = h, w
+    return {"width": w, "height": h, "duration": dur, "codec": v.group(1) if v else ""}
+
+
 def probe(path: str) -> dict:
-    r = _run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration",
-              "-of", "json", path], "Reading the video", timeout=30)
+    if not _bin("ffprobe"):
+        return _probe_with_ffmpeg(path)
+    """Width/height as the viewer sees them (rotation applied) and the duration in seconds."""
+    r = _run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+              "stream=width,height,duration,codec_type:stream_tags=rotate:stream_side_data=rotation:format=duration",
+              "-of", "json", path], "Reading the video", timeout=60)
     d = json.loads(r.stdout or b"{}")
     st = (d.get("streams") or [{}])[0]
-    return {"width": int(st.get("width") or 0), "height": int(st.get("height") or 0),
-            "duration": float((d.get("format") or {}).get("duration") or 0)}
+    w, h = int(_num(st.get("width"))), int(_num(st.get("height")))
+    rot = _num((st.get("tags") or {}).get("rotate"))
+    for sd in st.get("side_data_list") or []:
+        rot = rot or _num(sd.get("rotation"))
+    if int(abs(rot)) % 180 == 90:        # phones record sideways and flag the rotation
+        w, h = h, w
+    dur = _num((d.get("format") or {}).get("duration")) or _num(st.get("duration"))
+    return {"width": w, "height": h, "duration": dur}
+
+
+_UNREADABLE = "That doesn't look like a video we can read. Upload an MP4 or MOV file."
 
 
 def check_uploaded_short(data: bytes) -> dict:
@@ -76,10 +130,31 @@ def check_uploaded_short(data: bytes) -> dict:
             f.write(data)
         try:
             info = probe(src)
-        except ShortError:
-            raise ShortError("That doesn't look like a video we can read. Upload an MP4 or MOV file.")
-        if not info["width"] or not info["height"] or info["duration"] <= 0:
-            raise ShortError("That doesn't look like a video we can read. Upload an MP4 or MOV file.")
+        except ShortError as e:
+            msg = str(e)
+            # Only a genuinely unreadable file gets the "not a video" message; a server problem is reported as such.
+            if "not installed" in msg or "took too long" in msg:
+                logger.error("[shorts] probe failed (server): %s", msg)
+                raise
+            logger.warning("[shorts] ffprobe could not read upload: %s", msg[-300:])
+            raise ShortError(_UNREADABLE)
+        except (ValueError, KeyError) as e:
+            logger.warning("[shorts] ffprobe output unreadable: %s", e)
+            raise ShortError(_UNREADABLE)
+        if not info["width"] or not info["height"]:
+            raise ShortError(_UNREADABLE)
+        if info["duration"] <= 0:
+            # some containers carry no duration header — count the frames instead
+            try:
+                r = _run(["ffmpeg", "-v", "error", "-i", src, "-f", "null", "-"], "Reading the video", timeout=FFMPEG_TIMEOUT)
+                m = re.findall(rb"time=(\d+):(\d+):([\d.]+)", r.stderr or b"")
+                if m:
+                    hh, mm, ss = m[-1]
+                    info["duration"] = int(hh) * 3600 + int(mm) * 60 + float(ss)
+            except ShortError:
+                pass
+            if info["duration"] <= 0:
+                info["duration"] = 1.0
         if info["duration"] > MAX_UPLOAD_SECONDS:
             raise ShortError(f"That video is {int(info['duration'])} seconds. YouTube Shorts can be up to 3 minutes — trim it and try again.")
         if info["width"] > info["height"]:
@@ -99,8 +174,11 @@ def to_mp4(data: bytes) -> bytes:
         src, dst = os.path.join(tmp, "in.bin"), os.path.join(tmp, "out.mp4")
         with open(src, "wb") as f:
             f.write(data)
-        r = _run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", src], "Reading the video", timeout=30)
-        codecs = (r.stdout or b"").decode().split()
+        if _bin("ffprobe"):
+            r = _run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", src], "Reading the video", timeout=30)
+            codecs = (r.stdout or b"").decode().split()
+        else:
+            codecs = [_probe_with_ffmpeg(src)["codec"]]
         if data[4:8] == b"ftyp" and "h264" in codecs and not any(c in codecs for c in ("hevc", "vp9", "av1")):
             return data
         _run(["ffmpeg", "-y", "-i", src, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p",

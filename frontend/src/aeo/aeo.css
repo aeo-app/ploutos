@@ -166,7 +166,7 @@
 .ae-dots i { width: 10px; height: 10px; border-radius: 5px; background: var(--ae-primary); animation: ae-pulse 1s infinite; }
 .ae-dots i:nth-child(2) { animation-delay: .2s; } .ae-dots i:nth-child(3) { animation-delay: .4s; }
 @keyframes ae-pulse { 0%, 100% { opacity: .25 } 50% { opacity: 1 } }
-.ae-blog { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--ae-line); border-radius: 14px; background: #fff; }
+.ae-blog { display: flex; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--ae-line); border-radius: 14px; background: #fff; }
 .ae-blog.ok { border-color: #10b981; background: #f6fdf9; }
 
 /* calendar */
@@ -376,3 +376,19 @@
 .ae-steps li.now { color: #1c1b3a; font-weight: 700; } .ae-steps li.now b { background: #4f46e5; color: #fff; }
 .ae-steps li.done { color: #047857; } .ae-steps li.done b { background: #d1fae5; color: #047857; }
 @media (prefers-reduced-motion: reduce) { .ae-bar > i, .ae-bar.ind > i { animation: none; } .ae-bar.ind > i { left: 0; width: 100%; } }
+
+/* company photos */
+.ae-cphs { display: flex; flex-wrap: wrap; gap: 10px; }
+.ae-cph { position: relative; width: 96px; height: 96px; border-radius: 12px; overflow: hidden; border: 1px solid #e6e6f0; background: #f6f6fb; display: flex; align-items: center; justify-content: center; }
+.ae-cph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ae-cph > button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(28,27,58,.75); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; padding: 0; }
+.ae-cph.add { flex-direction: column; gap: 2px; border: 1.5px dashed #c7c6d9; background: #fff; color: #4f46e5; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+.ae-cph.add b { font-size: 22px; line-height: 1; }
+.ae-weeks { display: flex; gap: 6px; flex-wrap: wrap; }
+.ae-weeks button { border: 1px solid #dcdcf0; background: #fff; border-radius: 10px; padding: 7px 12px; font: inherit; font-size: 13px; font-weight: 600; color: #1c1b3a; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.ae-weeks button small { font-size: 11px; font-weight: 500; color: #6b6a85; }
+.ae-weeks button.on { background: #eef0ff; border-color: #4f46e5; color: #3730a3; }
+.ae-weeks button.done small { color: #059669; }
+
+.ae-blog > .ae-col { flex: 1 1 auto; min-width: 0; }
+@media (max-width: 640px) { .ae-blog { flex-wrap: wrap; } }

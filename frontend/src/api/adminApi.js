@@ -1,4 +1,15 @@
 import { ApiError } from "./authApi";
+import { prepPhoto } from "../utils/photoPrep";
+
+// Phone photos are 5-10 MB and the server's front door refuses large bodies (413) — shrink before sending.
+async function shrunk(file) {
+  if (!file || !/^image\/(jpeg|png|webp)$/i.test(file.type || "")) return file;
+  try {
+    const blob = await prepPhoto(file);
+    return new File([blob], (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch (_) { return file; }
+}
+
 import { fetchImageBlob } from "./downloadImage";
 import { BASE, checkAuthTokens, getAuthHeaders } from "./seoApi";
 
@@ -89,7 +100,7 @@ export const adminApi = {
     }),
 
   socialStatus: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/status`),
-  socialUploadMedia: (userId, file) => uploadReq(`/admin/users/${encodeURIComponent(userId)}/social-publish/uploads`, file),
+  socialUploadMedia: async (userId, file) => uploadReq(`/admin/users/${encodeURIComponent(userId)}/social-publish/uploads`, await shrunk(file)),
   /** @param {object} payload - {poster_id?, image_url?, caption, platforms: [...], cta_url?} — exactly one of poster_id/image_url */
   socialPublish: (userId, payload) => req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/publish`, payload),
   /** @param {object} payload - {poster_id?, image_url?, day_date, caption, platforms: [...facebook/instagram only], scheduled_time, cta_url?} */

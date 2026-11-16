@@ -4,6 +4,7 @@ import { useAeo, usePromptRows } from '../AeoContext';
 import { EmptyAnalysis, useCompetitorRows } from '../parts';
 import { PromptsCard, CompetitorsCard, IdeasCard, KpiCard, deltaLine, RED, AMBER, GREEN } from '../dashParts';
 import { Icon } from '../Icon';
+import { PromptsView } from '../PromptsView';
 import { ManageAccounts } from '../ManageAccounts';
 import { useSocialChannels } from '../social';
 import { usePayment } from '../../context/PaymentContext';
@@ -186,7 +187,7 @@ export function DashboardPage() {
 export function PromptsPage() {
   const { analysis } = useAeo();
   const { pendingCount } = usePromptRows();
-  return analysis || pendingCount ? <PromptsCard /> : <EmptyAnalysis />;
+  return analysis || pendingCount ? <PromptsView /> : <EmptyAnalysis />;
 }
 
 export function CompetitorsAeoPage() {

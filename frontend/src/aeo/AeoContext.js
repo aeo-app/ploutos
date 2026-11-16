@@ -9,7 +9,7 @@ import { usePayment } from '../context/PaymentContext';
 import { pageKey } from './pageTemplates';
 
 const Ctx = createContext(null);
-const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], custom_blog_topics: [], calendar_start: '', brand: {} };
+const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: [], hidden_prompts: [], selected_prompts: [], social_links: {}, blog_state: {}, post_state: {}, calendar_keywords: [], custom_blog_topics: [], company_photos: [], calendar_start: '', brand: {} };
 
 export function AeoProvider({ children }) {
   const { state, runApi, toast, requirePayment } = useApp();
@@ -129,6 +129,8 @@ export function AeoProvider({ children }) {
     selected_prompts: saved.selected_prompts.filter(p => p !== text),
     hidden_prompts: [...(saved.hidden_prompts || []).filter(h => h.toLowerCase() !== text.toLowerCase()), text].slice(-80),
   });
+  const setCompanyPhotos = (list) => patch({ company_photos: list });
+  const restorePrompt = (text) => patch({ hidden_prompts: (saved.hidden_prompts || []).filter(h => h.toLowerCase() !== String(text).toLowerCase()) });
   const addCompetitor = (name, domain) => {
     const n = name.trim();
     if (!n) return;
@@ -357,12 +359,12 @@ export function AeoProvider({ children }) {
 
   const value = useMemo(() => ({
     loadPage, loadSavedPages,
-    quota, analysis, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
+    quota, analysis, rawAnalysis, restorePrompt, setCompanyPhotos, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, setSelectedPrompts, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
     brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
     // eslint-disable-next-line
-  }), [analysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);
+  }), [analysis, rawAnalysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

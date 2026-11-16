@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 
 from core.security import get_current_user_id, get_real_user_id, require_paid_access
+from core.plan_limits import weekly_limits
 from core.paywall import paywall_guard, payment_required, raise_if_lapsed, subscription_state
 from db import (
     AeoStateTooLargeError,
@@ -171,11 +172,11 @@ def _acting_admin(real: str = Depends(get_real_user_id), current: str = Depends(
 
 
 @router.get("/poster-status", summary="Can this account create posters now? When does the next poster generation open?")
-def poster_status(cycle: Optional[int] = None, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
-    from services import poster_months
-    out = poster_months.status(user_id, cycle)
+def poster_status(week: Optional[int] = None, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
+    from services import poster_weeks
+    out = poster_weeks.status(user_id, week)
     if acting:
-        out.update(can_generate=True, needs_payment=False, reason="")
+        out.update(can_generate=True, can_generate_reels=True, needs_payment=False, reason="")
     return out
 
 
@@ -246,6 +247,9 @@ def strategy(req: AeoStrategyRequest, user_id: str = Depends(get_current_user_id
         user_id, "strategy", req.prompt + ("|free" if limited else ""), req.refresh, AeoStrategyResponse,
         lambda t: generate_aeo_strategy(req, usage_tracker=t, limited=limited),
     )
+    # Exactly 2 blog topics per prompt. Strategies saved before this rule held more: only the first 2 are shown.
+    if len(result.blog_topics) > 2:
+        result = result.model_copy(update={"blog_topics": list(result.blog_topics)[:2]})
     return _with_team_blogs(user_id, req.prompt, result)
 
 
@@ -408,7 +412,7 @@ def social_posts(req: AeoSocialRequest, user_id: str = Depends(get_current_user_
                 raise HTTPException(status_code=409, detail=f"Your calendar for this month is already created. You can create a new one after {until.strftime('%d %b %Y')}.")
     res = _cached_or_generate(
         user_id, "social", key, req.refresh, AeoSocialResponse,
-        lambda t: generate_aeo_social(req, usage_tracker=t, limited=limited),
+        lambda t: generate_aeo_social(req, usage_tracker=t, limited=limited, posters=weekly_limits(user_id)[0] if not limited else 3),
         valid=lambda d: social_shape_ok(d, limited),
     )
     # The calendar is built around keywords — the user's own, or the top 10 taken from their website
@@ -606,6 +610,7 @@ class ShortRequest(BaseModel):
     # Optional text shown on every scene of the video (drawn by the server, spelled exactly as typed).
     heading: str = Field(default="", max_length=80)
     subheading: str = Field(default="", max_length=160)
+    day_date: str = Field(default="", max_length=60)        # the calendar day this reel is for ("aeo-YYYY-MM-DD-yt"): reels are limited per week by plan
 
 
 @router.post("/photos", summary="Upload one of your own photos to build an image or a reel from (JPG, PNG or WebP)")
@@ -619,7 +624,11 @@ async def upload_photo(file: UploadFile = File(...), user_id: str = Depends(get_
 
 
 @router.post("/short-video", dependencies=[Depends(paywall_guard)], summary="Start creating a YouTube Short (vertical video) for a post; poll GET /short-video/{job_id}")
-def start_short(req: ShortRequest, background: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
+def start_short(req: ShortRequest, background: BackgroundTasks, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
+    from services import poster_weeks
+    calendar_reel = str(req.day_date).startswith("aeo-")
+    if calendar_reel:
+        poster_weeks.check_reel(user_id, req.day_date, acting)      # the plan's reels per week (Starter, Growth and Scale: 2)
     params = req.model_dump()
     params["keywords"] = clean_keywords(params.get("keywords"))
     # Check the photos belong to this customer now, so a bad link fails straight away instead of inside the background job.
@@ -629,7 +638,8 @@ def start_short(req: ShortRequest, background: BackgroundTasks, user_id: str = D
     except PhotoError as e:
         raise HTTPException(status_code=422, detail=str(e))
     job_id = short_jobs.start_job(user_id, params)          # 422 when the logo / phone number are missing
-    background.add_task(short_jobs.run_job, user_id, job_id, params)
+    on_done = (lambda _done: poster_weeks.record_reel(user_id, req.day_date, acting)) if calendar_reel else None
+    background.add_task(short_jobs.run_job, user_id, job_id, params, on_done)
     return {"job_id": job_id, "status": "running"}
 
 
@@ -721,6 +731,14 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
             seen.add((prompt.lower(), title.lower()))
             topics.append({"prompt": prompt, "title": title, "type": str((t or {}).get("type") or "Blog").strip()[:30] or "Blog"})
         changes["custom_blog_topics"] = topics[:100]
+    if "company_photos" in changes:
+        seen, photos = set(), []
+        for ph in changes["company_photos"] or []:
+            url = str((ph or {}).get("url", "")).strip()[:600]
+            if url and url not in seen:
+                seen.add(url)
+                photos.append({"url": url, "name": str((ph or {}).get("name", "")).strip()[:80]})
+        changes["company_photos"] = photos[:12]
     if "calendar_start" in changes:
         cs = str(changes["calendar_start"] or "").strip()
         try:

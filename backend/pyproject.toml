@@ -33,6 +33,7 @@ dependencies = [
 
     # Brand bar (logo + contact details) on generated images and YouTube Shorts — services/brand_overlay.py
     "Pillow==10.4.0",
+    "imageio-ffmpeg>=0.5.1",
 ]
 
 [dependency-groups]

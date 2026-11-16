@@ -283,12 +283,14 @@ def save_content(user_id: str, req: SaveContentRequest, admin_id: str = Depends(
         for p in ((req.data.get("channels") or {}).get(ch) or [])[:POSTS_PER_CHANNEL]:
             if not isinstance(p, dict):
                 continue
-            item = {k: _clip(p.get(k), n) for k, n in (("text", 3000), ("cta", 200), ("tags", 400), ("visual", 800), ("title", 200), ("duration", 20))}
+            item = {k: _clip(p.get(k), n) for k, n in (("text", 3000), ("cta", 200), ("tags", 400), ("visual", 800), ("title", 200), ("duration", 20), ("heading", 80), ("subheading", 160))}
             item["kind"] = "reel" if p.get("kind") == "reel" else "poster"
+            d_ = p.get("day")
+            item["day"] = d_ if isinstance(d_, int) and 0 <= d_ <= 6 else None
             w = p.get("week")
             item["week"] = w if isinstance(w, int) and 0 <= w <= 3 else None
             cr = p.get("core")
-            item["core"] = cr if isinstance(cr, int) and 0 <= cr <= 19 else None
+            item["core"] = cr if isinstance(cr, int) and 0 <= cr <= 35 else None
             posts.append(item)
         chans[ch] = posts
     prior = None
@@ -297,7 +299,8 @@ def save_content(user_id: str, req: SaveContentRequest, admin_id: str = Depends(
         prior = next((c for c in list_aeo_content(user_id) if c["sk"] == sk and c["kind"] == "social"), None)
         if not prior:
             raise HTTPException(status_code=404, detail="That calendar no longer exists.")
-    doc = AeoSocialResponse(prompt=req.prompt, channels=chans, limited=bool(prior and prior["data"].get("limited")), team=req.team).model_dump()
+    doc = AeoSocialResponse(prompt=req.prompt, channels=chans, limited=bool(prior and prior["data"].get("limited")), team=req.team,
+                            posters_per_week=int((prior or {}).get("data", {}).get("posters_per_week") or req.data.get("posters_per_week") or 3)).model_dump()
     doc["cached"] = False
     if not sk:
         sk = _aeo_content_sk("social", req.prompt + ("" if is_user_paid(user_id) else "|free"))
@@ -428,8 +431,8 @@ async def upload_post_image(user_id: str, key: str = Form(...), file: UploadFile
     if not _KEY_RE.match(key):
         raise HTTPException(status_code=422, detail="Bad key")
     data = await file.read()
-    if not data or len(data) > 8_000_000:
-        raise HTTPException(status_code=422, detail="Choose an image under 8 MB.")
+    if not data or len(data) > 25_000_000:
+        raise HTTPException(status_code=422, detail="Choose an image under 25 MB.")
     try:
         url = upload_image(data, file.filename or "upload.jpg", user_id)
     except MediaUploadError as e:

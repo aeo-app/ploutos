@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import RedirectResponse
 
 from core.security import get_current_user_id, get_real_user_id, require_admin
-from services import poster_months
+from services import poster_weeks
 from core.paywall import paywall_guard
 from db import (
     get_canva_connection,
@@ -72,7 +72,7 @@ from services import brand_service as brand_svc
 from services.brand_overlay import apply_brand_bar, apply_headline, apply_designed_headline, apply_designed_footer, design_for, accent_for
 from services.openai_image_service import OpenAIImageError
 from services.openai_image_service import generate_image_from_prompt as generate_image_via_openai, edit_image_from_photos, photo_edit_prompt
-from services.photo_service import PhotoError, load_photos
+from services.photo_service import PhotoError, load_photos, company_photo_refs
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/canva", tags=["Canva"])
@@ -447,10 +447,10 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
     clicks "Create Poster" on one day).
     """
     acting = real_user_id != user_id
-    # Posters are created one month at a time: once for the current month, a later month only from its first day and once paid.
+    # Posters are created one week at a time, up to what the plan includes; a later week only from its first day (and, from month 2, once paid).
     monthly = str(req.day_date).startswith("aeo-")      # the AEO social calendar; other poster pages are not on this rule
     if monthly:
-        poster_months.check(user_id, req.day_date, acting)
+        poster_weeks.check(user_id, req.day_date, acting)
     # A logo and a contact phone number are required — they are printed on every generated image.
     brand, logo_bytes = brand_svc.require_brand(user_id)
     heading, subheading = req.heading.strip(), req.subheading.strip()
@@ -467,6 +467,10 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
         photos = load_photos(req.photo_urls, user_id)
     except PhotoError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if not photos:
+        # No photos chosen for this poster: build it from the customer's real company photos when they have uploaded any
+        # (a different one for each poster); otherwise it is made from a professional, realistic photograph.
+        photos = company_photo_refs(user_id, seed)
     try:
         scene = brand_svc.build_photo_prompt(req.company_name, req.industry, brand, req.visual_suggestion, req.keywords)
         scene += f"\nPhoto direction: {design['style']}.\n{design['space']}"
@@ -492,7 +496,7 @@ async def generate_poster(req: GeneratePosterRequest, user_id: str = Depends(get
         # here, unlike the old bare `except Exception` this replaced.
         raise HTTPException(status_code=502, detail=f"Generated the image but could not store it. {e}")
     if monthly:
-        poster_months.record(user_id, req.day_date, acting)
+        poster_weeks.record(user_id, req.day_date, acting)
 
     # Same poster_id for the same day/post across regenerations (matches
     # the existing Canva-autofill path's behavior) — a repeat "Create

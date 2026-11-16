@@ -87,3 +87,31 @@ def load_photos(urls: list[str] | None, user_id: str, limit: int = MAX_PHOTOS) -
             raise PhotoError("One of the photos is no longer available. Please upload it again.")
         out.append(got[0])
     return out
+
+
+def company_photo_refs(user_id: str, seed: str, count: int = 2) -> list[bytes]:
+    """The customer's real company photos (saved with the calendar) to use as references for one poster: up to `count`, starting at a
+    different photo for every poster so a set of posters does not keep reusing the same picture. Unreadable photos are skipped; with no
+    photos (or none readable) the result is empty and the poster is made from a professional real-world photograph instead."""
+    import hashlib
+    try:
+        from db.dynamo import get_aeo_state
+        urls = [str(p.get("url"))[:600] for p in (get_aeo_state(user_id).get("company_photos") or []) if isinstance(p, dict) and p.get("url")]
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[photos] could not read company photos for {user_id}: {e}")
+        return []
+    if not urls:
+        return []
+    start = int(hashlib.sha256(seed.encode()).hexdigest()[:8], 16) % len(urls)
+    ordered = urls[start:] + urls[:start]
+    out: list[bytes] = []
+    for u in ordered:
+        if len(out) >= count:
+            break
+        try:
+            got = read_user_image(u, user_id)
+            if got:
+                out.append(got[0])
+        except Exception as e:  # noqa: BLE001
+            logger.info(f"[photos] skipping unreadable company photo: {e}")
+    return out
