@@ -105,7 +105,8 @@ class AeoPrompt(BaseModel):
     rank: int
     text: str
     intent: Intent = "Commercial"
-    volume_estimate: int = 0
+    keyword: str = ""                # the short Google search behind this question, e.g. "hire react developer"
+    volume_estimate: int = 0         # real monthly Google searches for `keyword` in the market; 0 = no number from Google
     engines: list[Optional[int]] = Field(default_factory=lambda: [0, 0, 0, 0])
     custom: bool = False
     locked: bool = False

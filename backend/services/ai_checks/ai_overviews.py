@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 import requests
 
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 ENGINE = "AI Overviews"
 URL = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced"
 TIMEOUT_SECONDS = 120
+RETRIES = 1                 # DataForSEO sometimes fails a Google search for a moment ("Internal SE Server Error")
+RETRY_WAIT_SECONDS = 3
 
 
 def is_ready() -> bool:
@@ -32,6 +35,16 @@ def ask(question: str, market: str) -> EngineAnswer:
         task["location_code"] = code
     else:
         task["location_name"] = "United States"
+    for attempt in range(RETRIES + 1):
+        answer = _search(task)
+        if not answer.error or attempt == RETRIES:
+            return answer
+        time.sleep(RETRY_WAIT_SECONDS)
+    return answer
+
+
+def _search(task: dict) -> EngineAnswer:
+    """One Google search through DataForSEO, read into an answer (an error answer when it fails)."""
     try:
         resp = requests.post(URL, auth=(os.getenv("DATAFORSEO_LOGIN", ""), os.getenv("DATAFORSEO_PASSWORD", "")),
                              json=[task], timeout=TIMEOUT_SECONDS)

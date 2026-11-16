@@ -9,7 +9,7 @@ import { ManageAccounts } from '../ManageAccounts';
 import { useSocialChannels } from '../social';
 import { usePayment } from '../../context/PaymentContext';
 import { BrandKitCard } from '../BrandKit';
-import { ENGINES, checkedAnswers, citedCount, engineNames, engineStats, hostOf, isReal, overallVis, sovRank, youSov } from '../utils';
+import { ENGINES, checkedAnswers, citedCount, engineNames, engineStats, hostOf, isReal, num, overallVis, searchesTitle, sovRank, youSov } from '../utils';
 
 const FIRST_REAL = { text: 'First check with real answers', color: '#6b6a85' };
 const band =(v, cuts, labels, colors) => { const i = v < cuts[0] ? 0 : v < cuts[1] ? 1 : 2; return { label: labels[i], color: colors[i] }; };
@@ -260,7 +260,7 @@ export function EnginesPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--ae-line2)', paddingTop: 14 }}>
                 <span className="ae-eyebrow">Biggest gaps</span>
                 {st.gaps.length === 0 && <span className="ae-sub">No gaps — you appear for every tracked prompt.</span>}
-                {st.gaps.map(g => <div key={g.text} className="ae-row" style={{ flexWrap: 'nowrap', fontSize: 13, gap: 10 }}><b style={{ fontWeight: 600 }}>{g.text}</b><span className="ae-mono" style={{ color: 'var(--ae-mute)', flexShrink: 0 }}>{g.volume_estimate.toLocaleString()}/mo</span></div>)}
+                {st.gaps.map(g => <div key={g.text} className="ae-row" style={{ flexWrap: 'nowrap', fontSize: 13, gap: 10 }}><b style={{ fontWeight: 600 }}>{g.text}</b><span className="ae-mono" style={{ color: 'var(--ae-mute)', flexShrink: 0 }} title={searchesTitle(g)}>{g.volume_estimate ? `${num(g.volume_estimate)}/mo` : '—'}</span></div>)}
               </div>
             </div>
           );

@@ -5,7 +5,7 @@ import { useAeo, usePromptRows } from './AeoContext';
 import { useCompetitorRows } from './parts';
 import { Icon } from './Icon';
 import { RealAnswersButton } from './RealAnswers';
-import { engineNames, fmtDate, isReal, promptVis, num } from './utils';
+import { engineNames, fmtDate, isReal, promptVis, num, searchesTitle } from './utils';
 import { aeoApi } from '../api/aeoApi';
 
 const ENG_COLOR = ['#10a37f', '#1f8a9e', '#4f7cf7', '#ea4335'];
@@ -124,7 +124,7 @@ export function PromptsCard() {
           <span className="dv-c-n">#</span><span className="dv-c-t">Prompt</span>
           <div className="dv-meta">
             <span title="What the person wants: comparing options, ready to buy, or just learning" className="dv-hi">Intent <Icon name="info" size={12} /></span>
-            <span title="Number of people searching this each month, when available" className="dv-hi r">Searches/mo <Icon name="info" size={12} /></span>
+            <span title={realRun ? 'Real monthly Google searches for the main keyword of each question (hover a number to see the keyword). — means Google has too few searches to give a number.' : 'Number of people searching this each month, when available'} className="dv-hi r">Searches/mo <Icon name="info" size={12} /></span>
           </div>
           <div className="dv-engs">{names.map((e, j) => <span key={e} className="dv-ename"><i style={{ background: ENG_COLOR[j] }} />{e}</span>)}</div>
           <span className="dv-hi dv-c-v" title="How strongly the AI tools that were asked recommend you for this question">Visibility <Icon name="info" size={12} /></span>
@@ -141,7 +141,7 @@ export function PromptsCard() {
               <span className="dv-c-t">{p.text}{p.custom && <> <span className="dv-tag y">Yours</span> <button type="button" className="dv-link sm dv-nopr" onClick={() => removePrompt(p.text)}>Remove</button></>}{realRun && real && <> <RealAnswersButton prompt={p.text} /></>}</span>
               <div className="dv-meta">
                 <span><span className="dv-intent" title={it ? it[2] : 'Worked out in your next analysis'} style={{ background: it ? it[0] : '#f3f3f8', color: it ? it[1] : MUTE }}>{p.intent === 'Custom' || !p.intent ? 'Pending' : p.intent}</span></span>
-                <span className="dv-c-s">{p.volume_estimate ? <>{num(p.volume_estimate)}<small> searches/mo</small></> : '—'}</span>
+                <span className="dv-c-s" title={searchesTitle(p)}>{p.volume_estimate ? <>{num(p.volume_estimate)}<small> searches/mo</small></> : '—'}</span>
                 <span className="dv-vt" style={{ color: vis == null ? MUTE : '#1c1b3a' }}>{vis == null ? 'Next analysis' : vis + '%'}</span>
               </div>
               <div className="dv-engs">{p.engines.map((x, j) => <span key={j} className="dv-ecell"><EngCellV3 x={x} name={names[j]} /><small>{names[j]}</small></span>)}</div>

@@ -14,4 +14,6 @@ One module per AI tool, each exposing `is_ready()` and `ask(question, country) -
 
 reader.py reads one answer (which businesses it names, is the customer mentioned / linked),
 runner.py asks every question to every ready tool in parallel and totals the results.
+search_volume.py gives the real monthly Google searches for each question's short keyword
+(Google Ads data via DataForSEO, same login).
 """

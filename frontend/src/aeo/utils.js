@@ -90,6 +90,13 @@ export function engineStats(prompts, j) {
 export const hostOf = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
 export const fmtDate = (d, o) => d.toLocaleDateString('en-GB', o);
 export const num = (n) => Number(n || 0).toLocaleString();
+/** Hover text for a question's searches/month: real Google numbers for its short keyword (older analyses have no keyword). */
+export const searchesTitle = (p) => {
+  if (!p?.keyword) return undefined;
+  return p.volume_estimate
+    ? `${num(p.volume_estimate)} Google searches a month for "${p.keyword}"`
+    : `Google has no search count for "${p.keyword}" (too few searches)`;
+};
 
 // Calendar: 4 weeks starting on the next Monday on/after today.
 export function calendarStart(now = new Date()) {

@@ -5,7 +5,7 @@ import { socialPublishApi } from '../api/socialPublishApi';
 import { rememberPageBeforeOAuthRedirect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
 import { useConnectProgress } from './useConnectProgress';
 import { useAeo, usePromptRows } from './AeoContext';
-import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf } from './utils';
+import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf, searchesTitle } from './utils';
 
 export function EngCell({ x, j, names }) {
   const c = engCell(x, j, names);
@@ -94,7 +94,7 @@ export function PromptsCard() {
                 {p.custom && <button className="ae-linkbtn" onClick={e => { e.stopPropagation(); removePrompt(p.text); }}>Remove</button>}
               </div>
               <span><span className="ae-pill" style={{ background: ic[0], color: ic[1] }}>{p.intent}</span></span>
-              <span className="ae-mono" style={{ textAlign: 'right', fontSize: 12.5, color: '#4a4966' }}>{p.volume_estimate ? num(p.volume_estimate) : '—'}</span>
+              <span className="ae-mono" style={{ textAlign: 'right', fontSize: 12.5, color: '#4a4966' }} title={searchesTitle(p)}>{p.volume_estimate ? num(p.volume_estimate) : '—'}</span>
               <div className="ae-eng4">{(p.locked ? [null, null, null, null] : p.engines).map((x, j) => <EngCell key={j} x={x} j={j} />)}</div>
               <div className="ae-vis"><i><s style={{ width: (vis || 0) + '%' }} /></i><b style={{ fontSize: 12.5, width: 34, textAlign: 'right' }}>{vis == null ? '—' : vis + '%'}</b></div>
             </div>

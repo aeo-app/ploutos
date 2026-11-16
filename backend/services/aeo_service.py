@@ -59,6 +59,7 @@ from models.aeo_models import (
 )
 from services.ai_checks.reader import name_key
 from services.ai_checks.runner import answers_doc, run_checks, summarize
+from services.ai_checks.search_volume import clean_keyword, monthly_searches
 from services.bedrock_service import TokenUsageTracker, _converse, _parse_json
 
 logger = logging.getLogger(__name__)
@@ -188,17 +189,26 @@ def run_aeo_analysis(
     custom = list(req.extra_prompts)
     taken = {t.lower() for t in custom}
     questions = [q for q in _suggest_questions(req, n, usage_tracker) if q["text"].lower() not in taken]
+    custom_keywords = _keywords_for(custom, req.market, usage_tracker)
     logger.info(f"[aeo] analysis — {req.company_name} / {req.market} questions={len(questions)} custom={len(custom)} paid={is_paid}")
 
-    checks = run_checks(custom + [q["text"] for q in questions], req.company_name, domain, req.market,
-                        usage_tracker=usage_tracker, on_progress=on_progress)
+    # Google's real search counts for every candidate keyword (one request), fetched while the AI tools are asked.
+    candidates = [k for kws in [*custom_keywords.values(), *(q["keywords"] for q in questions)] for k in kws]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        lookup = pool.submit(monthly_searches, candidates, req.market)
+        checks = run_checks(custom + [q["text"] for q in questions], req.company_name, domain, req.market,
+                            usage_tracker=usage_tracker, on_progress=on_progress)
+        volumes = lookup.result()
     summary = summarize(checks, req.company_name, domain)
     not_checked = [None] * len(ENGINES)
 
-    custom_rows = [AeoPrompt(rank=0, text=t, intent="Commercial", engines=summary.cells.get(t, not_checked), custom=True)
-                   for t in custom]
-    rows = [AeoPrompt(rank=i + 1, text=q["text"], intent=q["intent"], engines=summary.cells.get(q["text"], not_checked))
-            for i, q in enumerate(questions)]
+    def row(rank: int, text: str, intent: str, keywords: list[str], custom_row: bool = False) -> AeoPrompt:
+        keyword, searches = _best_keyword(keywords, volumes)
+        return AeoPrompt(rank=rank, text=text, intent=intent, keyword=keyword, volume_estimate=searches,
+                         engines=summary.cells.get(text, not_checked), custom=custom_row)
+
+    custom_rows = [row(0, t, "Commercial", custom_keywords.get(t, []), custom_row=True) for t in custom]
+    rows = [row(i + 1, q["text"], q["intent"], q["keywords"]) for i, q in enumerate(questions)]
     if not is_paid:
         while len(rows) < PAID_PROMPT_COUNT:
             rows.append(_locked_prompt(len(rows) + 1))
@@ -218,8 +228,38 @@ def run_aeo_analysis(
     return result, answers_doc(checks)
 
 
+KEYWORDS_PER_QUESTION = 3
+_KEYWORDS_ASK = f"""For each question also give {KEYWORDS_PER_QUESTION} different short searches (2-4 words each, in the order people
+type them) that people use on Google for the same need, closest match first, e.g. "hire react developer",
+"react developer india", "react js developer". Every search must name what the person is looking for (the
+product or service itself); never a generic phrase such as "hire immediately", "proven track record" or a
+technique name on its own. Prefer popular wording."""
+
+
+def _keyword_list(value, fallback: str = "") -> list[str]:
+    """Up to KEYWORDS_PER_QUESTION short searches from the model's reply (a list, or a single string)."""
+    items = value if isinstance(value, list) else [value]
+    out = list(dict.fromkeys(str(k).strip()[:80] for k in items if k and str(k).strip()))
+    return out[:KEYWORDS_PER_QUESTION] or ([fallback] if fallback else [])
+
+
+def _best_keyword(keywords: list[str], volumes: dict[str, int]) -> tuple[str, int]:
+    """The closest-matching candidate Google has a search count for, with that count (the first one when none has).
+
+    Candidates come closest match first, so a broader search with a bigger number never wins over a closer one.
+    """
+    for k in keywords:
+        if volumes.get(clean_keyword(k)):
+            return k, volumes[clean_keyword(k)]
+    return (keywords[0], 0) if keywords else ("", 0)
+
+
 def _suggest_questions(req: AeoPromptsRequest, n: int, usage_tracker: TokenUsageTracker | None) -> list[dict]:
-    """The n questions real customers would ask an AI assistant, most common first: [{"text", "intent"}]."""
+    """The n questions real customers would ask an AI assistant, most common first: [{"text", "intent", "keywords"}].
+
+    The keywords are short Google searches for the same need, closest match first; Google only has search counts
+    for short searches, so the dashboard shows the real count of the closest one Google has a number for.
+    """
     prompt = f"""
 Company: {req.company_name}
 Website: {req.url}
@@ -232,17 +272,42 @@ Gemini) when they want to find, compare or buy what {req.company_name} offers, m
 Write each one from the customer's side (someone looking for this product or service), the way a real person
 types it. Never phrase it as a job search. Include the location when people would. Do not name {req.company_name}.
 
-Return ONE JSON object: {{"questions": [{{"text": "the question", "intent": "Commercial | Informational | Transactional"}}]}}
-with exactly {n} items."""
-    data = _parse_json(_converse(_SYSTEM, prompt, max_tokens=2500, usage_tracker=usage_tracker))
+{_KEYWORDS_ASK}
+
+Return ONE JSON object: {{"questions": [{{"text": "the question", "intent": "Commercial | Informational | Transactional",
+"keywords": ["short search 1", "short search 2", "short search 3"]}}]}} with exactly {n} items."""
+    data = _parse_json(_converse(_SYSTEM, prompt, max_tokens=3500, usage_tracker=usage_tracker))
     out, seen = [], set()
     for d in data.get("questions") or []:
         text = str(d.get("text", "")).strip()[:300]
         if text and text.lower() not in seen:
             seen.add(text.lower())
             intent = d.get("intent") if d.get("intent") in ("Commercial", "Informational", "Transactional") else "Commercial"
-            out.append({"text": text, "intent": intent})
+            out.append({"text": text, "intent": intent, "keywords": _keyword_list(d.get("keywords") or d.get("keyword"), text)})
     return out[:n]
+
+
+def _keywords_for(questions: list[str], market: str, usage_tracker: TokenUsageTracker | None) -> dict[str, list[str]]:
+    """Short Google searches for each question the customer added: {question: [keyword, ...]}."""
+    if not questions:
+        return {}
+    listed = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
+    prompt = f"""
+Market: {market}
+Questions people in {market} ask:
+{listed}
+
+{_KEYWORDS_ASK}
+
+Return ONE JSON object: {{"keywords": [["search 1", "search 2", "search 3"], ...]}} with one list per question,
+exactly {len(questions)} lists, in order."""
+    try:
+        data = _parse_json(_converse(_SYSTEM, prompt, max_tokens=1200, usage_tracker=usage_tracker))
+        lists = [_keyword_list(k) for k in data.get("keywords") or []]
+    except Exception as e:  # noqa: BLE001 — without keywords the question only shows no search count
+        logger.warning(f"[aeo] keywords for added questions failed: {e}")
+        return {}
+    return {q: kws for q, kws in zip(questions, lists) if kws}
 
 
 def _competitors(req: AeoPromptsRequest, domain: str, summary) -> list[AeoCompetitor]:
