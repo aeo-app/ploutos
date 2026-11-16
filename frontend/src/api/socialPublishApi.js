@@ -1,6 +1,17 @@
 import { ApiError } from "./authApi";
 import { BASE, checkAuthTokens, getAuthHeaders, getActAs } from "./seoApi";
 import { adminAeoApi } from "./adminApi";
+import { prepPhoto } from "../utils/photoPrep";
+
+// Phone photos are 5-10 MB and the server's front door refuses large bodies (413) — shrink before sending.
+async function shrunk(file) {
+  if (!file || !/^image\/(jpeg|png|webp)$/i.test(file.type || "")) return file;
+  try {
+    const blob = await prepPhoto(file);
+    return new File([blob], (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch (_) { return file; }
+}
+
 
 async function req(method, path, body) {
   try {
@@ -81,7 +92,7 @@ export const socialPublishApi = {
   connect: (platform) => req("GET", `/social-publish/${platform}/connect`),
   disconnect: (platform) => req("POST", `/social-publish/${platform}/disconnect`),
   /** @param {File} file - a browser File object, e.g. from an <input type="file"> */
-  uploadMedia: (file) => uploadReq("/social-publish/uploads", file),
+  uploadMedia: async (file) => uploadReq("/social-publish/uploads", await shrunk(file)),
   uploadVideo: (file, onProgress) => uploadVideoInPieces(file, onProgress),
   /** @param {string} imageUrl, @param {boolean} force - force=true overrides the "still used by a published post" safety check */
   deleteUploadedImage: (imageUrl, force = false) => req("DELETE", `/social-publish/uploads?image_url=${encodeURIComponent(imageUrl)}${force ? '&force=true' : ''}`),

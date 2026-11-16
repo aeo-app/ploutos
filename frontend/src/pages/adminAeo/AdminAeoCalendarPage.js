@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { adminAeoApi } from '../../api/adminApi';
 import { canvaApi } from '../../api/canvaApi';
+import { prepPhoto } from '../../utils/photoPrep';
 import { downloadImage } from '../../api/downloadImage';
 import { CALENDAR_PROMPT, CHANNELS, channelState, isReel, reelWord, postStateKey, dayOffset } from '../../aeo/utils';
 import { Badge, Card, Empty, SectionHeader, SkeletonCard } from '../../components/ui/UI';
@@ -74,7 +75,10 @@ function PostEditor({ siblings, userId, brand, brandOk, prompt, ch, i, post, st,
   const upload = async (f) => {
     if (!f) return;
     setBusy('up');
-    const r = await call(adminAeoApi.uploadImage(userId, key, f));
+    let body = f;
+    try { body = new File([await prepPhoto(f)], (f.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }); }   // phone photos are 5-10 MB
+    catch (e) { setBusy(''); toast({ type: 'error', message: e?.message || 'Could not read that image.' }); return; }
+    const r = await call(adminAeoApi.uploadImage(userId, key, body));
     setBusy('');
     if (r?.entry) onFlag(key, r.entry);
   };

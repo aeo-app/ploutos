@@ -38,8 +38,9 @@ from models.aeo_models import (
     CALENDAR_PROMPT,
     month_slots,
     channel_cores,
-    CORE_KINDS,
-    CORES_PER_WEEK,
+    core_kinds,
+    core_days,
+    cores_per_week,
     WEEKS_PER_MONTH,
     AeoBlogDraftRequest,
     AeoBlogDraftResponse,
@@ -351,10 +352,52 @@ def _site_root(url: str) -> str:
     return u if u.startswith("http") else "https://" + u
 
 
+
+_TOPIC_STOP = {"the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "with", "your", "you", "how", "what", "why", "is", "are", "best", "guide", "complete", "ultimate"}
+
+
+def _topic_words(title: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", str(title).lower()) if w not in _TOPIC_STOP and len(w) > 2}
+
+
+def _two_blog_topics(raw) -> list[dict]:
+    """At most 2 blog topics: well-formed, and not the same idea twice (same title, or titles that share most of their words)."""
+    out: list[dict] = []
+    for t in raw or []:
+        if not isinstance(t, dict):
+            continue
+        title = " ".join(str(t.get("title", "")).split())[:200]
+        if len(title) < 8:
+            continue
+        w = _topic_words(title)
+        if any(title.lower() == o["title"].lower() or (w and _topic_words(o["title"]) and len(w & _topic_words(o["title"])) / min(len(w), len(_topic_words(o["title"]))) >= 0.6) for o in out):
+            continue
+        out.append({"type": str(t.get("type", "")) or "Blog", "title": title, "words": _clamp(t.get("words"), 300, 3000, 1200)})
+        if len(out) == 2:
+            break
+    return out
+
+
+def _more_blog_topics(req, have: list[dict], usage_tracker) -> list[dict]:
+    got = ", ".join(f'"{t["title"]}"' for t in have) or "none yet"
+    prompt = f"""
+Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
+{_site_block(req.url, req.company_name)}
+Target AI prompt: "{req.prompt}"
+Already chosen blog topics: {got}.
+Write {2 - len(have)} MORE blog topic{'s' if 2 - len(have) > 1 else ''} for this prompt: different angle and different words from the ones above, specific to this company's real business.
+Return ONE JSON object: {{"blog_topics": [{{"type": "one of {json.dumps(_BLOG_TYPES)}", "title": "blog post title", "words": 1200}}]}}"""
+    try:
+        return _parse_json(_converse(_SYSTEM, prompt, max_tokens=500, usage_tracker=usage_tracker)).get("blog_topics") or []
+    except Exception as e:  # noqa: BLE001
+        logger.info(f"[aeo] extra blog topic failed: {e}")
+        return []
+
+
 def generate_aeo_strategy(
     req: AeoStrategyRequest, usage_tracker: TokenUsageTracker | None = None, limited: bool = False,
 ) -> AeoStrategyResponse:
-    scope = ("\nFREE PREVIEW: return only 1 page suggestion (in the pillars list), 2 plan entries (WEEK 1, WEEK 2) and 3 blog_topics. Keep it brief.\n" if limited else "")
+    scope = ("\nFREE PREVIEW: return only 1 page suggestion (in the pillars list), 2 plan entries (WEEK 1, WEEK 2) and the 2 blog_topics. Keep it brief.\n" if limited else "")
     prompt = f"""
 Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
 {_site_block(req.url, req.company_name)}
@@ -374,10 +417,13 @@ Return ONE JSON object with EXACTLY these keys:
     {{"week": "WEEK 1", "task": "concrete action"}}  // exactly 4 entries, WEEK 1..WEEK 4
   ],
   "blog_topics": [
-    {{"type": "one of {json.dumps(_BLOG_TYPES)} (use each once, in this order)",
+    {{"type": "one of {json.dumps(_BLOG_TYPES)} (the two topics use two DIFFERENT types)",
       "title": "blog post title", "words": 1200}}
-  ]
+  ]   // EXACTLY 2 topics, no more
 }}
+The 2 blog topics must: (1) answer the target prompt directly for this company's customers, (2) fit what the website says the company
+really does and its business category, (3) each target a different angle and a different search keyword, with titles that share no
+main words, (4) be specific enough that a customer would click, not generic ("Complete guide to ..." for everything).
 For the CASE STUDY blog topic and any customer-story page, do not state any client name, result or number as fact —
 frame them as something {req.company_name} should interview a client for and publish."""
     raw = _converse(_SYSTEM, prompt, max_tokens=1500 if limited else 3500, usage_tracker=usage_tracker)
@@ -397,12 +443,13 @@ frame them as something {req.company_name} should interview a client for and pub
     pillars = pillars[:6]
     plan = [{"week": str(p.get("week", f"WEEK {i + 1}")), "task": str(p.get("task", ""))}
             for i, p in enumerate(d.get("plan") or [])][:6]
-    topics = [{"type": str(t.get("type", "")), "title": str(t.get("title", "")),
-               "words": _clamp(t.get("words"), 300, 3000, 1000)} for t in (d.get("blog_topics") or [])][:8]
-    if not (pillars and plan and topics):
+    topics = _two_blog_topics(d.get("blog_topics"))
+    if len(topics) < 2:                    # the model repeated itself or skipped one: ask once more for the missing topic
+        topics = _two_blog_topics((topics or []) + _more_blog_topics(req, topics, usage_tracker))
+    if not (pillars and plan and len(topics) == 2):
         raise RuntimeError("The strategy response was missing sections — please try again.")
     if limited:
-        pillars, plan, topics = pillars[:1], plan[:2], topics[:3]
+        pillars, plan = pillars[:1], plan[:2]
     return AeoStrategyResponse(prompt=req.prompt, answer=str(d.get("answer", "")), pillars=pillars, plan=plan,
                                blog_topics=topics, limited=limited)
 
@@ -513,20 +560,23 @@ Blog type: {req.type}
 Title: "{req.title}"
 Target length: about {req.words} words in total.
 
-Write the draft so an AI engine could quote it: lead with the direct answer, then supporting sections.
+Write the COMPLETE blog post, ready to publish as it stands, so an AI engine could quote it: lead with the direct answer, then
+supporting sections that fully cover the topic, and finish with a short closing section that tells the reader what to do next.
 Return ONE JSON object with EXACTLY these keys:
 {{
-  "intro": "opening paragraph (the direct answer first)",
-  "sections": [ {{"h": "section heading", "p": "section body, plain text paragraphs separated by \\n\\n"}} ]  // 4 to 6 sections
+  "intro": "opening paragraph (the direct answer first, 3-5 sentences)",
+  "sections": [ {{"h": "section heading", "p": "section body, plain text paragraphs separated by \\n\\n (each section 120-220 words)"}} ]  // 5 to 7 sections, the last one is the conclusion with a clear call to action
 }}
-Rules: plain text only (no markdown). Do NOT invent client names, quotes, prices, statistics or review counts
-as facts. Where a specific figure or example would help, write a clearly marked placeholder such as
-[add your real figure] for {req.company_name} to fill in."""
-    raw = _converse(_SYSTEM, prompt, max_tokens=5000, usage_tracker=usage_tracker)
-    d = _parse_json(raw)
+Rules: plain text only (no markdown). Reach the target length. Everything must be finished prose: no placeholders, no brackets, no
+"insert", "add your" or "TBD". Do NOT invent client names, quotes, prices, statistics or review counts: instead of a number, explain
+the point in words. Speak as {req.company_name}, using what its website really says about its services, location and approach."""
+    raw = _converse(_SYSTEM, prompt, max_tokens=7000, usage_tracker=usage_tracker)
+    d = _strip_placeholders(_parse_json(raw))
     sections = [{"h": str(s.get("h", "")), "p": str(s.get("p", ""))} for s in (d.get("sections") or []) if s.get("h")]
     if not sections:
         raise RuntimeError("The draft came back empty — please try again.")
+    if not str(d.get("intro", "")).strip():
+        raise RuntimeError("The draft came back incomplete — please try again.")
     return AeoBlogDraftResponse(prompt=req.prompt, type=req.type, title=req.title, intro=str(d.get("intro", "")), sections=sections)
 
 
@@ -615,13 +665,14 @@ def _with_retries(fn, want: int, label: str) -> list:
     return got[:want]
 
 
-def _core_week(req: AeoSocialRequest, week: int, keywords: list[str], usage_tracker: TokenUsageTracker | None) -> list[dict]:
-    """The core content of one week: 3 posters + 2 reels. Written ONCE and then adapted for every channel."""
+def _core_week(req: AeoSocialRequest, week: int, keywords: list[str], usage_tracker: TokenUsageTracker | None, posters: int = 3) -> list[dict]:
+    """The core content of one week: the plan's posters + 2 reels. Written ONCE and then adapted for every channel."""
+    kinds = core_kinds(posters)
     kw = (f'KEYWORDS to target (one or two per item, naturally): {json.dumps(keywords, ensure_ascii=False)}') if keywords else ""
     month_note = f"This is month {req.cycle + 1} of an ongoing calendar. Use fresh angles, not the obvious first-month ones.\n" if req.cycle else ""
 
     def call(done: list) -> list[dict]:
-        todo = CORE_KINDS[len(done):]
+        todo = kinds[len(done):]
         prompt = f"""
 {_brand_context(req)}
 {kw}
@@ -646,7 +697,7 @@ Return ONE JSON object: {{"items": [{{"topic": "...", "message": "...", "cta": "
                 break
             out.append({k: str(p.get(k, "")).strip() for k in ("topic", "message", "cta", "hook", "subhead", "visual", "duration")})
         return out
-    return _with_retries(call, CORES_PER_WEEK, f"core items for week {week + 1}")
+    return _with_retries(call, len(kinds), f"core items for week {week + 1}")
 
 
 def _first_words(text: str, n: int) -> str:
@@ -705,33 +756,39 @@ Return ONE JSON object: {{"posts": [{{"text": "...", "cta": "...", "tags": "#a #
 
 
 def generate_aeo_social(
-    req: AeoSocialRequest, usage_tracker: TokenUsageTracker | None = None, limited: bool = False,
+    req: AeoSocialRequest, usage_tracker: TokenUsageTracker | None = None, limited: bool = False, posters: int = 3,
 ) -> AeoSocialResponse:
-    """A month of content: the same 3 posters + 2 reels per week on every channel (YouTube: the 2 reels), written once and adapted per channel."""
+    """A month of content: the plan's posters + 2 reels per week on every channel (YouTube: the 2 reels), written once and adapted per channel."""
+    cpw = cores_per_week(posters)
+    days = core_days(posters)
     keywords = clean_keywords(req.keywords) or suggest_site_keywords(
         req.company_name, req.url, req.market, req.industry, usage_tracker=usage_tracker)
     weeks = [0] if limited else list(range(WEEKS_PER_MONTH))
     with ThreadPoolExecutor(max_workers=4) as pool:
-        cores = dict(zip(weeks, [f.result() for f in [pool.submit(_core_week, req, w, keywords, usage_tracker) for w in weeks]]))
+        cores = dict(zip(weeks, [f.result() for f in [pool.submit(_core_week, req, w, keywords, usage_tracker, posters) for w in weeks]]))
     jobs: list[tuple[str, int, list[tuple[int, str, dict]]]] = []
     for c in CHANNELS:
         by_week: dict[int, list[tuple[int, str, dict]]] = {}
-        for cid, w, k in channel_cores(c, limited):
-            by_week.setdefault(w, []).append((cid, k, cores[w][cid % CORES_PER_WEEK]))
+        for cid, w, k in channel_cores(c, limited, posters):
+            by_week.setdefault(w, []).append((cid, k, cores[w][cid % cpw]))
         jobs += [(c, w, its) for w, its in by_week.items()]
     with ThreadPoolExecutor(max_workers=8) as pool:
         done = [(c, w, pool.submit(_adapt_week, req, c, w, its, keywords, usage_tracker)) for c, w, its in jobs]
         channels: dict[str, list[AeoSocialPost]] = {c: [] for c in CHANNELS}
         for c, w, f in done:
             channels[c] += f.result()
-    return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited, keywords=keywords, cycle=req.cycle,
+    for lst in channels.values():
+        for post in lst:
+            post.day = days[post.core % cpw] if post.core is not None else None
+    return AeoSocialResponse(prompt=req.prompt, channels=channels, limited=limited, keywords=keywords, cycle=req.cycle, posters_per_week=posters if not limited else 3,
                              generated_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
 
 def social_shape_ok(doc: dict, limited: bool) -> bool:
     """False for a saved calendar made before the weekly plan (4 posts per channel) — it is regenerated."""
     chans = doc.get("channels") or {}
-    return all(len(chans.get(c) or []) == len(month_slots(c, limited)) and all(p.get("week") is not None and p.get("core") is not None for p in chans.get(c) or [])
+    posters = doc.get("posters_per_week") or 3
+    return all(len(chans.get(c) or []) == len(month_slots(c, limited, posters)) and all(p.get("week") is not None and p.get("core") is not None for p in chans.get(c) or [])
                for c in CHANNELS)
 
 

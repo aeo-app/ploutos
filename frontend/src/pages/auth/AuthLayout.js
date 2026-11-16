@@ -34,12 +34,12 @@ export function AuthLayout({ children }) {
         </div>
 
         {/* Sonar animation */}
-        <div className={s.sonarArea}>
+        {/* <div className={s.sonarArea}>
           <div className={s.sonarCenter}><AeoIcon className={s.sonarCenterImg} /></div>
           {[0.7, 1.4, 2.1].map((delay, i) => (
             <div key={i} className={s.sonarRing} style={{ animationDelay: `${delay}s` }} />
           ))}
-        </div>
+        </div> */}
 
         {/* Headline */}
         <h1 className={s.brandHeadline}>

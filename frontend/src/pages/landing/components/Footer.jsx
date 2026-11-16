@@ -22,7 +22,7 @@ export default function Footer() {
         <div className="foot-grid">
           <div>
             <p className="foot-brand">AEO App</p>
-            <address>2 Ang Mo Kio Street 64, #02-03A<br />Econ Building<br />Singapore 569084</address>
+            <address>2 Ang Mo Kio Street 64, #02-03A<br />ECON INDUSTRIAL BUILDING<br />Singapore 569084</address>
           </div>
           <FootCol title="Product" links={[
             { label: 'Content studio', href: '#studio', section: 'studio' },
@@ -39,7 +39,7 @@ export default function Footer() {
             { label: 'Terms of service', href: '/privacy/privacy-policy.html' },
           ]} />
         </div>
-        <p className="foot-bottom">© 2026 AEO App. All rights reserved.</p>
+        <p className="foot-bottom">© 2026 AEO APP PTE. LTD. All rights reserved.</p>
       </div>
     </footer>
   );

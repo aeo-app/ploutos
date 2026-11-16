@@ -1,7 +1,7 @@
 import { withTokenExpiry, ApiError } from "./authApi"; // shared ApiError class — see authApi.js comment
 
-// export const BASE = "https://api.aeo-app.com/api/v1";
-export const BASE = "http://localhost:8000/api/v1"; // for local dev
+export const BASE = "https://api.aeo-app.com/api/v1";
+// export const BASE = "http://localhost:8000/api/v1"; // for local dev
 
 export const checkAuthTokens = () => {
   const idToken = localStorage.getItem("id_token");
