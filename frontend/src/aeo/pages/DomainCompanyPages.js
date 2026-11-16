@@ -4,7 +4,7 @@ import { usePayment } from '../../context/PaymentContext';
 import { seoApi } from '../../api/seoApi';
 import { aeoApi } from '../../api/aeoApi';
 import { useAeo } from '../AeoContext';
-import { copyToClipboard, hostOf } from '../utils';
+import { copyToClipboard, hostOf, num } from '../utils';
 
 function RunCard({ title, text, label, loading, onRun }) {
   return (
@@ -41,12 +41,16 @@ export function DomainAuthorityAeoPage() {
   const keep = (list) => (list || []).filter(x => !(isPaid && x.locked));
   const gaps = keep(da.gap_analysis), links = keep(da.backlink_opportunities), actions = keep(da.top_5_priority_actions);
   const staleLocked = isPaid && [da.gap_analysis, da.backlink_opportunities, da.top_5_priority_actions].some(l => (l || []).some(x => x.locked));
-  const me = (analysis?.competitors || []).find(c => c.is_you);
+  // Real backlink data (DataForSEO) from the latest analysis, when it has it; older analyses only have the estimate.
+  const site = analysis?.website;
+  const realLinks = site ? (analysis.link_opportunities || []) : [];
+  const moreLinks = Math.max(0, (analysis?.link_opportunities_total || 0) - realLinks.length);
   const bars = [
-    { name: 'You', da: da.current_da, you: true },
-    ...(analysis?.competitors || []).filter(c => !c.is_you).map(c => ({ name: c.name, da: c.domain_authority })),
+    { name: 'You', da: site ? site.score : da.current_da, you: true },
+    ...(analysis?.competitors || []).filter(c => !c.is_you && c.domain_authority != null).map(c => ({ name: c.name, da: c.domain_authority })),
   ].sort((a, b) => b.da - a.da);
   const leader = bars.find(b => !b.you);
+  const linkRow = { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 50px 90px', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--ae-line2)', fontSize: 13.5 };
 
   return (
     <>
@@ -57,14 +61,16 @@ export function DomainAuthorityAeoPage() {
         </section>
       )}
       <section className="ae-kpis" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
-        <div className="ae-kpi"><span className="ae-eyebrow">Current DA</span><b style={{ fontSize: 38, fontWeight: 800, color: '#4f46e5' }}>{da.current_da}</b><span className="ae-sub">Estimated{me ? '' : ''}</span></div>
+        <div className="ae-kpi"><span className="ae-eyebrow">{site ? 'Website strength' : 'Current DA'}</span><b style={{ fontSize: 38, fontWeight: 800, color: '#4f46e5' }}>{site ? site.score : da.current_da}</b>
+          <span className="ae-sub" title={site ? 'Measured from real backlink data (DataForSEO)' : undefined}>{site ? `Real data · ${num(site.linking_sites)} website${site.linking_sites === 1 ? '' : 's'} link to you` : 'Estimated'}</span></div>
         <div className="ae-kpi"><span className="ae-eyebrow">6-month target</span><b style={{ fontSize: 38, fontWeight: 800 }}>{da.target_da_6m}</b><span className="ae-sub">Realistic with steady link building</span></div>
         <div className="ae-kpi"><span className="ae-eyebrow">12-month target</span><b style={{ fontSize: 38, fontWeight: 800, color: '#0e9f6e' }}>{da.target_da_12m}</b><span className="ae-sub">{leader ? `Top rival is ${leader.da}` : 'Long-term goal'}</span></div>
       </section>
 
       <div className="ae-grid2">
         <section className="ae-card">
-          <h2>Domain authority vs competitors</h2>
+          <h2>{site ? 'Website strength vs competitors' : 'Domain authority vs competitors'}</h2>
+          {site && bars.length > 1 && <span className="ae-sub">Real backlink data for every competitor with a known website.</span>}
           {bars.length === 1 && <span className="ae-sub">Run the AI visibility analysis to compare against competitors.</span>}
           {bars.map(d => (
             <div key={d.name} className="ae-dabar">
@@ -88,10 +94,25 @@ export function DomainAuthorityAeoPage() {
         </section>
 
         <section className="ae-card">
-          <div className="ae-col"><h2>Backlink opportunities</h2><span className="ae-sub">Where to earn links that lift your domain authority</span></div>
+          <div className="ae-col"><h2>Backlink opportunities</h2>
+            <span className="ae-sub">{realLinks.length ? 'Real websites that link to your competitors but not to you yet (DataForSEO backlink data)' : 'Where to earn links that lift your domain authority'}</span></div>
+          {realLinks.map(o => (
+            <div key={o.site} style={linkRow}>
+              <div className="ae-col"><b><a href={`https://${o.site}`} target="_blank" rel="noreferrer">{o.site}</a></b>
+                <span style={{ fontSize: 12, color: 'var(--ae-faint)' }}>Links to {o.links_to.join(', ')}</span></div>
+              <span className="ae-mono" style={{ fontWeight: 700, textAlign: 'right' }} title="That website's own strength (0-100)">{o.score}</span>
+              <span style={{ fontSize: 12, color: 'var(--ae-mute)', textAlign: 'right' }}>{o.links_to.length === 1 ? '1 competitor' : `${o.links_to.length} competitors`}</span>
+            </div>
+          ))}
+          {realLinks.length > 0 && moreLinks > 0 && (isPaid
+            ? <span className="ae-sub">The {realLinks.length} strongest of {num(analysis.link_opportunities_total)} websites found.</span>
+            : <div onClick={() => requirePayment('domainAuthority')} style={{ ...linkRow, cursor: 'pointer', opacity: .7 }}>
+                <div className="ae-col"><b>🔒 {num(moreLinks)} more websites</b><span style={{ fontSize: 12, color: 'var(--ae-faint)' }}>Upgrade to see every website that links to your competitors</span></div>
+              </div>)}
+          {realLinks.length > 0 && links.length > 0 && <span className="ae-eyebrow" style={{ marginTop: 14 }}>More ideas (AI suggestions)</span>}
           {links.map((b, i) => (
             <div key={i} onClick={b.locked ? () => requirePayment('domainAuthority') : undefined}
-              style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 50px 90px', gap: 12, alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--ae-line2)', fontSize: 13.5, cursor: b.locked ? 'pointer' : 'default', opacity: b.locked ? .7 : 1 }}>
+              style={{ ...linkRow, cursor: b.locked ? 'pointer' : 'default', opacity: b.locked ? .7 : 1 }}>
               <div className="ae-col"><b>{b.locked ? '🔒 Locked' : b.platform_or_target}</b><span style={{ fontSize: 12, color: 'var(--ae-faint)' }}>{b.locked ? 'Unlock to see this opportunity' : `${b.pillar} · ${b.action}`}</span></div>
               <span className="ae-mono" style={{ fontWeight: 700, textAlign: 'right' }}>{b.locked ? '' : b.estimated_da}</span>
               <span style={{ fontSize: 12, color: 'var(--ae-mute)', textAlign: 'right' }}>{b.locked ? '' : b.difficulty}</span>

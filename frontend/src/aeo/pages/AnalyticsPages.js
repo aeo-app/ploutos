@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAeo, usePromptRows } from '../AeoContext';
 import { EmptyAnalysis, useCompetitorRows } from '../parts';
-import { PromptsCard, CompetitorsCard, IdeasCard, KpiCard, ResultBadge, checkedLine, deltaLine, RED, AMBER, GREEN } from '../dashParts';
+import { PromptsCard, CompetitorsCard, IdeasCard, KpiCard, RealDataBadge, ResultBadge, checkedLine, deltaLine, RED, AMBER, GREEN } from '../dashParts';
 import { Icon } from '../Icon';
 import { PromptsView } from '../PromptsView';
 import { ManageAccounts } from '../ManageAccounts';
@@ -143,14 +143,16 @@ export function DashboardPage() {
   const covered = top5.filter(p => p.engines.some(e => e != null && e !== 0)).length;
   const totalAnswers = checkedAnswers(real);
   const da = state.results.domainAuthority || state.results.fullReport?.domain_authority_strategy;
-  const daNow = da?.current_da != null ? Number(da.current_da) : null;
+  const site = analysis?.website;   // real backlink data (DataForSEO) measured in the latest analysis
+  const daNow = site ? site.score : da?.current_da != null ? Number(da.current_da) : null;
   const co = r.company_name || 'your business';
 
   const visB = vis == null ? null : band(vis, [20, 50], ['Low', 'Fair', 'Good'], [RED, AMBER, GREEN]);
   const visText = vis == null ? '' : `${vis < 20 ? 'AI tools rarely recommend you yet.' : vis < 50 ? 'AI tools sometimes recommend you.' : 'AI tools often recommend you.'} You appear in ${covered} of ${top5.length} top questions.`;
   const sovColor = rk && rk.rank === 1 ? GREEN : AMBER;
   const citeB = cited === 0 ? { label: 'None yet', color: RED } : cited / Math.max(totalAnswers, 1) < 0.25 ? { label: 'A few', color: AMBER } : { label: 'Often', color: GREEN };
-  const daB = daNow == null ? null : band(daNow, [40, 60], ['Needs work', 'Fair', 'Strong'], [AMBER, AMBER, GREEN]);
+  // Real backlink scores run lower than the old estimates (a large established agency scores about 35), so their bands are lower.
+  const daB = daNow == null ? null : band(daNow, site ? [20, 40] : [40, 60], ['Needs work', 'Fair', 'Strong'], [AMBER, AMBER, GREEN]);
 
   return (
     <div className="dv-page">
@@ -172,7 +174,9 @@ export function DashboardPage() {
                 <button type="button" className="dv-btn dv-nopr" style={{ marginTop: 12, alignSelf: 'flex-start' }} onClick={go('da')}>Check now</button>
               </KpiCard>
             ) : (
-              <KpiCard title="Website strength" sub="Domain Authority" value={daNow} unit="/100" label={daB.label} labelColor={daB.color} delta={{ text: 'Latest check', color: '#6b6a85' }} pct={daNow} barColor={daB.color}
+              <KpiCard title="Website strength" sub={site ? 'From the websites that link to you' : 'Domain Authority'} value={daNow} unit="/100" label={daB.label} labelColor={daB.color}
+                delta={{ text: site ? `${num(site.linking_sites)} website${site.linking_sites === 1 ? '' : 's'} link to you` : 'Latest check', color: '#6b6a85' }} pct={daNow} barColor={daB.color}
+                badge={site ? <RealDataBadge title="Measured from real backlink data (DataForSEO): how many websites link to yours, and how strong they are." /> : undefined}
                 text="How much Google and AI trust your website." linkText="Go to Domain Authority →" onLink={go('da')} />
             )}
           </section>
@@ -208,7 +212,7 @@ export function CompetitorsAeoPage() {
     <section className="ae-card" style={{ gap: 16 }}>
       <div className="ae-col"><h2>Who AI recommends instead of you</h2><span className="ae-sub">Across the {total ? `Top ${total}` : 'tracked'} prompts in {state.request.market || 'your market'}</span></div>
       <div className="ae-scroll">
-        <div className="ae-cthead"><span>COMPANY</span><span>SHARE OF VOICE</span><span style={{ textAlign: 'right' }}>DA</span><span style={{ textAlign: 'right' }}>PROMPTS CITED</span><span>STRONGEST ENGINE</span><span /></div>
+        <div className="ae-cthead"><span>COMPANY</span><span>SHARE OF VOICE</span><span style={{ textAlign: 'right' }} title="Website strength (0-100): measured from real backlink data in analyses with real answers; an estimate in older ones. — means not measured.">DA</span><span style={{ textAlign: 'right' }}>PROMPTS CITED</span><span>STRONGEST ENGINE</span><span /></div>
         {rows.map(c => (
           <div key={c.name} className="ae-ctrow">
             <div className="ae-col" style={{ minWidth: 0 }}>
@@ -219,7 +223,7 @@ export function CompetitorsAeoPage() {
               <div className="ae-bar" style={{ flex: 1 }}><i style={{ width: (c.share_of_voice / max * 100) + '%', background: c.is_you ? '#4f46e5' : '#c7c9e8' }} /></div>
               <span className="ae-mono" style={{ fontSize: 12.5, fontWeight: 700, width: 36, textAlign: 'right' }}>{c.pending ? '…' : c.share_of_voice + '%'}</span>
             </div>
-            <span className="ae-mono" style={{ textAlign: 'right', fontWeight: 700 }}>{c.pending ? '…' : c.domain_authority}</span>
+            <span className="ae-mono" style={{ textAlign: 'right', fontWeight: 700 }}>{c.pending ? '…' : c.domain_authority ?? '—'}</span>
             <span className="ae-mono" style={{ textAlign: 'right' }}>{c.pending ? '…' : `${c.prompts_cited}/${total}`}</span>
             <span style={{ fontWeight: 600 }}>{c.pending ? 'Pending next run' : c.top_engine || '—'}</span>
             <span style={{ textAlign: 'right' }}>{!c.is_you && <button className="ae-linkbtn" onClick={() => removeCompetitor(c.name)}>Remove</button>}</span>

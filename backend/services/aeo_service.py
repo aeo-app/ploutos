@@ -45,6 +45,7 @@ from models.aeo_models import (
     AeoBlogDraftRequest,
     AeoBlogDraftResponse,
     AeoCompetitor,
+    AeoLinkOpportunity,
     AeoNameCount,
     AeoPrompt,
     AeoPromptsRequest,
@@ -56,7 +57,10 @@ from models.aeo_models import (
     AeoStrategyResponse,
     SiteCheck,
     SiteChecksResponse,
+    AeoWebsiteStrength,
 )
+from services.ai_checks.answer import host_of
+from services.ai_checks.backlinks import link_opportunities, site_strength
 from services.ai_checks.reader import name_key
 from services.ai_checks.runner import answers_doc, run_checks, summarize
 from services.ai_checks.search_volume import clean_keyword, monthly_searches
@@ -214,10 +218,13 @@ def run_aeo_analysis(
             rows.append(_locked_prompt(len(rows) + 1))
 
     checked_engines = [e for e in ENGINES if any(c.engine == e and c.reading for c in checks)]
+    competitors = _competitors(req, domain, summary)
+    website, links, links_total = _measure_websites(domain, competitors, is_paid)
     result = AeoPromptsResponse(
         company=req.company_name, market=req.market, industry=req.industry,
         prompts=custom_rows + rows,
-        competitors=_competitors(req, domain, summary),
+        competitors=competitors,
+        website=website, link_opportunities=links, link_opportunities_total=links_total,
         engine_leaders=summary.engine_leaders,
         prompts_total=sum(1 for p in custom_rows + rows if not p.locked and any(e is not None for e in p.engines)),
         checked_engines=checked_engines,
@@ -308,6 +315,35 @@ exactly {len(questions)} lists, in order."""
         logger.warning(f"[aeo] keywords for added questions failed: {e}")
         return {}
     return {q: kws for q, kws in zip(questions, lists) if kws}
+
+
+FREE_LINK_OPPORTUNITIES = 3
+
+
+def _measure_websites(domain: str, competitors: list[AeoCompetitor], is_paid: bool
+                      ) -> tuple[Optional[AeoWebsiteStrength], list[AeoLinkOpportunity], int]:
+    """Real backlink data (DataForSEO): fills in each competitor's website strength, and returns the customer's own
+    strength plus the websites that link to competitors but not to the customer. Never fails the analysis: when the
+    data cannot be read, strengths stay "not measured"."""
+    rivals = [c for c in competitors if not c.is_you and c.domain]
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            strength_job = pool.submit(site_strength, [domain, *(c.domain for c in rivals)])
+            links_job = pool.submit(link_opportunities, domain, [c.domain for c in rivals])
+            strength, (links, total) = strength_job.result(), links_job.result()
+    except Exception as e:  # noqa: BLE001 — backlink data is extra; the analysis itself is already done
+        logger.warning(f"[aeo] backlink data unavailable: {e}")
+        return None, [], 0
+    for c in competitors:
+        s = strength.get(host_of(c.domain))
+        if s:
+            c.domain_authority, c.linking_sites = s.score, s.linking_sites
+    mine = strength.get(host_of(domain))
+    names = {host_of(c.domain): c.name for c in rivals}
+    shown = links if is_paid else links[:FREE_LINK_OPPORTUNITIES]
+    website = AeoWebsiteStrength(score=mine.score, linking_sites=mine.linking_sites, backlinks=mine.backlinks) if mine else None
+    return website, [AeoLinkOpportunity(site=o.site, score=o.score, links_to=[names.get(d, d) for d in o.links_to])
+                     for o in shown], total
 
 
 def _competitors(req: AeoPromptsRequest, domain: str, summary) -> list[AeoCompetitor]:

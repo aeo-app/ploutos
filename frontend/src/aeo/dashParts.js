@@ -37,6 +37,11 @@ export function checkedLine(analysis) {
   return `Real answers from ${tools.join(', ')}, checked${when}.`;
 }
 
+/** For numbers measured from real data (e.g. backlink data from DataForSEO). */
+export const RealDataBadge = ({ title }) => (
+  <span className="dv-est real" title={title}>Real data<Icon name="check" size={13} /></span>
+);
+
 /** "Real answers" when the analysis asked the AI tools for real; analyses made before that stay "Estimated". */
 export const ResultBadge = ({ analysis }) => {
   const line = checkedLine(analysis);

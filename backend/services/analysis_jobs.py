@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 JOB = "analysis_job"          # the customer's current analysis job
 ANSWERS = "ai_answers"        # the real AI answers behind the latest analysis
+SITE_STRENGTH = "site_strength"   # real website strength (customer + competitors) from the latest analysis
 STALE_AFTER_SECONDS = 20 * 60
 PROGRESS_EVERY_SECONDS = 3
 
@@ -61,6 +62,12 @@ def run_job(user_id: str, job_id: str, req: AeoPromptsRequest, is_paid: bool) ->
             logger.error(f"[analysis] saving analysis failed for user={user_id}: {e}", exc_info=True)
             analysis_id = "save-failed"
         save_insight(user_id, ANSWERS, {"analysis_id": analysis_id, "checked_at": result.checked_at, "answers": answers})
+        if result.website:   # the domain authority plan starts from these real numbers
+            save_insight(user_id, SITE_STRENGTH, {
+                "checked_at": result.checked_at, "website": result.website.model_dump(),
+                "competitors": [{"name": c.name, "score": c.domain_authority} for c in result.competitors
+                                if not c.is_you and c.domain_authority is not None],
+            })
         data["_meta"] = {"analysis_id": analysis_id, "user_id": user_id, "token_usage": token_usage}
         save_insight(user_id, JOB, {"job_id": job_id, "status": "done", "started": started, "result": data})
         logger.info(f"[analysis] job {job_id} done for user={user_id} in {time.time() - started:.0f}s")
@@ -83,3 +90,13 @@ def answers_for(user_id: str, prompt: str) -> dict:
     """The real answers each AI tool gave to one question in the latest analysis: {engine: answer}."""
     saved = get_insight(user_id, ANSWERS) or {}
     return {"checked_at": saved.get("checked_at", ""), "answers": (saved.get("answers") or {}).get(prompt, {})}
+
+
+def measured_strength(user_id: str) -> dict | None:
+    """Real website strength from the latest analysis: {"website": {...}, "competitors": [...]}, or None."""
+    try:
+        saved = get_insight(user_id, SITE_STRENGTH) or {}
+    except Exception as e:  # noqa: BLE001 — the domain authority plan then works as before
+        logger.warning(f"[analysis] could not read website strength for user={user_id}: {e}")
+        return None
+    return saved if saved.get("website") else None

@@ -16,4 +16,6 @@ reader.py reads one answer (which businesses it names, is the customer mentioned
 runner.py asks every question to every ready tool in parallel and totals the results.
 search_volume.py gives the real monthly Google searches for each question's short keyword
 (Google Ads data via DataForSEO, same login).
+backlinks.py gives the real website strength of the customer and each competitor, and the websites
+that link to competitors but not to the customer (DataForSEO Backlinks API, same login).
 """

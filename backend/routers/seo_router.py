@@ -34,6 +34,7 @@ from models.db_models import (
     UserStatsResponse,
 )
 from models.seo_models import AnalyseRequest, ContentStrategyRequest
+from services.analysis_jobs import measured_strength
 from services.bedrock_service import (
     generate_competitor_analysis,
     generate_company_profile,
@@ -156,7 +157,8 @@ async def domain_authority(
     _enforce_domain(user_id, req)
     try:
         tracker = TokenUsageTracker()
-        result = generate_da_strategy(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
+        result = generate_da_strategy(req, usage_tracker=tracker, is_paid=is_user_paid(user_id),
+                                      measured=measured_strength(user_id))
         token_usage = tracker.as_dict()
     except Exception as e:
         logger.error(f"domain_authority failed: {e}", exc_info=True)

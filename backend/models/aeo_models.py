@@ -124,7 +124,8 @@ class AeoCompetitor(BaseModel):
     name: str
     domain: str = ""
     share_of_voice: int = 0          # % of all business mentions in the real answers that are this company
-    domain_authority: int = 0        # 0 = not measured
+    domain_authority: Optional[int] = None   # real website strength 0-100 (DataForSEO backlink data); None = not measured
+    linking_sites: Optional[int] = None      # websites that link to it (DataForSEO); None = not measured
     prompts_cited: int = 0           # tracked prompts whose answers name this company, out of prompts_total
     top_engine: str = ""
     is_you: bool = False
@@ -135,6 +136,20 @@ class AeoCompetitor(BaseModel):
 class AeoNameCount(BaseModel):
     name: str
     count: int
+
+
+class AeoWebsiteStrength(BaseModel):
+    """The customer's own website, measured from real backlink data (DataForSEO)."""
+    score: int                       # 0-100
+    linking_sites: int               # different websites that link to it
+    backlinks: int                   # links in total
+
+
+class AeoLinkOpportunity(BaseModel):
+    """A real website that links to competitors but not to the customer."""
+    site: str
+    score: int                       # that website's own strength, 0-100
+    links_to: list[str] = Field(default_factory=list)   # competitor names it links to
 
 
 class AeoPromptsResponse(BaseModel):
@@ -148,6 +163,9 @@ class AeoPromptsResponse(BaseModel):
     checked_engines: list[str] = Field(default_factory=list)  # AI tools actually asked; the others show as not checked
     platforms: list[AeoNameCount] = Field(default_factory=list)      # marketplaces / directories the answers name
     source_sites: list[AeoNameCount] = Field(default_factory=list)   # websites the answers used as sources
+    website: Optional[AeoWebsiteStrength] = None                     # real strength of the customer's website
+    link_opportunities: list[AeoLinkOpportunity] = Field(default_factory=list)   # free plan: the first few only
+    link_opportunities_total: int = 0                                # how many DataForSEO found in all
     checked_at: str = ""
     disclaimer: str = (
         "Results are real answers from the AI tools listed in checked_engines, asked on the date of this "
