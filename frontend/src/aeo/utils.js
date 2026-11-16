@@ -1,6 +1,13 @@
 // Shared constants + pure helpers for the AEO dashboard screens.
-export const ENGINES = ['ChatGPT', 'Perplexity', 'Gemini', 'AI Overviews'];
-export const ENG_SHORT = ['GPT', 'PPLX', 'GEM', 'AIO'];
+export const ENGINES = ['ChatGPT', 'Claude', 'Gemini', 'AI Overviews'];
+export const ENG_SHORT = ['GPT', 'CLD', 'GEM', 'AIO'];
+// Analyses saved before real checks were AI estimates with Perplexity as the second column, so they keep those labels.
+const LEGACY_ENGINES = ['ChatGPT', 'Perplexity', 'Gemini', 'AI Overviews'];
+const LEGACY_SHORT = ['GPT', 'PPLX', 'GEM', 'AIO'];
+const isLegacy = (analysis) => !!analysis && !Array.isArray(analysis.checked_engines);
+/** Column names for one analysis (an older, estimated analysis keeps its original names). */
+export const engineNames = (analysis) => (isLegacy(analysis) ? LEGACY_ENGINES : ENGINES);
+export const engineShort = (analysis) => (isLegacy(analysis) ? LEGACY_SHORT : ENG_SHORT);
 export const INTENT = { Commercial: ['#eef0ff', '#3730a3'], Informational: ['#e0f2fe', '#075985'], Transactional: ['#fff1e6', '#9a3412'] };
 
 export const CHANNELS = [
@@ -28,9 +35,9 @@ export const SOCIAL_HELP = {
 export const SOCIAL_ORDER = ['li', 'gbp', 'fb', 'ig', 'yt'];
 export const TINTS = [['#eef0ff', '#e4e7ff'], ['#e8f6f0', '#dcefe6'], ['#fff4e6', '#ffead1'], ['#f3eefe', '#e9e0fd']];
 
-// "Engine presence": n>0 cited at position n, -1 mentioned, 0 absent, null pending.
-export function engCell(x, j) {
-  const title = ENGINES[j] + ': ' + (x == null ? 'pending next run' : x > 0 ? 'cited at position ' + x : x < 0 ? 'mentioned, not linked' : 'absent');
+// "Engine presence" from a real answer: n>0 cited at position n, -1 mentioned, 0 absent, null not checked.
+export function engCell(x, j, names = ENGINES) {
+  const title = names[j] + ': ' + (x == null ? 'not checked yet' : x > 0 ? 'cited at position ' + x : x < 0 ? 'mentioned, not linked' : 'absent');
   if (x == null) return { cls: 'pend', label: '…', title };
   if (x > 0) return { cls: 'cited', label: '#' + x, title };
   if (x < 0) return { cls: 'ment', label: 'M', title };
@@ -38,8 +45,15 @@ export function engCell(x, j) {
 }
 
 const score = (x) => (x > 0 ? (6 - Math.min(x, 5)) / 5 : x < 0 ? 0.3 : 0);
-export const isReal = (p) => p && !p.locked && Array.isArray(p.engines) && !p.engines.some(e => e == null);
-export const promptVis = (p) => Math.round((p.engines.reduce((a, x) => a + score(x), 0) / 4) * 100);
+const checkedOf = (p) => p.engines.filter(x => x != null);   // AI tools that were actually asked
+/** A prompt with at least one real answer. Tools that weren't asked (null) are left out of every number. */
+export const isReal = (p) => p && !p.locked && Array.isArray(p.engines) && p.engines.some(e => e != null);
+export const promptVis = (p) => {
+  const xs = checkedOf(p);
+  return xs.length ? Math.round((xs.reduce((a, x) => a + score(x), 0) / xs.length) * 100) : 0;
+};
+/** How many real answers there are in total (prompts × AI tools actually asked). */
+export const checkedAnswers = (prompts) => (prompts || []).filter(isReal).reduce((a, p) => a + checkedOf(p).length, 0);
 
 export function overallVis(prompts) {
   const real = (prompts || []).filter(isReal);
@@ -61,7 +75,7 @@ export function sovRank(analysis) {
 }
 
 export function engineStats(prompts, j) {
-  const real = (prompts || []).filter(isReal);
+  const real = (prompts || []).filter(p => isReal(p) && p.engines[j] != null);
   const xs = real.map(p => p.engines[j]);
   const cited = xs.filter(x => x > 0);
   const mentioned = xs.filter(x => x < 0).length;

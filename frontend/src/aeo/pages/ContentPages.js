@@ -14,7 +14,7 @@ import { PageStudio } from '../PageStudio';
 import { MediaOptions, EMPTY_MEDIA, mediaPayload } from '../MediaOptions';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
 import { exportMarkdown, exportPdf, exportWord } from '../blogExport';
-import { BLOG_TAG, CHANNELS, channelState, hkey, ENG_SHORT, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
+import { BLOG_TAG, CHANNELS, channelState, hkey, engineNames, engineShort, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS } from '../utils';
 
 
 // Older cached posts (or a model slip) can have an empty visual — derive one from the post so it is never blank.
@@ -127,7 +127,7 @@ function Retry({ title, text, onRetry, label = 'Generate' }) {
 
 /* ── Content strategy ───────────────────────────────────────────────────── */
 function StrategyBlock({ t }) {
-  const { content, busy, loadStrategy } = useAeo();
+  const { analysis, content, busy, loadStrategy } = useAeo();
   const data = content.strategy[t.active];
   const isBusy = !!busy['strategy|' + t.active];
   const retry = useAutoLoad('strategy', t.active, !!data, () => loadStrategy(t.active));
@@ -141,9 +141,9 @@ function StrategyBlock({ t }) {
       <div className="ae-row" style={{ alignItems: 'flex-start' }}>
         <div className="ae-col" style={{ gap: 4, maxWidth: 760 }}><span className="ae-eyebrow p">Content strategy</span><h2 className="lg">How to own “{t.active}”</h2></div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {ENG_SHORT.map((s, j) => (
+          {engineShort(analysis).map((s, j) => (
             <div key={s} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 10px', borderRadius: 10, background: '#f8f8fd' }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ae-faint)' }}>{s}</span><EngCell x={t.row ? t.row.engines[j] : null} j={j} />
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--ae-faint)' }}>{s}</span><EngCell x={t.row ? t.row.engines[j] : null} j={j} names={engineNames(analysis)} />
             </div>
           ))}
         </div>

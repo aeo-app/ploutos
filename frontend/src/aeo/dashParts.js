@@ -4,7 +4,8 @@ import { usePayment } from '../context/PaymentContext';
 import { useAeo, usePromptRows } from './AeoContext';
 import { useCompetitorRows } from './parts';
 import { Icon } from './Icon';
-import { ENGINES, isReal, promptVis, num } from './utils';
+import { RealAnswersButton } from './RealAnswers';
+import { engineNames, fmtDate, isReal, promptVis, num } from './utils';
 import { aeoApi } from '../api/aeoApi';
 
 const ENG_COLOR = ['#10a37f', '#1f8a9e', '#4f7cf7', '#ea4335'];
@@ -28,11 +29,25 @@ export const EstimatedBadge = () => (
   <span className="dv-est" title="An estimate based on a sample of AI answers">Estimated<Icon name="info" size={13} /></span>
 );
 
+/** Which AI tools were really asked, and when; empty for analyses made before real checks. */
+export function checkedLine(analysis) {
+  const tools = analysis?.checked_engines || [];
+  if (!tools.length) return '';
+  const when = analysis.checked_at ? ` on ${fmtDate(new Date(analysis.checked_at), { day: 'numeric', month: 'short', year: 'numeric' })}` : '';
+  return `Real answers from ${tools.join(', ')}, checked${when}.`;
+}
+
+/** "Real answers" when the analysis asked the AI tools for real; analyses made before that stay "Estimated". */
+export const ResultBadge = ({ analysis }) => {
+  const line = checkedLine(analysis);
+  return line ? <span className="dv-est real" title={line}>Real answers<Icon name="check" size={13} /></span> : <EstimatedBadge />;
+};
+
 /* ── One of the four number cards ──────────────────────────────────────── */
-export function KpiCard({ title, sub, value, unit, label, labelColor, delta, pct, barColor, text, linkText, onLink, children }) {
+export function KpiCard({ title, sub, value, unit, label, labelColor, delta, pct, barColor, text, linkText, onLink, children, badge = <EstimatedBadge /> }) {
   return (
     <div className="dv-card dv-kpi" data-testid="kpi">
-      <div className="dv-row-t"><div className="dv-col"><span className="dv-h3">{title}</span>{sub && <span className="dv-tiny">{sub}</span>}</div><EstimatedBadge /></div>
+      <div className="dv-row-t"><div className="dv-col"><span className="dv-h3">{title}</span>{sub && <span className="dv-tiny">{sub}</span>}</div>{badge}</div>
       {children || <>
         <div className="dv-big"><span>{value}{unit && <small>{unit}</small>}</span>{label && <span className="dv-lab" style={{ color: labelColor }}><i style={{ background: labelColor }} />{label}</span>}</div>
         {delta ? <span className="dv-delta" style={{ color: delta.color }}>{delta.text}</span> : <span className="dv-delta" style={{ color: MUTE }}>First analysis</span>}
@@ -45,10 +60,9 @@ export function KpiCard({ title, sub, value, unit, label, labelColor, delta, pct
 }
 
 /* ── Prompts ────────────────────────────────────────────────────────────── */
-function EngCellV3({ x, j }) {
-  const n = ENGINES[j];
+function EngCellV3({ x, name: n }) {
   let cls = 'abs', tip = `${n}: does not mention you`, body = '–';
-  if (x == null) { cls = 'pend'; tip = `${n}: checked in your next analysis`; body = '…'; }
+  if (x == null) { cls = 'pend'; tip = `${n}: not checked yet`; body = '…'; }
   else if (x > 0) { cls = 'cited'; tip = `${n}: recommends you at position ${x}, with a link`; body = '#' + x; }
   else if (x < 0) { cls = 'ment'; tip = `${n}: mentions you by name but doesn't link to your website`; body = <Icon name="message-circle" size={13} />; }
   return <span className={`dv-eng ${cls}`} title={tip}>{body}</span>;
@@ -68,6 +82,8 @@ export function PromptsCard() {
   const sel = saved.selected_prompts;
   const count = sel.length;
   const allOn = shown.length > 0 && shown.every(r => sel.includes(r.text));
+  const realRun = !!checkedLine(analysis);      // this analysis asked the AI tools for real, so its answers can be read
+  const names = engineNames(analysis);
   const add = () => { if (draft.trim()) { addPrompt(draft); setDraft(''); } };
   const rank = () => { if (count) { setPage('aeoStrategy'); window.scrollTo(0, 0); } };
 
@@ -108,10 +124,10 @@ export function PromptsCard() {
           <span className="dv-c-n">#</span><span className="dv-c-t">Prompt</span>
           <div className="dv-meta">
             <span title="What the person wants: comparing options, ready to buy, or just learning" className="dv-hi">Intent <Icon name="info" size={12} /></span>
-            <span title="Estimated number of people asking this each month" className="dv-hi r">Searches/mo <Icon name="info" size={12} /></span>
+            <span title="Number of people searching this each month, when available" className="dv-hi r">Searches/mo <Icon name="info" size={12} /></span>
           </div>
-          <div className="dv-engs">{ENGINES.map((e, j) => <span key={e} className="dv-ename"><i style={{ background: ENG_COLOR[j] }} />{e}</span>)}</div>
-          <span className="dv-hi dv-c-v" title="How likely AI tools are to recommend you for this question (estimate)">Visibility <Icon name="info" size={12} /></span>
+          <div className="dv-engs">{names.map((e, j) => <span key={e} className="dv-ename"><i style={{ background: ENG_COLOR[j] }} />{e}</span>)}</div>
+          <span className="dv-hi dv-c-v" title="How strongly the AI tools that were asked recommend you for this question">Visibility <Icon name="info" size={12} /></span>
         </div>
         {shown.map((p, i) => {
           const on = sel.includes(p.text);
@@ -122,13 +138,13 @@ export function PromptsCard() {
             <div key={p.text + i} className={`dv-prow ${on ? 'sel' : ''}`} role="row" data-testid="prompt-row">
               <button type="button" className={`dv-chk ${on ? 'on' : ''}`} aria-label={`Select: ${p.text}`} aria-pressed={on} onClick={() => togglePrompt(p.text)}><Icon name="check" size={13} /></button>
               <span className="dv-c-n">{p.pending || p.custom ? '★' : p.rank || i + 1}</span>
-              <span className="dv-c-t">{p.text}{p.custom && <> <span className="dv-tag y">Yours</span> <button type="button" className="dv-link sm dv-nopr" onClick={() => removePrompt(p.text)}>Remove</button></>}</span>
+              <span className="dv-c-t">{p.text}{p.custom && <> <span className="dv-tag y">Yours</span> <button type="button" className="dv-link sm dv-nopr" onClick={() => removePrompt(p.text)}>Remove</button></>}{realRun && real && <> <RealAnswersButton prompt={p.text} /></>}</span>
               <div className="dv-meta">
                 <span><span className="dv-intent" title={it ? it[2] : 'Worked out in your next analysis'} style={{ background: it ? it[0] : '#f3f3f8', color: it ? it[1] : MUTE }}>{p.intent === 'Custom' || !p.intent ? 'Pending' : p.intent}</span></span>
                 <span className="dv-c-s">{p.volume_estimate ? <>{num(p.volume_estimate)}<small> searches/mo</small></> : '—'}</span>
                 <span className="dv-vt" style={{ color: vis == null ? MUTE : '#1c1b3a' }}>{vis == null ? 'Next analysis' : vis + '%'}</span>
               </div>
-              <div className="dv-engs">{p.engines.map((x, j) => <span key={j} className="dv-ecell"><EngCellV3 x={x} j={j} /><small>{ENGINES[j]}</small></span>)}</div>
+              <div className="dv-engs">{p.engines.map((x, j) => <span key={j} className="dv-ecell"><EngCellV3 x={x} name={names[j]} /><small>{names[j]}</small></span>)}</div>
               <div className="dv-c-v dv-vbar"><span style={{ color: vis == null ? MUTE : '#1c1b3a' }}>{vis == null ? 'Next analysis' : vis + '%'}</span><div className="dv-meter sm"><div style={{ width: (vis || 0) + '%', background: '#4f46e5' }} /></div></div>
             </div>
           );
@@ -146,9 +162,9 @@ export function PromptsCard() {
           <span><b className="g">#2</b>Recommended with a link</span>
           <span><b className="a"><Icon name="message-circle" size={12} /></b>Mentioned, no link</span>
           <span><b className="n">–</b>Not mentioned</span>
-          <span><b className="p">…</b>Checked in next analysis</span>
+          <span><b className="p">…</b>Not checked yet</span>
         </div>
-        <span className="dv-foot"><Icon name="info" size={13} />Positions are AI estimates, not live checks of these tools.</span>
+        <span className="dv-foot"><Icon name="info" size={13} />{realRun ? `${checkedLine(analysis)} AI answers change over time.` : 'Positions are AI estimates, not live checks of these tools.'}</span>
       </div>
 
       {count > 0 && (
@@ -165,6 +181,7 @@ export function PromptsCard() {
 /* ── Competitors ────────────────────────────────────────────────────────── */
 export function CompetitorsCard() {
   const { setPage, state } = useApp();
+  const { analysis } = useAeo();
   const { rows } = useCompetitorRows();
   const live = rows.filter(r => !r.pending);
   const sorted = [...live].sort((a, b) => b.share_of_voice - a.share_of_voice);
@@ -175,7 +192,7 @@ export function CompetitorsCard() {
   return (
     <section className="dv-card" data-print-card>
       <div className="dv-col" style={{ gap: 4 }}>
-        <div className="dv-row-t"><span className="dv-h2">Who AI recommends instead of you</span><EstimatedBadge /></div>
+        <div className="dv-row-t"><span className="dv-h2">Who AI recommends instead of you</span><ResultBadge analysis={analysis} /></div>
         <span className="dv-sub">How often AI tools suggest each business{state.request.market ? ` in ${state.request.market}` : ''}</span>
       </div>
       <div className="dv-col" style={{ gap: 18 }}>

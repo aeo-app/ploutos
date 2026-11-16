@@ -52,8 +52,25 @@ async function upload(path, file) {
   }
 }
 
+/** The analysis asks every prompt to each AI tool for real, which takes a few minutes, so the backend runs it as a job:
+ *  start it, then poll until the result is ready. Resolves with the same result shape as before. */
+const ANALYSIS_POLL_MS = 5000;
+const ANALYSIS_TIMEOUT_MS = 20 * 60 * 1000;
+async function runAnalysisJob(req) {
+  const { job_id: jobId } = await call("POST", "/prompts", req);
+  const until = Date.now() + ANALYSIS_TIMEOUT_MS;
+  while (Date.now() < until) {
+    await new Promise(resolve => setTimeout(resolve, ANALYSIS_POLL_MS));
+    const job = await call("GET", `/prompts/job/${encodeURIComponent(jobId)}`);
+    if (job.status === "done") return job.result;
+    if (job.status === "error") throw new ApiError("ServerError", job.error || "The analysis could not finish. Please try again.");
+  }
+  throw new ApiError("ServerError", "The analysis is taking longer than usual. Please refresh the page in a few minutes.");
+}
+
 export const aeoApi = {
-  prompts:     (req) => call("POST", "/prompts", req),
+  prompts:     (req) => runAnalysisJob(req),
+  answers:     (prompt) => call("GET", `/answers?prompt=${encodeURIComponent(prompt)}`),
   strategy:    (req) => call("POST", "/strategy", req),
   blogDraft:   (req) => call("POST", "/blog-draft", req),
   strategyPage: (req) => call("POST", "/strategy/page", req),

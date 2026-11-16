@@ -1,7 +1,9 @@
 """
 routers/aeo_router.py — endpoints behind the AEO dashboard
 ===========================================================
-  POST /api/v1/aeo/prompts          Top prompts + per-engine visibility + competitor share of voice
+  POST /api/v1/aeo/prompts          Start the analysis: real answers from each AI tool (runs in the background)
+  GET  /api/v1/aeo/prompts/job/{id} Progress, then the result: prompts, per-engine results, competitors
+  GET  /api/v1/aeo/answers          The real AI answers behind one prompt
   POST /api/v1/aeo/strategy         Plan + blog topics for ONE prompt          (free: trimmed preview)
   POST /api/v1/aeo/blog-draft       Draft one blog topic                        (paid)
   POST /api/v1/aeo/social-posts     4 posts x 5 channels for ONE prompt         (free: 1 per channel)
@@ -40,7 +42,6 @@ from db import (
     is_user_paid,
     save_aeo_content,
     save_aeo_state,
-    save_analysis,
 )
 from db.dynamo import normalize_domain
 from models.aeo_models import (
@@ -62,7 +63,6 @@ from models.aeo_models import (
 )
 from services.aeo_service import (
     generate_aeo_blog_draft,
-    generate_aeo_prompts,
     generate_aeo_social,
     social_shape_ok,
     generate_aeo_strategy,
@@ -76,7 +76,7 @@ from services.brand_overlay import normalise_logo, validate_logo
 from services.media_upload_service import MediaUploadError, signed_view_url, upload_image
 from services.site_contact_service import analyse_site
 from services.site_style_service import detect_site_style, detect_site_profile
-from services import short_jobs
+from services import analysis_jobs, short_jobs
 from services.media_upload_service import upload_video
 from services.shorts_service import ShortError, check_uploaded_short, to_mp4
 
@@ -184,33 +184,31 @@ def analysis_quota(user_id: str = Depends(get_current_user_id), acting: bool = D
     return _analysis_quota(user_id, acting)
 
 
-@router.post("/prompts", dependencies=[Depends(paywall_guard)], summary="Top prompts, per-engine visibility estimates and competitor share of voice")
-def prompts(req: AeoPromptsRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
+@router.post("/prompts", dependencies=[Depends(paywall_guard)],
+             summary="Start the analysis (real answers from each AI tool); poll GET /prompts/job/{job_id}")
+def prompts(req: AeoPromptsRequest, background: BackgroundTasks, user_id: str = Depends(get_current_user_id),
+            acting: bool = Depends(_acting_admin)):
     _enforce_domain(user_id, req.url, req.company_name)
     q = _analysis_quota(user_id, acting)
     if not q["can_run"]:
         when = _parse_ts(q["next_available"]).strftime("%d %b %Y")
         raise HTTPException(status_code=429, detail=f"An analysis can be run once every {FREE_ANALYSIS_INTERVAL_DAYS} days. Your next analysis is available on {when}.")
-    try:
-        tracker = TokenUsageTracker()
-        result = generate_aeo_prompts(req, usage_tracker=tracker, is_paid=is_user_paid(user_id))
-        token_usage = tracker.as_dict()
-    except Exception as e:
-        logger.error(f"[aeo] prompts failed: {e}", exc_info=True)
-        raise HTTPException(status_code=502, detail=f"Could not analyse prompts right now: {e}")
+    job_id, is_new = analysis_jobs.start_job(user_id)
+    if is_new:
+        background.add_task(analysis_jobs.run_job, user_id, job_id, req, is_user_paid(user_id))
+    return {"job_id": job_id, "status": "running"}
 
-    data = json.loads(result.model_dump_json())
-    try:
-        aid = save_analysis(
-            user_id=user_id, analysis_type="aeo_prompts", company_name=req.company_name, url=req.url,
-            market=req.market, industry=req.industry, result=data, request_data=req.model_dump(),
-            status="success", token_usage=token_usage,
-        )
-    except Exception as e:
-        logger.error(f"[aeo] saving prompts analysis failed: {e}", exc_info=True)
-        aid = "save-failed"
-    data["_meta"] = {"analysis_id": aid, "user_id": user_id, "token_usage": token_usage}
-    return data
+
+@router.get("/prompts/job/{job_id}", summary="Progress of the analysis, then its result")
+def prompts_job(job_id: str, user_id: str = Depends(get_current_user_id)):
+    if not job_id.isalnum() or len(job_id) > 64:
+        raise HTTPException(status_code=422, detail="Bad job id")
+    return analysis_jobs.job_status(user_id, job_id)
+
+
+@router.get("/answers", summary="The real answers each AI tool gave to one prompt in the latest analysis")
+def prompt_answers(prompt: str = Query(..., min_length=1, max_length=300), user_id: str = Depends(get_current_user_id)):
+    return analysis_jobs.answers_for(user_id, prompt)
 
 
 # ── Per-prompt content (free = trimmed preview; blog drafts are paid) ─────────────────────────────────────────────────

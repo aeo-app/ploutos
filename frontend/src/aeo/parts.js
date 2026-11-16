@@ -7,8 +7,8 @@ import { useConnectProgress } from './useConnectProgress';
 import { useAeo, usePromptRows } from './AeoContext';
 import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf } from './utils';
 
-export function EngCell({ x, j }) {
-  const c = engCell(x, j);
+export function EngCell({ x, j, names }) {
+  const c = engCell(x, j, names);
   return <span className={`ae-eng ${c.cls}`} title={c.title}>{c.label}</span>;
 }
 
@@ -28,8 +28,8 @@ export function EmptyAnalysis({ title, text }) {
   return (
     <div className="ae-empty">
       <h2>{loading ? 'Analysing how AI sees your business…' : (title || 'Run your first analysis')}</h2>
-      <p>{loading ? 'This usually takes under a minute. We are building your prompt list, estimating visibility in each engine and sizing up your competitors.'
-        : (text || 'We will build the list of questions people ask AI about your business, estimate where you appear in ChatGPT, Perplexity, Gemini and AI Overviews, and compare you with competitors.')}</p>
+      <p>{loading ? 'This takes 2–3 minutes. We are asking each AI tool your questions for real and reading who they recommend.'
+        : (text || 'We will build the list of questions people ask AI about your business, ask them to ChatGPT, Claude, Gemini and Google AI Overviews, and show where you appear and who they recommend instead.')}</p>
       {loading ? <div className="ae-dots"><i /><i /><i /></div>
         : locked ? <span className="ae-note">An analysis can be run once every {quota.interval_days || 30} days.{quota.next_available ? ` Your next one is available on ${new Date(quota.next_available).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}.` : ''}</span>
         : <button className="ae-btn primary" onClick={runAnalysis}>Run analysis</button>}
