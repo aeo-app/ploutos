@@ -2,16 +2,16 @@
 services/aeo_service.py — the AEO (Answer Engine Optimisation) dashboard's
 generators and checks.
 
-What is real and what is estimated
+What is real and what is AI-written
 -----------------------------------
+* The analysis (`run_aeo_analysis`) is real: our AI only suggests the questions
+  people ask, then each question is asked to ChatGPT, Claude, Gemini and Google
+  AI Overviews for real (services/ai_checks) and every dashboard number comes
+  from those answers. Nothing about visibility or competitors is estimated.
 * `run_site_checks` and `normalise_social_link` do real work (an HTTP fetch
   of the customer's own site / URL validation).
-* Everything produced by Bedrock here — prompt lists, per-engine positions,
-  share of voice, strategy, blog drafts, social posts — is AI-generated.
-  Engine positions in particular are ESTIMATES from the model's knowledge of
-  the market; nothing here queries ChatGPT/Perplexity/Gemini/AI Overviews.
-  The response carries a disclaimer saying so, and the prompts tell the model
-  not to invent client names, statistics, quotes or reviews.
+* Strategy, blog drafts and social posts are AI-written content; the prompts
+  tell the model not to invent client names, statistics, quotes or reviews.
 """
 from __future__ import annotations
 
@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 import re
 import socket
 import time
-from typing import Optional
+from collections import Counter
+from typing import Callable, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -44,6 +45,8 @@ from models.aeo_models import (
     AeoBlogDraftRequest,
     AeoBlogDraftResponse,
     AeoCompetitor,
+    AeoLinkOpportunity,
+    AeoNameCount,
     AeoPrompt,
     AeoPromptsRequest,
     AeoPromptsResponse,
@@ -54,7 +57,13 @@ from models.aeo_models import (
     AeoStrategyResponse,
     SiteCheck,
     SiteChecksResponse,
+    AeoWebsiteStrength,
 )
+from services.ai_checks.answer import host_of
+from services.ai_checks.backlinks import link_opportunities, site_strength
+from services.ai_checks.reader import name_key
+from services.ai_checks.runner import answers_doc, run_checks, summarize
+from services.ai_checks.search_volume import clean_keyword, monthly_searches
 from services.bedrock_service import TokenUsageTracker, _converse, _parse_json
 
 logger = logging.getLogger(__name__)
@@ -64,7 +73,7 @@ PAID_PROMPT_COUNT = 20
 MASK = "••••••••"
 
 _SYSTEM = """You are an Answer Engine Optimisation (AEO) strategist. You help businesses get
-recommended by AI answer engines (ChatGPT, Perplexity, Gemini, Google AI Overviews).
+recommended by AI answer engines (ChatGPT, Claude, Gemini, Google AI Overviews).
 
 CRITICAL RULES:
 - Respond with ONLY valid JSON — no markdown fences, no preamble, no commentary.
@@ -97,16 +106,6 @@ def _clamp(n, lo, hi, default=0) -> int:
         return max(lo, min(hi, int(round(float(n)))))
     except (TypeError, ValueError):
         return default
-
-
-def _engine_value(x) -> Optional[int]:
-    if x is None:
-        return 0
-    try:
-        n = int(x)
-    except (TypeError, ValueError):
-        return 0
-    return n if n > 0 else (-1 if n < 0 else 0)
 
 
 def _locked_prompt(rank: int) -> AeoPrompt:
@@ -176,26 +175,98 @@ def _site_block(url: str, company: str) -> str:
             f"never from what the name '{company}' sounds like; competitors must sell the same products/services):\n{s}")
 
 
-def generate_aeo_prompts(
+MAX_RIVALS = 6
+
+
+def run_aeo_analysis(
     req: AeoPromptsRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
-) -> AeoPromptsResponse:
+    on_progress: Optional[Callable[[int, int], None]] = None,
+) -> tuple[AeoPromptsResponse, dict]:
+    """The questions people ask AI about this kind of business, each asked to every ready AI tool for real.
+
+    Our AI only suggests the questions; every result on the dashboard comes from the real answers
+    (services/ai_checks). Free accounts get real checks on the questions they can see, paid accounts on all.
+    Returns the dashboard result and the real answers (saved so customers can read them).
+    """
     n = PAID_PROMPT_COUNT if is_paid else FREE_PREVIEW_PROMPTS
     domain = _domain_of(req.url)
-    extra_p = req.extra_prompts
-    extra_c = req.extra_competitors
-    logger.info(f"[aeo] prompts — {req.company_name} / {req.market} n={n} extra_p={len(extra_p)} extra_c={len(extra_c)} paid={is_paid}")
+    custom = list(req.extra_prompts)
+    taken = {t.lower() for t in custom}
+    questions = [q for q in _suggest_questions(req, n, usage_tracker) if q["text"].lower() not in taken]
+    custom_keywords = _keywords_for(custom, req.market, usage_tracker)
+    logger.info(f"[aeo] analysis — {req.company_name} / {req.market} questions={len(questions)} custom={len(custom)} paid={is_paid}")
 
-    extra_prompt_block = (
-        "Also evaluate EXACTLY these user-supplied prompts (put them in `custom_prompts`, same row schema, "
-        "no rank needed):\n" + json.dumps(extra_p, ensure_ascii=False)
-        if extra_p else "No user-supplied prompts."
-    )
-    extra_comp_block = (
-        "Also include these user-supplied competitors in `competitors` (they are real companies the user named): "
-        + json.dumps(extra_c, ensure_ascii=False)
-        if extra_c else "No user-supplied competitors."
-    )
+    # Google's real search counts for every candidate keyword (one request), fetched while the AI tools are asked.
+    candidates = [k for kws in [*custom_keywords.values(), *(q["keywords"] for q in questions)] for k in kws]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        lookup = pool.submit(monthly_searches, candidates, req.market)
+        checks = run_checks(custom + [q["text"] for q in questions], req.company_name, domain, req.market,
+                            usage_tracker=usage_tracker, on_progress=on_progress)
+        volumes = lookup.result()
+    summary = summarize(checks, req.company_name, domain)
+    not_checked = [None] * len(ENGINES)
 
+    def row(rank: int, text: str, intent: str, keywords: list[str], custom_row: bool = False) -> AeoPrompt:
+        keyword, searches = _best_keyword(keywords, volumes)
+        return AeoPrompt(rank=rank, text=text, intent=intent, keyword=keyword, volume_estimate=searches,
+                         engines=summary.cells.get(text, not_checked), custom=custom_row)
+
+    custom_rows = [row(0, t, "Commercial", custom_keywords.get(t, []), custom_row=True) for t in custom]
+    rows = [row(i + 1, q["text"], q["intent"], q["keywords"]) for i, q in enumerate(questions)]
+    if not is_paid:
+        while len(rows) < PAID_PROMPT_COUNT:
+            rows.append(_locked_prompt(len(rows) + 1))
+
+    checked_engines = [e for e in ENGINES if any(c.engine == e and c.reading for c in checks)]
+    competitors = _competitors(req, domain, summary)
+    website, links, links_total = _measure_websites(domain, competitors, is_paid)
+    result = AeoPromptsResponse(
+        company=req.company_name, market=req.market, industry=req.industry,
+        prompts=custom_rows + rows,
+        competitors=competitors,
+        website=website, link_opportunities=links, link_opportunities_total=links_total,
+        engine_leaders=summary.engine_leaders,
+        prompts_total=sum(1 for p in custom_rows + rows if not p.locked and any(e is not None for e in p.engines)),
+        checked_engines=checked_engines,
+        platforms=[AeoNameCount(name=name, count=k) for name, k in summary.platforms],
+        source_sites=[AeoNameCount(name=site, count=k) for site, k in summary.source_sites],
+        checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    )
+    return result, answers_doc(checks)
+
+
+KEYWORDS_PER_QUESTION = 3
+_KEYWORDS_ASK = f"""For each question also give {KEYWORDS_PER_QUESTION} different short searches (2-4 words each, in the order people
+type them) that people use on Google for the same need, closest match first, e.g. "hire react developer",
+"react developer india", "react js developer". Every search must name what the person is looking for (the
+product or service itself); never a generic phrase such as "hire immediately", "proven track record" or a
+technique name on its own. Prefer popular wording."""
+
+
+def _keyword_list(value, fallback: str = "") -> list[str]:
+    """Up to KEYWORDS_PER_QUESTION short searches from the model's reply (a list, or a single string)."""
+    items = value if isinstance(value, list) else [value]
+    out = list(dict.fromkeys(str(k).strip()[:80] for k in items if k and str(k).strip()))
+    return out[:KEYWORDS_PER_QUESTION] or ([fallback] if fallback else [])
+
+
+def _best_keyword(keywords: list[str], volumes: dict[str, int]) -> tuple[str, int]:
+    """The closest-matching candidate Google has a search count for, with that count (the first one when none has).
+
+    Candidates come closest match first, so a broader search with a bigger number never wins over a closer one.
+    """
+    for k in keywords:
+        if volumes.get(clean_keyword(k)):
+            return k, volumes[clean_keyword(k)]
+    return (keywords[0], 0) if keywords else ("", 0)
+
+
+def _suggest_questions(req: AeoPromptsRequest, n: int, usage_tracker: TokenUsageTracker | None) -> list[dict]:
+    """The n questions real customers would ask an AI assistant, most common first: [{"text", "intent", "keywords"}].
+
+    The keywords are short Google searches for the same need, closest match first; Google only has search counts
+    for short searches, so the dashboard shows the real count of the closest one Google has a number for.
+    """
     prompt = f"""
 Company: {req.company_name}
 Website: {req.url}
@@ -203,114 +274,94 @@ Market: {req.market}
 Industry: {req.industry}
 {_site_block(req.url, req.company_name)}
 
-Task: list the {n} questions people in {req.market} are most likely to ask an AI assistant when looking for
-what {req.company_name} offers, ordered by estimated monthly volume (highest first). For each, estimate how
-visible {req.company_name} is in each answer engine, in this order: {json.dumps(ENGINES)}.
+Task: list the {n} questions people in {req.market} are most likely to type into an AI assistant (ChatGPT, Claude,
+Gemini) when they want to find, compare or buy what {req.company_name} offers, most commonly asked first.
+Write each one from the customer's side (someone looking for this product or service), the way a real person
+types it. Never phrase it as a job search. Include the location when people would. Do not name {req.company_name}.
 
-Engine value convention (integers only):
-  1..5  = {req.company_name} is cited at that position in the answer
-  -1    = mentioned but not linked
-  0     = absent
+{_KEYWORDS_ASK}
 
-{extra_prompt_block}
-{extra_comp_block}
+Return ONE JSON object: {{"questions": [{{"text": "the question", "intent": "Commercial | Informational | Transactional",
+"keywords": ["short search 1", "short search 2", "short search 3"]}}]}} with exactly {n} items."""
+    data = _parse_json(_converse(_SYSTEM, prompt, max_tokens=3500, usage_tracker=usage_tracker))
+    out, seen = [], set()
+    for d in data.get("questions") or []:
+        text = str(d.get("text", "")).strip()[:300]
+        if text and text.lower() not in seen:
+            seen.add(text.lower())
+            intent = d.get("intent") if d.get("intent") in ("Commercial", "Informational", "Transactional") else "Commercial"
+            out.append({"text": text, "intent": intent, "keywords": _keyword_list(d.get("keywords") or d.get("keyword"), text)})
+    return out[:n]
 
-Return ONE JSON object with EXACTLY these keys:
-{{
-  "prompts": [
-    {{"text": "the question as a user would type it", "intent": "Commercial | Informational | Transactional",
-      "volume_estimate": 1200, "engines": [0, 0, 0, 0]}}
-    // exactly {n} rows, ordered by volume_estimate descending
-  ],
-  "custom_prompts": [ /* same row schema, one per user-supplied prompt; [] if none */ ],
-  "competitors": [
-    {{"name": "Real company", "domain": "example.com", "share_of_voice": 24, "domain_authority": 52,
-      "prompts_cited": 14, "top_engine": "ChatGPT | Perplexity | Gemini | AI Overviews"}}
-    // 4 to 6 REAL competitors in {req.market} (plus any user-supplied ones), most recommended first.
-    // Do NOT include {req.company_name} itself or its parent company.
-    // share_of_voice = estimated % of these prompts where that company is recommended (0-100).
-    // prompts_cited is out of {n}.
-  ],
-  "engine_leaders": ["company most recommended by ChatGPT", "...Perplexity", "...Gemini", "...AI Overviews"]
-}}
 
-Estimate {req.company_name} honestly as a mid-sized player unless you specifically know otherwise; most
-prompts should show absent (0) or mentioned (-1) in at least some engines."""
+def _keywords_for(questions: list[str], market: str, usage_tracker: TokenUsageTracker | None) -> dict[str, list[str]]:
+    """Short Google searches for each question the customer added: {question: [keyword, ...]}."""
+    if not questions:
+        return {}
+    listed = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(questions))
+    prompt = f"""
+Market: {market}
+Questions people in {market} ask:
+{listed}
 
-    raw = _converse(_SYSTEM, prompt, max_tokens=6000, usage_tracker=usage_tracker)
-    data = _parse_json(raw)
+{_KEYWORDS_ASK}
 
-    def _row(d: dict, rank: int, custom: bool) -> AeoPrompt:
-        intent = d.get("intent")
-        if intent not in ("Commercial", "Informational", "Transactional"):
-            intent = "Commercial"
-        engines = list(d.get("engines") or [])[:4]
-        engines += [0] * (4 - len(engines))
-        return AeoPrompt(
-            rank=rank, text=str(d.get("text", "")).strip()[:300], intent=intent,
-            volume_estimate=_clamp(d.get("volume_estimate"), 0, 10_000_000),
-            engines=[_engine_value(e) for e in engines], custom=custom,
-        )
+Return ONE JSON object: {{"keywords": [["search 1", "search 2", "search 3"], ...]}} with one list per question,
+exactly {len(questions)} lists, in order."""
+    try:
+        data = _parse_json(_converse(_SYSTEM, prompt, max_tokens=1200, usage_tracker=usage_tracker))
+        lists = [_keyword_list(k) for k in data.get("keywords") or []]
+    except Exception as e:  # noqa: BLE001 — without keywords the question only shows no search count
+        logger.warning(f"[aeo] keywords for added questions failed: {e}")
+        return {}
+    return {q: kws for q, kws in zip(questions, lists) if kws}
 
-    rows = [_row(d, i + 1, False) for i, d in enumerate(data.get("prompts") or []) if str(d.get("text", "")).strip()]
-    rows = rows[:n]
-    custom_rows = [_row(d, 0, True) for d in (data.get("custom_prompts") or []) if str(d.get("text", "")).strip()]
-    # Any user-supplied prompt the model skipped still shows up (as not yet measured).
-    have = {r.text.lower() for r in custom_rows}
-    for t in extra_p:
-        if t.lower() not in have:
-            custom_rows.append(AeoPrompt(rank=0, text=t, intent="Commercial", engines=[None, None, None, None], custom=True))
-    if not is_paid:
-        while len(rows) < PAID_PROMPT_COUNT:
-            rows.append(_locked_prompt(len(rows) + 1))
 
-    real = [r for r in rows if not r.locked] + [r for r in custom_rows if None not in r.engines]
-    total_cells = max(1, len(real) * 4)
-    cited_cells = sum(1 for r in real for e in r.engines if e and e > 0)
-    cited_prompts = sum(1 for r in real if any(e and e > 0 for e in r.engines))
-    best_engine = max(range(4), key=lambda j: sum(1 for r in real if r.engines[j] and r.engines[j] > 0)) if real else 0
+FREE_LINK_OPPORTUNITIES = 3
 
-    comps: list[AeoCompetitor] = [AeoCompetitor(
-        name=f"{req.company_name} (you)", domain=domain, is_you=True,
-        share_of_voice=round(100 * cited_cells / total_cells), prompts_cited=cited_prompts,
-        top_engine=ENGINES[best_engine] if cited_cells else "—",
-    )]
-    extra_lc = {c.lower() for c in extra_c}
-    for c in data.get("competitors") or []:
-        name = str(c.get("name", "")).strip()[:120]
-        if not name or name.lower().startswith(req.company_name.lower()):
-            continue
-        top = c.get("top_engine")
-        comps.append(AeoCompetitor(
-            name=name, domain=_domain_of(str(c.get("domain", ""))),
-            share_of_voice=_clamp(c.get("share_of_voice"), 0, 100),
-            domain_authority=_clamp(c.get("domain_authority"), 0, 100),
-            prompts_cited=_clamp(c.get("prompts_cited"), 0, len(real) or n),
-            top_engine=top if top in ENGINES else "",
-            custom=name.lower() in extra_lc,
-        ))
-    # Share of voice across all companies can't exceed 100% — scale rivals down if the model overshot.
-    rival_total = sum(c.share_of_voice for c in comps if not c.is_you)
-    room = max(0, 100 - comps[0].share_of_voice)
-    if rival_total > room and rival_total > 0:
-        k = room / rival_total
-        for c in comps[1:]:
-            c.share_of_voice = int(c.share_of_voice * k)
-    # A user-supplied competitor the model dropped still shows, flagged pending.
-    seen = {c.name.lower() for c in comps}
-    for name in extra_c:
-        if name.lower() not in seen:
-            comps.append(AeoCompetitor(name=name, custom=True, pending=True))
-    comps[1:] = sorted(comps[1:], key=lambda c: (c.pending, -c.share_of_voice))
 
-    leaders = [str(x)[:120] for x in (data.get("engine_leaders") or [])][:4]
-    leaders += [""] * (4 - len(leaders))
+def _measure_websites(domain: str, competitors: list[AeoCompetitor], is_paid: bool
+                      ) -> tuple[Optional[AeoWebsiteStrength], list[AeoLinkOpportunity], int]:
+    """Real backlink data (DataForSEO): fills in each competitor's website strength, and returns the customer's own
+    strength plus the websites that link to competitors but not to the customer. Never fails the analysis: when the
+    data cannot be read, strengths stay "not measured"."""
+    rivals = [c for c in competitors if not c.is_you and c.domain]
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            strength_job = pool.submit(site_strength, [domain, *(c.domain for c in rivals)])
+            links_job = pool.submit(link_opportunities, domain, [c.domain for c in rivals])
+            strength, (links, total) = strength_job.result(), links_job.result()
+    except Exception as e:  # noqa: BLE001 — backlink data is extra; the analysis itself is already done
+        logger.warning(f"[aeo] backlink data unavailable: {e}")
+        return None, [], 0
+    for c in competitors:
+        s = strength.get(host_of(c.domain))
+        if s:
+            c.domain_authority, c.linking_sites = s.score, s.linking_sites
+    mine = strength.get(host_of(domain))
+    names = {host_of(c.domain): c.name for c in rivals}
+    shown = links if is_paid else links[:FREE_LINK_OPPORTUNITIES]
+    website = AeoWebsiteStrength(score=mine.score, linking_sites=mine.linking_sites, backlinks=mine.backlinks) if mine else None
+    return website, [AeoLinkOpportunity(site=o.site, score=o.score, links_to=[names.get(d, d) for d in o.links_to])
+                     for o in shown], total
 
-    return AeoPromptsResponse(
-        company=req.company_name, market=req.market, industry=req.industry,
-        prompts=custom_rows + rows, competitors=comps, engine_leaders=leaders,
-        prompts_total=len(real),
+
+def _competitors(req: AeoPromptsRequest, domain: str, summary) -> list[AeoCompetitor]:
+    """You first, then the businesses the real answers name most. User-added competitors always show (0 if never named)."""
+    yours = Counter(ENGINES[j] for cells in summary.cells.values() for j, x in enumerate(cells) if x not in (None, 0))
+    you = AeoCompetitor(
+        name=req.company_name, domain=domain, is_you=True, share_of_voice=summary.share_of_voice,
+        prompts_cited=sum(1 for cells in summary.cells.values() if any(x not in (None, 0) for x in cells)),
+        top_engine=yours.most_common(1)[0][0] if yours else "—",
     )
+    added = {name_key(c): c for c in req.extra_competitors}
+    rivals = [r for i, r in enumerate(summary.rivals) if i < MAX_RIVALS or name_key(r["name"]) in added]
+    comps = [AeoCompetitor(name=r["name"], domain=r["domain"], share_of_voice=r["share_of_voice"],
+                           prompts_cited=r["questions"], top_engine=r["top_engine"], custom=name_key(r["name"]) in added)
+             for r in rivals]
+    named = {name_key(c.name) for c in comps}
+    comps += [AeoCompetitor(name=name, custom=True) for key, name in added.items() if key not in named]
+    return [you, *comps]
 
 
 # ═════════════════════════════════════════════════════════════════════════════

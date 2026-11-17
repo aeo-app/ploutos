@@ -2,16 +2,17 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAeo, usePromptRows } from '../AeoContext';
 import { EmptyAnalysis, useCompetitorRows } from '../parts';
-import { PromptsCard, CompetitorsCard, IdeasCard, KpiCard, deltaLine, RED, AMBER, GREEN } from '../dashParts';
+import { PromptsCard, CompetitorsCard, IdeasCard, KpiCard, RealDataBadge, ResultBadge, checkedLine, deltaLine, RED, AMBER, GREEN } from '../dashParts';
 import { Icon } from '../Icon';
 import { PromptsView } from '../PromptsView';
 import { ManageAccounts } from '../ManageAccounts';
 import { useSocialChannels } from '../social';
 import { usePayment } from '../../context/PaymentContext';
 import { BrandKitCard } from '../BrandKit';
-import { ENGINES, citedCount, engineStats, hostOf, isReal, overallVis, sovRank, youSov } from '../utils';
+import { ENGINES, checkedAnswers, citedCount, engineNames, engineStats, hostOf, isReal, num, overallVis, searchesTitle, sovRank, youSov } from '../utils';
 
-const band = (v, cuts, labels, colors) => { const i = v < cuts[0] ? 0 : v < cuts[1] ? 1 : 2; return { label: labels[i], color: colors[i] }; };
+const FIRST_REAL = { text: 'First check with real answers', color: '#6b6a85' };
+const band =(v, cuts, labels, colors) => { const i = v < cuts[0] ? 0 : v < cuts[1] ? 1 : 2; return { label: labels[i], color: colors[i] }; };
 
 /** The signed-in customer's company: logo, website, country, industry, plan. */
 function CompanyStrip({ onBrand }) {
@@ -43,7 +44,7 @@ function RunningCard() {
       <div className="dv-col" style={{ flex: 1, gap: 16, maxWidth: 520 }}>
         <div className="dv-tile pulse"><Icon name="sparkles" size={24} /></div>
         <h2>Analysing how AI sees your business…</h2>
-        <p className="dv-lead">This usually takes under a minute.</p>
+        <p className="dv-lead">We're asking each AI tool your questions for real and reading their answers. This takes 2–3 minutes.</p>
         <div className="dv-loader"><div /></div>
       </div>
       <div className="dv-col" style={{ flex: 1, gap: 10 }}>
@@ -64,10 +65,10 @@ function FirstRun() {
       <div className="dv-col" style={{ flex: 1, gap: 16, maxWidth: 540 }}>
         <div className="dv-tile"><Icon name="search" size={24} /></div>
         <h2>Let's see how AI tools talk about {co}</h2>
-        <p className="dv-lead">We'll estimate how often ChatGPT, Perplexity, Gemini and Google AI Overviews recommend your business, show who they suggest instead, and give you simple ideas to get mentioned more.</p>
+        <p className="dv-lead">We'll ask ChatGPT, Claude, Gemini and Google AI Overviews the questions people ask about businesses like yours, check whether they recommend you, show who they suggest instead, and give you simple ideas to get mentioned more.</p>
         <div className="dv-row-c" style={{ paddingTop: 8, gap: 16, flexWrap: 'wrap' }}>
           <button type="button" className="dv-btn primary xl" disabled={locked} onClick={runAnalysis} data-testid="run-first"><Icon name="play" size={16} />Run my first analysis</button>
-          <span className="dv-tiny"><Icon name="clock" size={14} /> Takes about a minute</span>
+          <span className="dv-tiny"><Icon name="clock" size={14} /> Takes 2–3 minutes</span>
         </div>
         {locked && <span className="dv-tiny">An analysis can be run once every {quota.interval_days || 30} days.</span>}
       </div>
@@ -131,21 +132,27 @@ export function DashboardPage() {
   const go = (id) => () => { setPage(id); window.scrollTo(0, 0); };
 
   const real = rows.filter(isReal);
-  const vis = overallVis(analysis?.prompts), pvis = overallVis(prev?.prompts);
-  const sov = youSov(analysis), psov = youSov(prev), rk = sovRank(analysis);
-  const cited = citedCount(analysis?.prompts), pcited = prev ? citedCount(prev.prompts) : null;
+  // The first analysis with real answers isn't compared with an older estimated one: they measured different things.
+  const firstReal = !!checkedLine(analysis) && !!prev && !checkedLine(prev);
+  const before = firstReal ? null : prev;
+  const sinceLast = (cur, was, unit) => (firstReal ? FIRST_REAL : deltaLine(cur, was, unit));
+  const vis = overallVis(analysis?.prompts), pvis = overallVis(before?.prompts);
+  const sov = youSov(analysis), psov = youSov(before), rk = sovRank(analysis);
+  const cited = citedCount(analysis?.prompts), pcited = before ? citedCount(before.prompts) : null;
   const top5 = (analysis?.prompts || []).filter(p => isReal(p)).slice(0, 5);
   const covered = top5.filter(p => p.engines.some(e => e != null && e !== 0)).length;
-  const totalAnswers = real.length * 4;
+  const totalAnswers = checkedAnswers(real);
   const da = state.results.domainAuthority || state.results.fullReport?.domain_authority_strategy;
-  const daNow = da?.current_da != null ? Number(da.current_da) : null;
+  const site = analysis?.website;   // real backlink data (DataForSEO) measured in the latest analysis
+  const daNow = site ? site.score : da?.current_da != null ? Number(da.current_da) : null;
   const co = r.company_name || 'your business';
 
   const visB = vis == null ? null : band(vis, [20, 50], ['Low', 'Fair', 'Good'], [RED, AMBER, GREEN]);
   const visText = vis == null ? '' : `${vis < 20 ? 'AI tools rarely recommend you yet.' : vis < 50 ? 'AI tools sometimes recommend you.' : 'AI tools often recommend you.'} You appear in ${covered} of ${top5.length} top questions.`;
   const sovColor = rk && rk.rank === 1 ? GREEN : AMBER;
   const citeB = cited === 0 ? { label: 'None yet', color: RED } : cited / Math.max(totalAnswers, 1) < 0.25 ? { label: 'A few', color: AMBER } : { label: 'Often', color: GREEN };
-  const daB = daNow == null ? null : band(daNow, [40, 60], ['Needs work', 'Fair', 'Strong'], [AMBER, AMBER, GREEN]);
+  // Real backlink scores run lower than the old estimates (a large established agency scores about 35), so their bands are lower.
+  const daB = daNow == null ? null : band(daNow, site ? [20, 40] : [40, 60], ['Needs work', 'Fair', 'Strong'], [AMBER, AMBER, GREEN]);
 
   return (
     <div className="dv-page">
@@ -155,11 +162,11 @@ export function DashboardPage() {
       {loading ? <RunningCard /> : !analysis ? <FirstRun /> : (
         <>
           <section className="dv-kpis">
-            <KpiCard title="AI visibility" value={vis ?? '—'} unit="/100" label={visB?.label} labelColor={visB?.color} delta={deltaLine(vis, pvis)} pct={vis || 0} barColor={visB?.color} text={visText}
-              linkText="View all prompts →" onLink={go('aeoPrompts')} />
-            <KpiCard title="Share of voice" value={sov != null ? sov + '%' : '—'} label={rk ? `#${rk.rank} of ${rk.of}` : ''} labelColor={sovColor} delta={deltaLine(sov, psov, '%')} pct={sov || 0} barColor={sovColor}
+            <KpiCard title="AI visibility" value={vis ?? '—'} unit="/100" label={visB?.label} labelColor={visB?.color} delta={sinceLast(vis, pvis)} pct={vis || 0} barColor={visB?.color} text={visText}
+              linkText="View all prompts →" onLink={go('aeoPrompts')} badge={<ResultBadge analysis={analysis} />} />
+            <KpiCard title="Share of voice" badge={<ResultBadge analysis={analysis} />} value={sov != null ? sov + '%' : '—'} label={rk ? `#${rk.rank} of ${rk.of}` : ''} labelColor={sovColor} delta={sinceLast(sov, psov, '%')} pct={sov || 0} barColor={sovColor}
               text={`How often AI suggests you vs your competitors${r.market ? ` in ${r.market}` : ''}.`} linkText="View all competitors →" onLink={go('aeoCompetitors')} />
-            <KpiCard title="Times AI linked to you" value={cited} unit={` of ${totalAnswers}`} label={citeB.label} labelColor={citeB.color} delta={deltaLine(cited, pcited)} pct={totalAnswers ? cited / totalAnswers * 100 : 0} barColor={citeB.color}
+            <KpiCard title="Times AI linked to you" badge={<ResultBadge analysis={analysis} />} value={cited} unit={` of ${totalAnswers}`} label={citeB.label} labelColor={citeB.color} delta={sinceLast(cited, pcited)} pct={totalAnswers ? cited / totalAnswers * 100 : 0} barColor={citeB.color}
               text="Answers where an AI tool linked to your website." linkText="Go to AI Engines →" onLink={go('aeoEngines')} />
             {daNow == null ? (
               <KpiCard title="Website strength" sub="Domain Authority" text="How much Google and AI trust your website." >
@@ -167,7 +174,9 @@ export function DashboardPage() {
                 <button type="button" className="dv-btn dv-nopr" style={{ marginTop: 12, alignSelf: 'flex-start' }} onClick={go('da')}>Check now</button>
               </KpiCard>
             ) : (
-              <KpiCard title="Website strength" sub="Domain Authority" value={daNow} unit="/100" label={daB.label} labelColor={daB.color} delta={{ text: 'Latest check', color: '#6b6a85' }} pct={daNow} barColor={daB.color}
+              <KpiCard title="Website strength" sub={site ? 'From the websites that link to you' : 'Domain Authority'} value={daNow} unit="/100" label={daB.label} labelColor={daB.color}
+                delta={{ text: site ? `${num(site.linking_sites)} website${site.linking_sites === 1 ? '' : 's'} link to you` : 'Latest check', color: '#6b6a85' }} pct={daNow} barColor={daB.color}
+                badge={site ? <RealDataBadge title="Measured from real backlink data (DataForSEO): how many websites link to yours, and how strong they are." /> : undefined}
                 text="How much Google and AI trust your website." linkText="Go to Domain Authority →" onLink={go('da')} />
             )}
           </section>
@@ -203,7 +212,7 @@ export function CompetitorsAeoPage() {
     <section className="ae-card" style={{ gap: 16 }}>
       <div className="ae-col"><h2>Who AI recommends instead of you</h2><span className="ae-sub">Across the {total ? `Top ${total}` : 'tracked'} prompts in {state.request.market || 'your market'}</span></div>
       <div className="ae-scroll">
-        <div className="ae-cthead"><span>COMPANY</span><span>SHARE OF VOICE</span><span style={{ textAlign: 'right' }}>DA</span><span style={{ textAlign: 'right' }}>PROMPTS CITED</span><span>STRONGEST ENGINE</span><span /></div>
+        <div className="ae-cthead"><span>COMPANY</span><span>SHARE OF VOICE</span><span style={{ textAlign: 'right' }} title="Website strength (0-100): measured from real backlink data in analyses with real answers; an estimate in older ones. — means not measured.">DA</span><span style={{ textAlign: 'right' }}>PROMPTS CITED</span><span>STRONGEST ENGINE</span><span /></div>
         {rows.map(c => (
           <div key={c.name} className="ae-ctrow">
             <div className="ae-col" style={{ minWidth: 0 }}>
@@ -214,7 +223,7 @@ export function CompetitorsAeoPage() {
               <div className="ae-bar" style={{ flex: 1 }}><i style={{ width: (c.share_of_voice / max * 100) + '%', background: c.is_you ? '#4f46e5' : '#c7c9e8' }} /></div>
               <span className="ae-mono" style={{ fontSize: 12.5, fontWeight: 700, width: 36, textAlign: 'right' }}>{c.pending ? '…' : c.share_of_voice + '%'}</span>
             </div>
-            <span className="ae-mono" style={{ textAlign: 'right', fontWeight: 700 }}>{c.pending ? '…' : c.domain_authority}</span>
+            <span className="ae-mono" style={{ textAlign: 'right', fontWeight: 700 }}>{c.pending ? '…' : c.domain_authority ?? '—'}</span>
             <span className="ae-mono" style={{ textAlign: 'right' }}>{c.pending ? '…' : `${c.prompts_cited}/${total}`}</span>
             <span style={{ fontWeight: 600 }}>{c.pending ? 'Pending next run' : c.top_engine || '—'}</span>
             <span style={{ textAlign: 'right' }}>{!c.is_you && <button className="ae-linkbtn" onClick={() => removeCompetitor(c.name)}>Remove</button>}</span>
@@ -238,7 +247,7 @@ export function EnginesPage() {
   return (
     <>
       <section className="ae-engs">
-        {ENGINES.map((name, j) => {
+        {engineNames(analysis).map((name, j) => {
           const st = engineStats(analysis.prompts, j);
           return (
             <div key={name} className="ae-card" style={{ padding: 22, gap: 16 }}>
@@ -255,7 +264,7 @@ export function EnginesPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--ae-line2)', paddingTop: 14 }}>
                 <span className="ae-eyebrow">Biggest gaps</span>
                 {st.gaps.length === 0 && <span className="ae-sub">No gaps — you appear for every tracked prompt.</span>}
-                {st.gaps.map(g => <div key={g.text} className="ae-row" style={{ flexWrap: 'nowrap', fontSize: 13, gap: 10 }}><b style={{ fontWeight: 600 }}>{g.text}</b><span className="ae-mono" style={{ color: 'var(--ae-mute)', flexShrink: 0 }}>{g.volume_estimate.toLocaleString()}/mo</span></div>)}
+                {st.gaps.map(g => <div key={g.text} className="ae-row" style={{ flexWrap: 'nowrap', fontSize: 13, gap: 10 }}><b style={{ fontWeight: 600 }}>{g.text}</b><span className="ae-mono" style={{ color: 'var(--ae-mute)', flexShrink: 0 }} title={searchesTitle(g)}>{g.volume_estimate ? `${num(g.volume_estimate)}/mo` : '—'}</span></div>)}
               </div>
             </div>
           );

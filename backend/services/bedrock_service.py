@@ -812,10 +812,27 @@ Return a JSON object with EXACTLY these keys:
 
 
 # ── Generator: Domain Authority Strategy ──────────────────────────────────────
+def _measured_block(measured: dict | None) -> str:
+    """Real backlink numbers from the latest analysis (DataForSEO), for the plan to start from; "" when there are none."""
+    site = (measured or {}).get("website") or {}
+    if "score" not in site:
+        return ""
+    rivals = ", ".join(f"{c['name']} {c['score']}" for c in (measured.get("competitors") or []) if c.get("name"))
+    return (f"MEASURED (real backlink data, use these exact numbers): current_da = {site['score']} (0-100 score), "
+            f"{site.get('linking_sites', 0)} websites link to this site, {site.get('backlinks', 0)} backlinks in total."
+            + (f" Competitors' scores: {rivals}." if rivals else "")
+            + " Set current_da to exactly this number, use these numbers in the gap analysis, and set the targets from it.")
+
+
 def generate_da_strategy(
     req: AnalyseRequest, usage_tracker: TokenUsageTracker | None = None, is_paid: bool = True,
+    measured: dict | None = None,
 ) -> DomainAuthorityResponse:
-    logger.info(f"[bedrock] da_strategy — {req.company_name} (is_paid={is_paid})")
+    """Domain authority plan. `measured` is the real website strength from the latest analysis (when there is one):
+    current_da is then the real score and the targets start from it; otherwise current_da is an estimate."""
+    from services.aeo_service import _site_block   # what the website actually says (late import: aeo_service imports this module)
+
+    logger.info(f"[bedrock] da_strategy — {req.company_name} (is_paid={is_paid}, measured={bool(measured)})")
 
     n_gaps = 5 if is_paid else 1
     n_backlinks = 11 if is_paid else FREE_PREVIEW_ROWS
@@ -828,6 +845,8 @@ Generate a Domain Authority growth strategy for:
   URL: {req.url}
   Market: {req.market}
   Industry: {req.industry}
+{_site_block(req.url, req.company_name)}
+{_measured_block(measured)}
 
 Return a JSON object with EXACTLY these keys:
 {{
@@ -869,11 +888,19 @@ Base all estimates on realistic industry patterns for {req.industry} companies i
     raw = _converse(SYSTEM_PROMPT, prompt, usage_tracker=usage_tracker)
     data = _parse_json(raw)
 
-    # Ensure int fields are populated (belt-and-suspenders)
-    for key in ("current_da", "target_da_6m", "target_da_12m"):
-        if not isinstance(data.get(key), int) or data[key] == 0:
-            defaults = {"current_da": 30, "target_da_6m": 38, "target_da_12m": 48}
-            data[key] = defaults[key]
+    real = ((measured or {}).get("website") or {}).get("score")
+    if isinstance(real, int):
+        # A measured score is the truth (it can be 0 for a new website); the targets always sit above it.
+        t6, t12 = data.get("target_da_6m"), data.get("target_da_12m")
+        data["current_da"] = real
+        data["target_da_6m"] = t6 if isinstance(t6, int) and t6 > real else real + 6
+        data["target_da_12m"] = t12 if isinstance(t12, int) and t12 > data["target_da_6m"] else data["target_da_6m"] + 9
+    else:
+        # Ensure int fields are populated (belt-and-suspenders)
+        for key in ("current_da", "target_da_6m", "target_da_12m"):
+            if not isinstance(data.get(key), int) or data[key] == 0:
+                defaults = {"current_da": 30, "target_da_6m": 38, "target_da_12m": 48}
+                data[key] = defaults[key]
 
     result = DomainAuthorityResponse(**data)
 

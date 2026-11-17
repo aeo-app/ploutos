@@ -6,8 +6,9 @@ per-prompt content strategy, blog drafts, social posts, saved dashboard state).
     n > 0   — cited at position n
     -1      — mentioned, not linked
     0       — absent
-    None    — not measured yet (pending next run)
-Engine order is always: ChatGPT, Perplexity, Gemini, AI Overviews.
+    None    — not checked (that AI tool was not asked)
+Engine order is always: ChatGPT, Claude, Gemini, AI Overviews. Every value comes from a real answer
+(services/ai_checks); nothing is estimated.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from models.seo_models import AnalyseRequest
 
-ENGINES = ["ChatGPT", "Perplexity", "Gemini", "AI Overviews"]
+ENGINES = ["ChatGPT", "Claude", "Gemini", "AI Overviews"]
 Intent = Literal["Commercial", "Informational", "Transactional"]
 Channel = Literal["fb", "ig", "li", "yt", "gbp"]
 CHANNELS: list[str] = ["fb", "ig", "li", "yt", "gbp"]
@@ -104,7 +105,8 @@ class AeoPrompt(BaseModel):
     rank: int
     text: str
     intent: Intent = "Commercial"
-    volume_estimate: int = 0
+    keyword: str = ""                # the short Google search behind this question, e.g. "hire react developer"
+    volume_estimate: int = 0         # real monthly Google searches for `keyword` in the market; 0 = no number from Google
     engines: list[Optional[int]] = Field(default_factory=lambda: [0, 0, 0, 0])
     custom: bool = False
     locked: bool = False
@@ -121,13 +123,33 @@ class AeoPrompt(BaseModel):
 class AeoCompetitor(BaseModel):
     name: str
     domain: str = ""
-    share_of_voice: int = 0          # % of tracked prompts where this company is recommended
-    domain_authority: int = 0
-    prompts_cited: int = 0           # out of prompts_total
+    share_of_voice: int = 0          # % of all business mentions in the real answers that are this company
+    domain_authority: Optional[int] = None   # real website strength 0-100 (DataForSEO backlink data); None = not measured
+    linking_sites: Optional[int] = None      # websites that link to it (DataForSEO); None = not measured
+    prompts_cited: int = 0           # tracked prompts whose answers name this company, out of prompts_total
     top_engine: str = ""
     is_you: bool = False
     custom: bool = False
     pending: bool = False            # user-added, not analysed yet
+
+
+class AeoNameCount(BaseModel):
+    name: str
+    count: int
+
+
+class AeoWebsiteStrength(BaseModel):
+    """The customer's own website, measured from real backlink data (DataForSEO)."""
+    score: int                       # 0-100
+    linking_sites: int               # different websites that link to it
+    backlinks: int                   # links in total
+
+
+class AeoLinkOpportunity(BaseModel):
+    """A real website that links to competitors but not to the customer."""
+    site: str
+    score: int                       # that website's own strength, 0-100
+    links_to: list[str] = Field(default_factory=list)   # competitor names it links to
 
 
 class AeoPromptsResponse(BaseModel):
@@ -138,9 +160,16 @@ class AeoPromptsResponse(BaseModel):
     competitors: list[AeoCompetitor]
     engine_leaders: list[str] = Field(default_factory=list)   # who each engine recommends most, per ENGINES order
     prompts_total: int = 0
+    checked_engines: list[str] = Field(default_factory=list)  # AI tools actually asked; the others show as not checked
+    platforms: list[AeoNameCount] = Field(default_factory=list)      # marketplaces / directories the answers name
+    source_sites: list[AeoNameCount] = Field(default_factory=list)   # websites the answers used as sources
+    website: Optional[AeoWebsiteStrength] = None                     # real strength of the customer's website
+    link_opportunities: list[AeoLinkOpportunity] = Field(default_factory=list)   # free plan: the first few only
+    link_opportunities_total: int = 0                                # how many DataForSEO found in all
+    checked_at: str = ""
     disclaimer: str = (
-        "Engine positions are AI-generated estimates based on the model's knowledge of this market, "
-        "not live queries to ChatGPT, Perplexity, Gemini or Google AI Overviews."
+        "Results are real answers from the AI tools listed in checked_engines, asked on the date of this "
+        "analysis. AI answers change over time."
     )
 
 

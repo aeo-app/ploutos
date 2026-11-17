@@ -5,10 +5,10 @@ import { socialPublishApi } from '../api/socialPublishApi';
 import { rememberPageBeforeOAuthRedirect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
 import { useConnectProgress } from './useConnectProgress';
 import { useAeo, usePromptRows } from './AeoContext';
-import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf } from './utils';
+import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf, searchesTitle } from './utils';
 
-export function EngCell({ x, j }) {
-  const c = engCell(x, j);
+export function EngCell({ x, j, names }) {
+  const c = engCell(x, j, names);
   return <span className={`ae-eng ${c.cls}`} title={c.title}>{c.label}</span>;
 }
 
@@ -28,8 +28,8 @@ export function EmptyAnalysis({ title, text }) {
   return (
     <div className="ae-empty">
       <h2>{loading ? 'Analysing how AI sees your business…' : (title || 'Run your first analysis')}</h2>
-      <p>{loading ? 'This usually takes under a minute. We are building your prompt list, estimating visibility in each engine and sizing up your competitors.'
-        : (text || 'We will build the list of questions people ask AI about your business, estimate where you appear in ChatGPT, Perplexity, Gemini and AI Overviews, and compare you with competitors.')}</p>
+      <p>{loading ? 'This takes 2–3 minutes. We are asking each AI tool your questions for real and reading who they recommend.'
+        : (text || 'We will build the list of questions people ask AI about your business, ask them to ChatGPT, Claude, Gemini and Google AI Overviews, and show where you appear and who they recommend instead.')}</p>
       {loading ? <div className="ae-dots"><i /><i /><i /></div>
         : locked ? <span className="ae-note">An analysis can be run once every {quota.interval_days || 30} days.{quota.next_available ? ` Your next one is available on ${new Date(quota.next_available).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}.` : ''}</span>
         : <button className="ae-btn primary" onClick={runAnalysis}>Run analysis</button>}
@@ -94,7 +94,7 @@ export function PromptsCard() {
                 {p.custom && <button className="ae-linkbtn" onClick={e => { e.stopPropagation(); removePrompt(p.text); }}>Remove</button>}
               </div>
               <span><span className="ae-pill" style={{ background: ic[0], color: ic[1] }}>{p.intent}</span></span>
-              <span className="ae-mono" style={{ textAlign: 'right', fontSize: 12.5, color: '#4a4966' }}>{p.volume_estimate ? num(p.volume_estimate) : '—'}</span>
+              <span className="ae-mono" style={{ textAlign: 'right', fontSize: 12.5, color: '#4a4966' }} title={searchesTitle(p)}>{p.volume_estimate ? num(p.volume_estimate) : '—'}</span>
               <div className="ae-eng4">{(p.locked ? [null, null, null, null] : p.engines).map((x, j) => <EngCell key={j} x={x} j={j} />)}</div>
               <div className="ae-vis"><i><s style={{ width: (vis || 0) + '%' }} /></i><b style={{ fontSize: 12.5, width: 34, textAlign: 'right' }}>{vis == null ? '—' : vis + '%'}</b></div>
             </div>

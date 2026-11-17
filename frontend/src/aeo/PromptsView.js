@@ -2,9 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useAeo, usePromptRows } from './AeoContext';
 import { Icon } from './Icon';
-import { ENGINES, isReal, promptVis, num } from './utils';
+import { ResultBadge, EstimatedBadge, checkedLine } from './dashParts';
+import { RealAnswersButton } from './RealAnswers';
+import { engineNames, isReal, promptVis, num, searchesTitle } from './utils';
 
-/* The Prompts page: questions people ask AI, how each AI tool answers them, and which ones to win. */
+/* The Prompts page: questions people ask AI, how each AI tool answers them, and which ones to win.
+   Analyses made with real checks show real answers (and real Google searches); older ones stay labelled Estimated. */
 
 const ENG_COLOR = ['#10a37f', '#1f8a9e', '#4f7cf7', '#ea4335'];
 const MUTE = '#6b6a85';
@@ -16,10 +19,11 @@ const INTENTS = {
 const isMention = (p) => Array.isArray(p.engines) && p.engines.some(x => x != null && x !== 0);
 const isOpp = (p) => isReal(p) && !isMention(p);
 
-/** One AI tool's answer for a prompt, in the colours of the key at the bottom of the table. */
-function cell(x, j) {
-  const name = ENGINES[j];
-  if (x == null) return { name, text: '…', cls: 'pend', plain: 'checked in your next analysis', tip: `${name}: checked in your next analysis` };
+/** One AI tool's answer for a prompt, in the colours of the key at the bottom of the table.
+ *  null = not asked: a question added since the analysis, or a tool that could not be asked this time. */
+function cell(x, j, names, notAsked) {
+  const name = names[j];
+  if (x == null) return { name, text: '…', cls: 'pend', plain: notAsked, tip: `${name}: ${notAsked}` };
   if (x > 0) return { name, text: '#' + x, cls: 'cited', plain: `recommends you at position ${x}, with a link`, tip: `${name}: recommends you at position ${x}, with a link` };
   if (x < 0) return { name, text: '✓', cls: 'ment', plain: "names you but doesn't link to your website", tip: `${name}: mentions you, no link to your website` };
   return { name, text: '–', cls: 'abs', plain: "doesn't mention you", tip: `${name}: not mentioned` };
@@ -51,6 +55,9 @@ export function PromptsView() {
   const locked = rows.filter(r => r.locked);
   const made = useMemo(() => new Set(Object.values(content.strategy || {}).map(c => c && c.prompt).filter(Boolean)), [content.strategy]);
 
+  const realRun = !!checkedLine(analysis);       // the AI tools were really asked (older analyses were estimates)
+  const realSearches = open.some(r => r.keyword); // searches/mo are real Google numbers for each question's keyword
+  const names = engineNames(analysis);
   const counts = { all: open.length, mentions: open.filter(isMention).length, opps: open.filter(isOpp).length };
   const missing = open.filter(isOpp).reduce((t, r) => t + (r.volume_estimate || 0), 0);
 
@@ -86,11 +93,13 @@ export function PromptsView() {
     const it = INTENTS[r.intent];
     const yours = !!(r.pending || r.custom);
     const vis = real ? promptVis(r) : null;
+    const notAsked = r.pending || !realRun ? 'checked in your next analysis' : 'could not be checked this time';
     return {
-      real, it, yours, vis, engines: (r.engines || [null, null, null, null]).map(cell),
+      real, it, yours, vis, engines: (r.engines || [null, null, null, null]).map((x, j) => cell(x, j, names, notAsked)),
       intentLabel: it ? r.intent : 'Pending',
-      searches: yours || !r.volume_estimate ? '—' : num(r.volume_estimate),
-      searchLine: yours || !r.volume_estimate ? 'Monthly searches are estimated in your next analysis' : `About ${num(r.volume_estimate)} people ask this each month (estimate)`,
+      searches: r.pending || !r.volume_estimate ? '—' : num(r.volume_estimate),
+      searchLine: r.keyword ? searchesTitle(r)
+        : r.pending || !r.volume_estimate ? 'Monthly searches are found in your next analysis' : `About ${num(r.volume_estimate)} people ask this each month (estimate)`,
       intentLine: it ? it[3] : 'Intent: worked out in your next analysis',
       visText: vis == null ? 'Next analysis' : vis + '%',
       created: made.has(r.text),
@@ -101,21 +110,26 @@ export function PromptsView() {
     <button type="button" className={`dv-chk ${on ? 'on' : ''}`} aria-label={label} aria-pressed={on} onClick={onClick} style={big ? { width: 22, height: 22 } : undefined}><Icon name="check" size={13} /></button>
   );
 
-  const stat = (label, value, tip, extra, color) => (
+  const stat = (label, value, badge, extra, color) => (
     <div className="dv-card pp-stat">
-      <div className="pp-stathd"><span>{label}</span><span className="dv-est" title={tip}>Estimated<Icon name="info" size={12} /></span></div>
+      <div className="pp-stathd"><span>{label}</span>{badge}</div>
       <span className="pp-statv" style={color ? { color } : undefined}>{value}</span>
       {extra}
     </div>
   );
+  const answersBadge = <ResultBadge analysis={analysis} />;
+  const searchesBadge = realSearches
+    ? <span className="dv-est real" title="Real monthly Google searches (Google Ads data) for each question's main keyword">Google data<Icon name="check" size={12} /></span>
+    : <EstimatedBadge />;
+  const missingText = !missing ? '0' : realSearches ? num(missing) : '~' + num(Math.round(missing / 100) * 100);
 
   return (
     <div className="pp" data-testid="prompts-page">
       <div className="pp-stats">
-        {stat('Questions tracked', counts.all, 'An estimate based on a sample of AI answers', locked.length > 0 ? <a className="pp-up" role="link" tabIndex={0} onClick={() => requirePayment('aeoPrompts')}>+{locked.length} on paid plans</a> : null)}
-        {stat('AI mentions you in', <>{counts.mentions} <small>of {counts.all} questions</small></>, 'An estimate based on a sample of AI answers')}
-        {stat('Opportunities', counts.opps, 'An estimate based on a sample of AI answers', <span className="pp-sm">Questions where AI doesn't mention you</span>, '#4f46e5')}
-        {stat('Monthly searches', missing ? '~' + num(Math.round(missing / 100) * 100) : '0', 'An estimate based on public search data', <span className="pp-sm">Monthly searches where you're missing</span>)}
+        {stat('Questions tracked', counts.all, answersBadge, locked.length > 0 ? <a className="pp-up" role="link" tabIndex={0} onClick={() => requirePayment('aeoPrompts')}>+{locked.length} on paid plans</a> : null)}
+        {stat('AI mentions you in', <>{counts.mentions} <small>of {counts.all} questions</small></>, answersBadge)}
+        {stat('Opportunities', counts.opps, answersBadge, <span className="pp-sm">Questions where AI doesn't mention you</span>, '#4f46e5')}
+        {stat('Monthly searches', missingText, searchesBadge, <span className="pp-sm">Monthly searches where you're missing</span>)}
       </div>
 
       <div className="dv-steps">
@@ -166,9 +180,9 @@ export function PromptsView() {
             <Chk on={allOn} label="Select all" onClick={() => (allOn ? clearSelection() : setSelectedPrompts([...sel, ...shown.map(r => r.text)]))} />
             <span>#</span><span>Question</span>
             <span className="pp-hi" title="What the person wants: comparing options, ready to buy, or just learning">Intent <Icon name="info" size={12} /></span>
-            <span className="pp-hi r" title="Estimated number of people asking this each month">Searches/mo <Icon name="info" size={12} /></span>
-            {ENGINES.map((e, j) => <span key={e} className="pp-en"><i style={{ background: ENG_COLOR[j] }} />{e}</span>)}
-            <span className="pp-hi" title="How likely AI tools are to recommend you for this question (estimate)">Visibility <Icon name="info" size={12} /></span>
+            <span className="pp-hi r" title={realSearches ? 'Real monthly Google searches for the main keyword of each question (hover a number to see the keyword). — means Google has too few searches to give a number.' : 'Estimated number of people asking this each month'}>Searches/mo <Icon name="info" size={12} /></span>
+            {names.map((e, j) => <span key={e} className="pp-en"><i style={{ background: ENG_COLOR[j] }} />{e}</span>)}
+            <span className="pp-hi" title={realRun ? 'How strongly the AI tools that were asked recommend you for this question' : 'How likely AI tools are to recommend you for this question (estimate)'}>Visibility <Icon name="info" size={12} /></span>
             <span>Content</span><span />
           </div>
           {shown.map((r, i) => {
@@ -180,7 +194,7 @@ export function PromptsView() {
                   <span className="pp-n">{i + 1}</span>
                   <div className="pp-q"><span style={{ fontWeight: isOpen ? 600 : 500 }}>{r.text}</span>{d.yours && <span className="dv-tag y">Yours</span>}</div>
                   <span><span className="dv-intent" title={d.it ? d.it[2] : 'Worked out in your next analysis'} style={{ background: d.it ? d.it[0] : '#f3f3f8', color: d.it ? d.it[1] : MUTE }}>{d.intentLabel}</span></span>
-                  <span className="pp-num">{d.searches}</span>
+                  <span className="pp-num" title={searchesTitle(r)}>{d.searches}</span>
                   {d.engines.map(e => <span key={e.name} className="pp-ec"><span className={`dv-eng ${e.cls}`} title={e.tip}>{e.text}</span></span>)}
                   <div className="pp-vis"><span style={{ color: d.vis == null ? MUTE : '#1c1b3a' }}>{d.visText}</span><div className="dv-meter sm"><div style={{ width: (d.vis || 0) + '%', background: '#4f46e5' }} /></div></div>
                   <div>{d.created && <span className="pp-done">Content created ✓</span>}</div>
@@ -200,6 +214,7 @@ export function PromptsView() {
                     <div className="pp-says">
                       <b>What each AI tool says</b>
                       {d.engines.map(e => <div key={e.name}><span className={`dv-eng ${e.cls}`}>{e.text}</span><span><b>{e.name}:</b> {e.plain}</span></div>)}
+                      {realRun && d.real && <div className="dv-nopr"><RealAnswersButton prompt={r.text} /></div>}
                     </div>
                     <div className="pp-side">
                       <div className="pp-facts"><span><Icon name="users" size={16} />{d.searchLine}</span><span><Icon name="target" size={16} />{d.intentLine}</span></div>
@@ -242,6 +257,7 @@ export function PromptsView() {
                 {isOpen && (
                   <div className="pp-mopen" onClick={e => e.stopPropagation()}>
                     {d.engines.map(e => <span key={e.name}><b>{e.name}:</b> {e.plain}</span>)}
+                    {realRun && d.real && <span className="dv-nopr"><RealAnswersButton prompt={r.text} /></span>}
                     <span className="pp-sm">{d.searchLine}</span><span className="pp-sm">{d.intentLine}</span>
                     <button type="button" className="dv-btn primary" style={{ height: 44, justifyContent: 'flex-start' }} onClick={() => createFor(r)}>Create content for this</button>
                     <button type="button" className="dv-btn" style={{ height: 44, justifyContent: 'flex-start', color: '#1c1b3a' }} onClick={() => remove(r)}>Remove question</button>
@@ -264,9 +280,9 @@ export function PromptsView() {
             <span><b className="g">#2</b>Recommended with a link</span>
             <span><b className="a">✓</b>Mentioned, no link</span>
             <span><b className="n">–</b>Not mentioned</span>
-            <span><b className="p">…</b>Checked in next analysis</span>
+            <span><b className="p">…</b>{realRun ? 'Not checked yet' : 'Checked in next analysis'}</span>
           </div>
-          <span className="dv-foot"><Icon name="info" size={13} />Positions are AI estimates, not live checks of these tools.</span>
+          <span className="dv-foot"><Icon name="info" size={13} />{realRun ? `${checkedLine(analysis)} AI answers change over time.` : 'Positions are AI estimates, not live checks of these tools.'}</span>
         </div>
 
         {count > 0 && (
@@ -286,7 +302,7 @@ export function PromptsView() {
             <div className="pp-poplist">
               {hidden.length === 0 && <span style={{ display: 'block', padding: '16px 0', fontSize: 14, color: MUTE }}>No hidden questions.</span>}
               {hidden.map(h => (
-                <div key={h.text}><div><b>{h.text}</b><span>{h.p && h.p.intent && INTENTS[h.p.intent] ? `${h.p.intent} · ${num(h.p.volume_estimate)} searches/mo` : 'Your question'}</span></div>
+                <div key={h.text}><div><b>{h.text}</b><span>{h.p && h.p.intent && INTENTS[h.p.intent] ? `${h.p.intent}${h.p.volume_estimate ? ` · ${num(h.p.volume_estimate)} searches/mo` : ''}` : 'Your question'}</span></div>
                   <button type="button" onClick={() => { restorePrompt(h.text); if (hidden.length <= 1) setHiddenPop(false); }}>Restore</button></div>
               ))}
             </div>
