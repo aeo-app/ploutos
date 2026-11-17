@@ -285,8 +285,24 @@ export function SignupPage() {
 
       <p className={s.terms}>
         By creating an account you agree to our{' '}
-        <span className={s.termsLink}>Terms of Service</span> and{' '}
-        <span className={s.termsLink}>Privacy Policy</span>.
+        {/* <span className={s.termsLink}>Terms of Service</span>  */}
+        <a
+          className={s.termsLink}
+          href="/terms/terms-of-service.html"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Terms of Service
+        </a>
+        {' '} and{' '}
+        <a
+          className={s.termsLink}
+          href="/privacy/privacy-policy.html"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Privacy Policy
+        </a>.
       </p>
     </AuthLayout>
   );

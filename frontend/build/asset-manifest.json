@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/static/css/main.a61e05d4.css",
-    "main.js": "/static/js/main.d61b8caa.js",
+    "main.js": "/static/js/main.77fd1d86.js",
     "static/media/aeo-icon.png": "/static/media/aeo-icon.c77254d0c8ce1182e97d.png",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
     "static/media/chatgpt_vs_claude_brand_citations_blog_post.md": "/static/media/chatgpt_vs_claude_brand_citations_blog_post.3dcd5965b9b0a029a3ec.md",
@@ -20,10 +20,10 @@
     "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.e2ee09412b1cea253ceb.md",
     "index.html": "/index.html",
     "main.a61e05d4.css.map": "/static/css/main.a61e05d4.css.map",
-    "main.d61b8caa.js.map": "/static/js/main.d61b8caa.js.map"
+    "main.77fd1d86.js.map": "/static/js/main.77fd1d86.js.map"
   },
   "entrypoints": [
     "static/css/main.a61e05d4.css",
-    "static/js/main.d61b8caa.js"
+    "static/js/main.77fd1d86.js"
   ]
 }

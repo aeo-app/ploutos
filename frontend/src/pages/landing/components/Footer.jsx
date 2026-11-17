@@ -7,7 +7,14 @@ function FootCol({ title, links }) {
       <ul>
         {links.map((l) => (
           <li key={l.label}>
-            <a href={l.href} onClick={l.section ? (e) => scrollToSection(l.section, e) : undefined}>{l.label}</a>
+            <a
+              href={l.href}
+              target={l.openInNewTab ? '_blank' : undefined}
+              rel={l.openInNewTab ? 'noopener noreferrer' : undefined}
+              onClick={l.section ? (e) => scrollToSection(l.section, e) : undefined}
+            >
+              {l.label}
+            </a>
           </li>
         ))}
       </ul>
@@ -31,12 +38,12 @@ export default function Footer() {
           ]} />
           <FootCol title="Company" links={[
             { label: 'About', href: '#' },
-            { label: 'Blog', href: '/blog' },
+            { label: 'Blog', href: '/blog', openInNewTab: true },
             { label: 'Contact', href: '#cta', section: 'cta' },
           ]} />
           <FootCol title="Legal" links={[
-            { label: 'Privacy policy', href: '/privacy/privacy-policy.html' },
-            { label: 'Terms of service', href: '/privacy/privacy-policy.html' },
+            { label: 'Privacy policy', href: '/privacy/privacy-policy.html', openInNewTab: true },
+            { label: 'Terms of service', href: '/terms/terms-of-service.html', openInNewTab: true },
           ]} />
         </div>
         <p className="foot-bottom">© 2026 AEO APP PTE. LTD. All rights reserved.</p>
