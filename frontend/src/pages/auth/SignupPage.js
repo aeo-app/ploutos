@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { authApi, withTokenExpiry } from '../../api/authApi';
 import { PasswordRequirementsChecklist, isPasswordValid, firstUnmetPasswordRequirement } from './PasswordRequirements';
 import { PasswordInput } from './PasswordInput';
+import { CountrySearch } from './CountrySearch';
 import s from './Auth.module.css';
 
 function validate(name, email, password, confirmPassword, companyName, domain) {
@@ -20,13 +21,6 @@ function validate(name, email, password, confirmPassword, companyName, domain) {
   if (!domain.trim())                  return 'Your company domain/website is required';
   return null;
 }
-
-const COUNTRY_OPTIONS = [
-  ['SG', 'Singapore'], ['IN', 'India'], ['US', 'United States'], ['GB', 'United Kingdom'],
-  ['AU', 'Australia'], ['NZ', 'New Zealand'], ['CA', 'Canada'], ['AE', 'United Arab Emirates'],
-  ['MY', 'Malaysia'], ['ID', 'Indonesia'], ['PH', 'Philippines'], ['TH', 'Thailand'],
-  ['JP', 'Japan'], ['CN', 'China'], ['HK', 'Hong Kong'], ['CH', 'Switzerland'],
-];
 
 // Details typed into the landing page's "Start free audit" form.
 function readPrefill() {
@@ -187,18 +181,13 @@ export function SignupPage() {
             <label className={s.fieldLabel}>
               Country<span className={s.fieldRequired}>*</span>
             </label>
-            <select
-              autoComplete="country"
+            <CountrySearch
               value={country}
-              className={`${s.input} ${touched.country && !country ? s.inputError : ''}`}
-              onChange={e => setCountry(e.target.value)}
+              onChange={setCountry}
               onBlur={() => setTouched(p => ({ ...p, country: true }))}
+              invalid={touched.country && !country}
               disabled={loading}
-              aria-invalid={touched.country && !country}
-            >
-              <option value="">Select your country</option>
-              {COUNTRY_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-            </select>
+            />
             {touched.country && !country && <div className={s.fieldErr}>⚠ Country is required</div>}
           </div>
 
