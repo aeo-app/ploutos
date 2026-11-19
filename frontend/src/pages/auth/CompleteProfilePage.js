@@ -4,14 +4,8 @@ import { AuthLayout } from './AuthLayout';
 import { Button } from '../../components/ui/Button';
 import { authApi } from '../../api/authApi';
 import { useAuth } from '../../context/AuthContext';
+import { CountrySearch } from './CountrySearch';
 import s from './Auth.module.css';
-
-const COUNTRY_OPTIONS = [
-  ['SG', 'Singapore'], ['IN', 'India'], ['US', 'United States'], ['GB', 'United Kingdom'],
-  ['AU', 'Australia'], ['NZ', 'New Zealand'], ['CA', 'Canada'], ['AE', 'United Arab Emirates'],
-  ['MY', 'Malaysia'], ['ID', 'Indonesia'], ['PH', 'Philippines'], ['TH', 'Thailand'],
-  ['JP', 'Japan'], ['CN', 'China'], ['HK', 'Hong Kong'], ['CH', 'Switzerland'],
-];
 
 /**
  * Shown once for accounts that signed up before company_name/domain were
@@ -86,18 +80,13 @@ export function CompleteProfilePage({ profile, onComplete }) {
             <label className={s.fieldLabel}>
               Country<span className={s.fieldRequired}>*</span>
             </label>
-            <select
-              autoComplete="country"
+            <CountrySearch
               value={country}
-              className={`${s.input} ${countryErr ? s.inputError : ''}`}
-              onChange={e => setCountry(e.target.value)}
+              onChange={setCountry}
               onBlur={() => setTouched(p => ({ ...p, country: true }))}
+              invalid={!!countryErr}
               disabled={loading}
-              aria-invalid={!!countryErr}
-            >
-              <option value="">Select your country</option>
-              {COUNTRY_OPTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-            </select>
+            />
             {countryErr && <div className={s.fieldErr}>⚠ {countryErr}</div>}
           </div>
 

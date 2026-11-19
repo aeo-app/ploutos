@@ -6,7 +6,7 @@ import { Icon } from '../../aeo/Icon';
 import Logo from '../../assets/screens/aeo-icon.png';
 
 
-const NAV_ICON = { home: 'layout-dashboard', aeoPrompts: 'message-square-text', aeoCompetitors: 'users', aeoEngines: 'bot', da: 'gauge', insights: 'activity', profile: 'building-2', aeoStrategy: 'lightbulb', aeoBlogs: 'file-text', aeoCalendar: 'calendar-days', history: 'history', billing: 'credit-card' };
+const NAV_ICON = { home: 'layout-dashboard', aeoPrompts: 'message-square-text', aeoCompetitors: 'users', aeoEngines: 'bot', da: 'gauge', insights: 'activity', profile: 'building-2', aeoStrategy: 'lightbulb', aeoBlogs: 'file-text', aeoCalendar: 'calendar-days', billing: 'credit-card' };
 
 export function Sidebar({ open, onClose }) {
   const { state, setPage } = useApp();
@@ -35,7 +35,6 @@ export function Sidebar({ open, onClose }) {
       { id: 'aeoCalendar', label: 'Social Media Calendar' },
     ] },
     { section: 'Account', items: [
-      { id: 'history', label: 'History' },
       { id: 'billing', label: 'Billing & Plans' },
     ] },
   ];
