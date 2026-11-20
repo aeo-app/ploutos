@@ -558,7 +558,11 @@ async def get_invite_public_status(invite_token: str):
             "stage": "pick_page",
             "platform": invite["platform"],
             "requested_by_label": invite["requested_by_label"],
-            "available_pages": invite.get("available_pages", []),
+            # Only what the picker needs. The Page access tokens saved with the invite never leave the server.
+            "available_pages": [
+                {"id": p.get("id"), "label": p.get("label"), "instagram_linked": bool(p.get("ig_user_id"))}
+                for p in invite.get("available_pages", [])
+            ],
             "return_to_app": invite.get("return_to_app", False),
         }
     return {
@@ -637,7 +641,8 @@ async def select_invite_page(invite_token: str, req: SelectInvitePageRequest):
 
     update_page_invite(invite_token, status="approved", selected_page={"id": page["id"], "label": page["label"]})
     logger.info(f"[social-publish] invite {invite_token} approved: {invite['platform']} page {page['label']!r} connected to user {requester_id}")
-    return SelectInvitePageResponse(approved=True, selected_page_label=page["label"])
+    return SelectInvitePageResponse(approved=True, selected_page_label=page["label"],
+                                    instagram_connected=bool(invite["platform"] == "meta" and page.get("ig_user_id")))
 
 
 async def _handle_meta_invite_callback(invite_token: str, code: str):

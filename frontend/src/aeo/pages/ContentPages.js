@@ -668,7 +668,7 @@ function CalendarBlock({ t }) {
     };
   };
   const genImage = async (p, brief, quiet) => {
-    if (!p.reel && p.st.img && !acting) { if (!quiet) toast({ type: 'info', message: `This poster is already created. Your next generation will be available on ${nextDateText}.` }); return; }
+    if (!p.reel && p.st.img) { if (!quiet) toast({ type: 'info', message: 'This poster already has an image. Remove it first if you want a new one.' }); return; }
     if (needBrand()) return;
     setWorking(w => ({ ...w, [p.k]: 'ai' }));
     try {
@@ -921,7 +921,7 @@ function CalendarBlock({ t }) {
                 </> : <>
                 <span className="ae-eyebrow" style={{ letterSpacing: '.06em' }}>Image</span>
                 <button className="ae-btn sm" style={{ fontWeight: 700 }} onClick={() => setOpenVis(o => ({ ...o, [p.k]: !o[p.k] }))}>{openVis[p.k] ? 'Hide suggestion' : '💡 Content suggestion'}</button>
-                <button className="ae-btn sm" style={{ fontWeight: 700, ...(p.st.img ? {} : { borderColor: '#4f46e5', background: '#eef0ff', color: '#3730a3' }) }} disabled={!!w || (!!p.st.img && !acting)} title={p.st.img && !acting ? `Next poster generation: ${nextDateText}` : undefined} onClick={() => genImage(p)}>{w === 'ai' ? 'Generating…' : p.st.img ? (acting ? 'Regenerate AI image' : 'Poster created') : 'Generate AI image'}</button>
+                <button className="ae-btn sm" style={{ fontWeight: 700, ...(p.st.img ? {} : { borderColor: '#4f46e5', background: '#eef0ff', color: '#3730a3' }) }} disabled={!!w || !!p.st.img} title={p.st.img ? 'This poster already has an image' : undefined} data-testid="gen-image" onClick={() => genImage(p)}>{w === 'ai' ? 'Generating…' : 'Generate Image'}</button>
                 <label className="ae-btn sm" style={{ fontWeight: 700, cursor: 'pointer' }}>{w === 'up' ? 'Uploading…' : 'Upload your own'}<input type="file" accept="image/*" style={{ display: 'none' }} disabled={!!w} onChange={e => { upload(p, e.target.files && e.target.files[0]); e.target.value = ''; }} /></label>
                 {p.st.img && <button className="ae-btn sm" style={{ fontWeight: 700 }} disabled={w === 'dl'} onClick={() => downloadPostImage(p)}>{w === 'dl' ? 'Preparing…' : '⬇ Download'}</button>}
                 {p.st.img && <button className="ae-linkbtn" onClick={() => setPostState(p.k, { img: '' })}>Remove image</button>}

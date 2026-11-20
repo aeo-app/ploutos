@@ -443,6 +443,27 @@ def keywords_suggest(req: KeywordSuggestRequest, user_id: str = Depends(get_curr
     return {"keywords": kws}
 
 
+@router.post("/keywords/site", summary="The keywords taken from the customer's own website (saved after the first read)")
+def keywords_from_site(req: KeywordSuggestRequest, user_id: str = Depends(get_current_user_id)):
+    """Shown on the Keywords page. Read once from the website and saved, so opening the page again is instant and free.
+    Any account can read them; someone whose plan has lapsed can open saved keywords but not start a new read."""
+    _enforce_domain(user_id, req.url, req.company_name)
+    key = normalize_domain(req.url) or "site"
+    saved = get_aeo_content(user_id, "sitekw", key)
+    if saved and saved.get("keywords"):
+        return {"keywords": saved["keywords"], "checked_at": saved.get("checked_at", ""), "cached": True}
+    raise_if_lapsed(user_id)
+    kws = suggest_site_keywords(req.company_name, req.url, req.market, req.industry, n=20, usage_tracker=TokenUsageTracker())
+    if not kws:
+        raise HTTPException(status_code=502, detail="We could not read enough from your website yet. Please try again in a few minutes.")
+    checked = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    try:
+        save_aeo_content(user_id, "sitekw", key, {"keywords": kws, "checked_at": checked})
+    except Exception as e:  # noqa: BLE001 — still show them
+        logger.error(f"[aeo] saving site keywords failed: {e}", exc_info=True)
+    return {"keywords": kws, "checked_at": checked, "cached": False}
+
+
 # ── Brand kit: logo + contact details printed on every generated image / Short ────────────────
 def _brand_view(user_id: str) -> dict:
     b = brand_svc.get_brand(user_id)

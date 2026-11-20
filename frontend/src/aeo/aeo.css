@@ -392,3 +392,9 @@
 
 .ae-blog > .ae-col { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 640px) { .ae-blog { flex-wrap: wrap; } }
+
+/* Keywords page */
+.kw-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 14px; }
+.kw-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--ae-line2); border-radius: 10px; background: #fff; }
+.kw-n { width: 24px; height: 24px; border-radius: 50%; background: #eef0ff; color: #3730a3; font-size: 12px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.kw-t { font-weight: 600; font-size: 14px; word-break: break-word; }

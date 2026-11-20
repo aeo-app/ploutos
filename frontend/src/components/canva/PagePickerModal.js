@@ -33,7 +33,7 @@ export function PagePickerModal({ inviteToken, onDone }) {
     setError(null);
     try {
       const result = await invitesApi.selectPage(inviteToken, pageId);
-      onDone?.({ success: true, label: result.selected_page_label });
+      onDone?.({ success: true, label: result.selected_page_label, instagram: !!result.instagram_connected, meta: data?.platform === 'meta' });
     } catch (e) {
       setError(e.message || 'Could not connect that page.');
       setSelecting(null);
@@ -66,7 +66,7 @@ export function PagePickerModal({ inviteToken, onDone }) {
                   onClick={() => handleSelect(p.id)}
                   disabled={selecting !== null}
                 >
-                  <span>{p.label}</span>
+                  <span>{p.label}{data.platform === 'meta' && <small style={{ display: 'block', fontWeight: 500, color: p.instagram_linked ? '#047857' : '#92400e' }}>{p.instagram_linked ? 'Instagram account linked' : 'No Instagram account linked to this Page'}</small>}</span>
                   <span className={s.pageOptionAction}>{selecting === p.id ? 'Connecting…' : 'Connect this one →'}</span>
                 </button>
               ))}

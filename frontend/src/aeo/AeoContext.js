@@ -357,12 +357,18 @@ export function AeoProvider({ children }) {
     return d?.keywords || [];
   };
 
+  // The keywords read from the customer's own website (saved on the server after the first read).
+  const siteKeywords = async () => {
+    const r = state.request;
+    return withTokenExpiry(aeoApi.siteKeywords({ company_name: r.company_name, url: r.url, market: r.market || 'Global', industry: r.industry || 'General' }), { goScreen, logout });
+  };
+
   const value = useMemo(() => ({
     loadPage, loadSavedPages,
     quota, analysis, rawAnalysis, restorePrompt, setCompanyPhotos, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, setSelectedPrompts, runAnalysis,
     loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
-    brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords,
+    brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords, siteKeywords,
     // eslint-disable-next-line
   }), [analysis, rawAnalysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);
 

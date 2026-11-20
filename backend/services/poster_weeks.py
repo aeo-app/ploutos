@@ -127,6 +127,8 @@ def _check(user_id: str, day_date: str, acting: bool, field: str, limit_idx: int
     iso = day.isoformat() if day else ""
     nxt = week_start(user_id, week) + timedelta(days=7)
     if iso and iso in made:
+        if field == "dates":
+            return      # this day's poster slot is already paid for: an empty poster (another platform, or an image the customer removed) can still get its image
         raise HTTPException(status_code=409, detail=f"This {noun} is already created for this week. Your next generation will be available on {_fmt(nxt)}.")
     if len(made) >= limit:
         raise HTTPException(status_code=409, detail=f"Your plan includes {limit} {noun}s a week and they are all created. Your next generation will be available on {_fmt(nxt)}.")

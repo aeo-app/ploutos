@@ -1,7 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from './context/AppContext';
-import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage } from './aeo/pages/AnalyticsPages';
+import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage, KeywordsAeoPage } from './aeo/pages/AnalyticsPages';
 import { DomainAuthorityAeoPage, CompanyAeoPage } from './aeo/pages/DomainCompanyPages';
 import { StrategyAeoPage, BlogsAeoPage, CalendarAeoPage } from './aeo/pages/ContentPages';
 import { InsightsPage } from './aeo/pages/InsightsPage';
@@ -17,6 +17,7 @@ export const APP_PAGES = {
   // AEO dashboard
   home:           DashboardPage,
   aeoPrompts:     PromptsPage,
+  aeoKeywords:    KeywordsAeoPage,
   aeoCompetitors: CompetitorsAeoPage,
   aeoEngines:     EnginesPage,
   da:             DomainAuthorityAeoPage,

@@ -98,6 +98,7 @@ export const aeoApi = {
   logoFromSite:(image_url) => call("POST", "/brand/logo-from-site", { image_url }),
   // Calendar keywords
   suggestKeywords: (req) => call("POST", "/keywords/suggest", req),
+  siteKeywords: (req) => call("POST", "/keywords/site", req),
   // YouTube Shorts (vertical video): generate in the background, or upload your own
   startShort:  (req) => call("POST", "/short-video", req),
   shortStatus: (id) => call("GET", `/short-video/${encodeURIComponent(id)}`),

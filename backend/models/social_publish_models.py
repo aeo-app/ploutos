@@ -189,3 +189,4 @@ class SelectInvitePageRequest(BaseModel):
 class SelectInvitePageResponse(BaseModel):
     approved: bool
     selected_page_label: str
+    instagram_connected: bool = False

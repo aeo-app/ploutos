@@ -237,7 +237,7 @@ export function AppShell({ children, profile, onEnterAdminView }) {
           onDone={(result) => {
             setPagePickerToken(null);
             if (result?.success) {
-              toast({ type: 'success', message: `✓ Connected — ${result.label}` });
+              toast({ type: 'success', message: `✓ Connected — ${result.label}${result.meta ? (result.instagram ? ' (Facebook + Instagram)' : ' (Facebook only: no Instagram account is linked to this Page)') : ''}` });
               window.location.reload();
             }
           }}

@@ -48,7 +48,9 @@ AUTHORIZE_URL = f"https://www.facebook.com/{GRAPH_VERSION}/dialog/oauth"
 # instagram_content_publish: read/publish to the linked Instagram account.
 # SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish"
 # SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management,instagram_basic,instagram_content_publish"
-SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management"
+# Instagram scopes are approved for the app now. They only add the Instagram permission to the same consent screen:
+# the Facebook Page connection below is unchanged and is saved exactly as before.
+SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts,business_management,instagram_basic,instagram_content_publish"
 
 REQUEST_TIMEOUT = int(os.getenv("SOCIAL_PUBLISH_TIMEOUT_SECONDS", "20"))
 POLL_INTERVAL_SECONDS = 2
