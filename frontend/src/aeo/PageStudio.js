@@ -8,11 +8,11 @@ import { ScaledFrame, StylePicker } from './PageUi';
 import { PageReader } from './PageReader';
 
 const THEME_KEY = 'aeo_page_theme';
-const loadTheme = () => { try { const t = JSON.parse(localStorage.getItem(THEME_KEY) || 'null'); return t && typeof t === 'object' ? t : null; } catch (e) { return null; } };
-const saveTheme = (t) => { try { localStorage.setItem(THEME_KEY, JSON.stringify(t)); } catch (e) { /* private mode etc. — the choice just is not remembered */ } };
+export const loadTheme = () => { try { const t = JSON.parse(localStorage.getItem(THEME_KEY) || 'null'); return t && typeof t === 'object' ? t : null; } catch (e) { return null; } };
+export const saveTheme = (t) => { try { localStorage.setItem(THEME_KEY, JSON.stringify(t)); } catch (e) { /* private mode etc. — the choice just is not remembered */ } };
 
 /** What we can read from the customer's own website: brand colours and fonts. Asked for once per website. */
-function useSiteStyle(url, company, onFound) {
+export function useSiteStyle(url, company, onFound) {
   const [site, setSite] = useState({ loading: true });
   useEffect(() => {
     let off = false;
@@ -27,7 +27,7 @@ function useSiteStyle(url, company, onFound) {
 }
 
 /** Full-size look at one design with sample text, so the customer can judge it before choosing. */
-function DesignPreview({ tpl, html, onUse, onClose }) {
+export function DesignPreview({ tpl, html, onUse, onClose }) {
   const [device, setDevice] = useState('desktop');
   return (
     <div className="ae-reader-bg" onClick={onClose}>

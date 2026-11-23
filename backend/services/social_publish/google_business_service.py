@@ -106,6 +106,20 @@ def refresh_access_token(refresh_token: str) -> dict:
     return resp.json()
 
 
+GBP_ACCESS_HELP = (
+    "Google has not given this app access to the Business Profile API yet (its request quota is 0). "
+    "Connecting Google Business will work once Google approves the app's access. Nothing is wrong with your Google account."
+)
+
+
+def _fail(what: str, resp) -> "GoogleBusinessError":
+    """A readable error. A 429 on the Business Profile APIs almost always means the Google Cloud project has no API access yet."""
+    logger.error(f"[gbp] {what} -> {resp.status_code}: {resp.text[:800]}")
+    if resp.status_code == 429:
+        return GoogleBusinessError(GBP_ACCESS_HELP, 429)
+    return GoogleBusinessError(f"Google {what} failed: {resp.status_code} {resp.text}", resp.status_code)
+
+
 def list_accounts(access_token: str) -> list[dict]:
     resp = requests.get(
         f"{ACCOUNT_MGMT_BASE}/accounts",
@@ -113,7 +127,7 @@ def list_accounts(access_token: str) -> list[dict]:
         timeout=REQUEST_TIMEOUT,
     )
     if not resp.ok:
-        raise GoogleBusinessError(f"Google accounts list failed: {resp.status_code} {resp.text}", resp.status_code)
+        raise _fail("accounts list", resp)
     return resp.json().get("accounts", [])
 
 
@@ -126,7 +140,7 @@ def list_locations(access_token: str, account_name: str) -> list[dict]:
         timeout=REQUEST_TIMEOUT,
     )
     if not resp.ok:
-        raise GoogleBusinessError(f"Google locations list failed: {resp.status_code} {resp.text}", resp.status_code)
+        raise _fail("locations list", resp)
     return resp.json().get("locations", [])
 
 
@@ -151,7 +165,7 @@ def create_local_post(
         json=body, headers={"Authorization": f"Bearer {access_token}"}, timeout=REQUEST_TIMEOUT,
     )
     if not resp.ok:
-        raise GoogleBusinessError(f"Google local post creation failed: {resp.status_code} {resp.text}", resp.status_code)
+        raise _fail("local post creation", resp)
     data = resp.json()
     name = data.get("name")
     if not name:

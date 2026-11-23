@@ -15,6 +15,7 @@ const META = {
   da:             ['Domain Authority', 'Gap analysis and backlink roadmap'],
   insights:       ['Insights', 'Real measurements of your website, from Google'],
   profile:        ['Company Profile', 'Your website and business details, as AI engines should see them'],
+  aeoSeo:         ['SEO Strategy', 'Rank higher on Google for a keyword'],
   aeoStrategy:    ['Content Strategy', 'Strategy, blogs and social posts for your selected prompts'],
   aeoBlogs:       ['Blog Topics', 'Blogs written to win your selected prompts'],
   aeoCalendar:    ['Social Media Calendar', 'A month of posters and reels for every channel, week by week'],

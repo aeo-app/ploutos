@@ -53,6 +53,10 @@ from models.aeo_models import (
     AeoSocialPost,
     AeoSocialRequest,
     AeoSocialResponse,
+    AeoSeoContentRequest,
+    AeoSeoContentResponse,
+    AeoSeoStrategyRequest,
+    AeoSeoStrategyResponse,
     AeoStrategyRequest,
     AeoStrategyResponse,
     SiteCheck,
@@ -64,6 +68,7 @@ from services.ai_checks.backlinks import link_opportunities, site_strength
 from services.ai_checks.reader import name_key
 from services.ai_checks.runner import answers_doc, run_checks, summarize
 from services.ai_checks.search_volume import clean_keyword, monthly_searches
+from services import seo_data_service
 from services.bedrock_service import TokenUsageTracker, _converse, _parse_json
 
 logger = logging.getLogger(__name__)
@@ -1085,3 +1090,231 @@ def run_site_checks(url: str) -> SiteChecksResponse:
     checks.append(SiteCheck(key="speed", label="Homepage response", value=f"{elapsed:.1f}s",
                             status="good" if elapsed < 2.5 else "warn" if elapsed < 4.5 else "bad"))
     return SiteChecksResponse(url=root, checks=checks)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Google SEO strategy + keyword-focused content for a keyword the customer selected.
+# Separate from the AI-answer strategy and blog prompts above, which are unchanged.
+# ═════════════════════════════════════════════════════════════════════════════
+_SEO_SYSTEM = """You are a senior SEO content strategist. You help a business rank higher on Google for the exact keywords it
+chose, and bring in organic traffic from people who are ready to buy or enquire. You think in search intent: what the person
+typing the keyword wants to find, and which page type Google rewards for it. You are practical and specific to the business.
+You never promise a ranking, never invent statistics, prices, awards, client names, quotes or reviews, and you only describe
+services and places the business's own website supports. Return only valid JSON when asked for JSON."""
+
+_SEO_INTENTS = ("informational", "commercial", "transactional", "local")
+
+
+def _seo_clean_list(v, limit: int, maxlen: int = 160) -> list[str]:
+    out, seen = [], set()
+    for x in v or []:
+        t = re.sub(r"\s+", " ", str(x or "")).strip()[:maxlen]
+        if len(t) >= 3 and t.lower() not in seen:
+            seen.add(t.lower())
+            out.append(t)
+    return out[:limit]
+
+
+def generate_seo_keyword_strategy(
+    req: AeoSeoStrategyRequest, usage_tracker: TokenUsageTracker | None = None, limited: bool = False,
+    market_data: dict | None = None,
+) -> AeoSeoStrategyResponse:
+    scope = ("\nFREE PREVIEW: return only 1 content idea, 2 plan entries (WEEK 1, WEEK 2) and keep every list short.\n" if limited else "")
+    prompt = f"""
+Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
+{_site_block(req.url, req.company_name)}
+Selected keyword: "{req.keyword}"
+{seo_data_service.prompt_block(market_data or {}, req.keyword)}
+
+Write the plan that helps {req.company_name}'s website rank higher on Google when people search "{req.keyword}", and turns
+that traffic into enquiries. Base everything on what the website really offers and where it operates.
+{scope}
+Return ONE JSON object with EXACTLY these keys:
+{{
+  "intent": "one of {json.dumps(list(_SEO_INTENTS))} — the main intent behind this keyword",
+  "intent_note": "1-2 sentences: what the searcher wants and what kind of page Google shows for it",
+  "topics": ["6-8 subtopics a page about this keyword must cover to be complete"],
+  "related_searches": ["8-10 long-tail searches and questions people also ask, each a real phrasing a customer would type"],
+  "content": [
+    {{"format": "one of {json.dumps(list(_SEO_FORMATS))}",
+      "title": "specific page or article title a searcher would click",
+      "target_query": "the exact search this piece should win",
+      "intent": "one of {json.dumps(list(_SEO_INTENTS))}",
+      "why": "one sentence on why this piece helps the keyword rank",
+      "outline": ["5-7 H2 headings, in order"],
+      "meta_title": "under 60 characters, keyword near the start",
+      "meta_description": "under 155 characters, benefit-led, ends with a reason to click",
+      "slug": "short-url-slug-with-hyphens"}}
+  ],   // 5 ideas that serve DIFFERENT search intents or long-tail queries; the first is the main page for the keyword itself
+  "on_page": ["6-8 concrete on-page tasks for the main page: title, H1, headings, internal links, schema, speed, local signals..."],
+  "plan": [ {{"week": "WEEK 1", "task": "concrete action"}} ]   // exactly 4 entries, WEEK 1..WEEK 4, in the order to publish
+}}
+Rules: keep the exact keyword in the first idea's title and meta title, and use natural variations elsewhere (no keyword stuffing).
+Each idea must differ in format and angle. Never state a statistic, price, ranking promise, client name or review. No placeholders
+or brackets."""
+    raw = _converse(_SEO_SYSTEM, prompt, max_tokens=2200 if limited else 4500, usage_tracker=usage_tracker)
+    d = _strip_placeholders(_parse_json(raw))
+    intent = str(d.get("intent", "")).strip().lower()
+    intent = intent if intent in _SEO_INTENTS else "informational"
+    content, seen = [], set()
+    for c in (d.get("content") or []):
+        if not isinstance(c, dict):
+            continue
+        title = str(c.get("title", "")).strip()
+        if not title or title.lower() in seen:
+            continue
+        seen.add(title.lower())
+        slug = _slugify(c.get("slug") or title)
+        ci = str(c.get("intent", "")).strip().lower()
+        content.append({
+            "format": str(c.get("format", "")).strip()[:40] or "Guide", "title": title[:200],
+            "target_query": str(c.get("target_query", "")).strip()[:200], "intent": ci if ci in _SEO_INTENTS else intent,
+            "why": str(c.get("why", "")).strip()[:300], "outline": _seo_clean_list(c.get("outline"), 8),
+            "meta_title": str(c.get("meta_title", "")).strip()[:70], "meta_description": str(c.get("meta_description", "")).strip()[:170],
+            "slug": slug, "link": f"{_site_root(req.url)}/{slug}",
+        })
+    content = content[:6]
+    plan = [{"week": str(p.get("week", f"WEEK {i + 1}")), "task": str(p.get("task", ""))}
+            for i, p in enumerate(d.get("plan") or []) if isinstance(p, dict)][:4]
+    if not (content and plan):
+        raise RuntimeError("The SEO strategy response was missing sections — please try again.")
+    topics, related, on_page = _seo_clean_list(d.get("topics"), 8), _seo_clean_list(d.get("related_searches"), 10), _seo_clean_list(d.get("on_page"), 8, 220)
+    if limited:
+        content, plan, topics, related, on_page = content[:1], plan[:2], topics[:4], related[:4], on_page[:3]
+    md = dict(market_data or {})
+    if limited and md:
+        md["related"], md["serp"] = (md.get("related") or [])[:3], (md.get("serp") or [])[:5]
+    # Real related searches (with their monthly searches) lead the list; the model's own ideas fill the rest.
+    real = [r["keyword"] for r in (md.get("related") or [])]
+    related = _seo_clean_list(real + related, 4 if limited else 10)
+    return AeoSeoStrategyResponse(keyword=req.keyword, intent=intent, intent_note=str(d.get("intent_note", "")).strip(), topics=topics,
+                                  related_searches=related, content=content, on_page=on_page, plan=plan, market_data=md, limited=limited)
+
+
+_SEO_FORMATS = ("Service page", "Guide", "FAQ page", "Comparison", "Local page", "Checklist", "Case study outline")
+
+
+def generate_seo_content(req: AeoSeoContentRequest, usage_tracker: TokenUsageTracker | None = None) -> AeoSeoContentResponse:
+    outline = "\n".join(f"- {h}" for h in req.outline) or "(choose the headings that fully answer the search)"
+    prompt = f"""
+Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
+{_site_block(req.url, req.company_name)}
+Target keyword: "{req.keyword}"
+Search to win: "{req.target_query or req.keyword}"   Search intent: {req.intent or "match the keyword"}
+Format: {req.format}
+Title: "{req.title}"
+Planned headings:
+{outline}
+
+Write the COMPLETE page, ready to publish, that can rank on Google for the keyword and satisfy the person searching it. It is
+written by {req.company_name} for its customers, in a clear, helpful, expert voice. Open with the direct answer, then cover the
+topic fully under the headings, use the exact keyword in the opening paragraph and in one heading and natural variations elsewhere
+(never stuffed), and finish with a short closing section that tells the reader how to take the next step with {req.company_name}.
+Return ONE JSON object with EXACTLY these keys:
+{{
+  "meta_title": "under 60 characters, keyword near the start",
+  "meta_description": "under 155 characters, benefit-led",
+  "slug": "short-url-slug-with-hyphens",
+  "intro": "opening paragraph: the direct answer first, 3-5 sentences",
+  "sections": [ {{"h": "H2 heading", "p": "section body, plain text paragraphs separated by \\n\\n (each section 120-220 words)"}} ],   // 5 to 7 sections; the last is the conclusion with a clear call to action
+  "faq": [ {{"q": "a question people search", "a": "a direct 2-3 sentence answer"}} ]   // 4 to 5 questions
+}}
+Rules: plain text only (no markdown). Everything must be finished prose: no placeholders, no brackets, no "insert", "add your" or
+"TBD". Do NOT invent client names, quotes, prices, statistics, awards or review counts; explain the point in words instead. Only
+describe services, locations and approach that the website supports."""
+    raw = _converse(_SEO_SYSTEM, prompt, max_tokens=7000, usage_tracker=usage_tracker)
+    d = _strip_placeholders(_parse_json(raw))
+    sections = [{"h": str(x.get("h", "")), "p": str(x.get("p", ""))} for x in (d.get("sections") or []) if isinstance(x, dict) and x.get("h")]
+    if not sections or not str(d.get("intro", "")).strip():
+        raise RuntimeError("The page came back incomplete — please try again.")
+    faq = [{"q": str(x.get("q", "")).strip(), "a": str(x.get("a", "")).strip()} for x in (d.get("faq") or [])
+           if isinstance(x, dict) and str(x.get("q", "")).strip() and str(x.get("a", "")).strip()][:6]
+    slug = _slugify(d.get("slug") or req.title)
+    return AeoSeoContentResponse(keyword=req.keyword, title=req.title, format=req.format, meta_title=str(d.get("meta_title", "")).strip()[:70],
+                                 meta_description=str(d.get("meta_description", "")).strip()[:170], slug=slug,
+                                 intro=str(d.get("intro", "")), sections=sections, faq=faq)
+
+
+# SEO idea format -> the website page design it is written in (the designs are the Content Strategy ones).
+_SEO_FORMAT_TEMPLATE = {"service page": "service", "guide": "guide", "faq page": "faq", "comparison": "comparison",
+                        "local page": "location", "checklist": "how_to", "case study outline": "guide"}
+
+
+def seo_page_template(template: str, fmt: str) -> str:
+    return resolve_template(template) or _SEO_FORMAT_TEMPLATE.get(str(fmt or "").strip().lower(), "guide")
+
+
+def seo_page_cache_key(keyword: str, template: str, title: str) -> str:
+    return f"{keyword.strip().lower()}|{template.upper()}|{_slugify(title, 50)}"
+
+
+def generate_seo_page_asset(req, usage_tracker: TokenUsageTracker | None = None):
+    """Writes one keyword-focused SEO page as the content of a designed page. The frontend turns it into HTML,
+    in the customer's colours, fonts and logo, exactly like a Content Strategy page."""
+    from models.aeo_models import AeoPillarAsset, PageCta, PillarFaq, PillarTable
+    from models.aeo_models import BlogSection as _BS
+    tid = seo_page_template(req.template, req.format)
+    tpl = PAGE_TEMPLATES[tid]
+    brief = tpl["brief"].replace("{company}", req.company_name)
+    outline = "\n".join(f"- {h}" for h in req.outline) or "(choose the headings that fully answer the search)"
+    prompt = f"""
+Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
+{_site_block(req.url, req.company_name)}
+Target Google keyword: "{req.keyword}"
+Search to win: "{req.target_query or req.keyword}"   Search intent: {req.intent or "match the keyword"}
+Page to write: a "{tpl['name']}" titled "{req.title}".
+Planned headings (cover them, using the template's sections):
+{outline}
+
+TEMPLATE: {brief}
+
+This page must rank on Google for the keyword and satisfy the person searching it. Open with the direct answer. Use the exact keyword in the
+intro and in one heading, and natural variations elsewhere (never stuffed). Use only what the website content above supports about {req.company_name}.
+Do NOT invent client names, quotes, prices, statistics, awards, review counts, phone numbers, emails or addresses. If a figure or detail is not in the
+website content, leave it out of the sentence completely: NEVER write square-bracket placeholders. The company logo and contact details are added to
+the page automatically, so do not write them out. Write for the customer, in plain words, no jargon.
+Return ONE JSON object with EXACTLY these keys (use [] or null for any the template does not use):
+{{
+  "slug": "short-url-slug-with-hyphens",
+  "page_title": "SEO title under 60 characters, keyword near the start",
+  "meta_description": "under 155 characters, benefit-led",
+  "where": "one sentence: where on the website this page should live",
+  "link_from": ["3 to 4 specific existing pages or menu spots to link to it from"],
+  "eyebrow": "short label above the headline, at most 4 words",
+  "headline": "the page's main heading, under 70 characters, includes the keyword naturally",
+  "intro": "1 to 2 sentences that answer the search directly, under 280 characters",
+  "highlights": [ {{"title": "at most 6 words", "text": "one sentence"}} ],
+  "steps": [ {{"title": "a clear action, at most 8 words", "text": "1 to 2 sentences"}} ],
+  "sections": [ {{"h": "heading", "p": "body, plain text, paragraphs separated by \\n\\n"}} ],
+  "areas": ["place"],
+  "table": {{"headers": ["..."], "rows": [["..."]]}},
+  "faqs": [ {{"q": "question people search", "a": "direct answer"}} ],
+  "cta": {{"headline": "closing call to action, under 60 characters", "text": "one sentence", "button": "button label, at most 4 words"}},
+  "checklist": ["4 to 6 short facts in this page worth double-checking against the real business before publishing"]
+}}
+Plain text only, no markdown."""
+    d = _strip_placeholders(_parse_json(_converse(_SEO_SYSTEM, prompt, max_tokens=7000, usage_tracker=usage_tracker)))
+    slug = _slugify(d.get("slug") or req.title)
+    sections = [_BS(h=str(x.get("h", ""))[:200], p=str(x.get("p", ""))) for x in (d.get("sections") or []) if isinstance(x, dict) and x.get("h")][:12]
+    faqs = [PillarFaq(q=str(f.get("q", ""))[:300], a=str(f.get("a", ""))) for f in (d.get("faqs") or []) if isinstance(f, dict) and f.get("q") and f.get("a")][:14]
+    highlights, steps = _items(d.get("highlights"), 6), _items(d.get("steps"), 10)
+    t = d.get("table")
+    table = None
+    if tid == "comparison" and isinstance(t, dict) and t.get("headers") and t.get("rows"):
+        w = len(t["headers"])
+        table = PillarTable(headers=[str(h) for h in t["headers"]][:6],
+                            rows=[[str(c) for c in (r + [""] * w)[:w]] for r in t["rows"] if isinstance(r, list)][:12])
+    if not (sections or faqs or steps or highlights):
+        raise RuntimeError("The page came back empty \u2014 please try again.")
+    c = d.get("cta")
+    cta = PageCta(headline=str(c.get("headline", ""))[:120], text=str(c.get("text", ""))[:300], button=str(c.get("button", ""))[:40]) if isinstance(c, dict) else None
+    return AeoPillarAsset(
+        prompt=req.keyword, template=tid, template_name=tpl["name"], title=req.title, slug=slug,
+        link=f"{_site_root(req.url)}/{slug}" if slug else "",
+        page_title=str(d.get("page_title", req.title))[:80], meta_description=str(d.get("meta_description", ""))[:170],
+        where=str(d.get("where", ""))[:300], link_from=[str(x)[:200] for x in (d.get("link_from") or [])][:5],
+        eyebrow=str(d.get("eyebrow", ""))[:40], headline=str(d.get("headline", "") or req.title)[:140], intro=str(d.get("intro", "")),
+        highlights=highlights, steps=steps, sections=sections, faqs=faqs, table=table, cta=cta,
+        areas=[str(x)[:80] for x in (d.get("areas") or []) if str(x).strip()][:12],
+        checklist=[str(x)[:200] for x in (d.get("checklist") or [])][:8],
+    )

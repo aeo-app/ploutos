@@ -57,6 +57,11 @@ from models.aeo_models import (
     AeoState,
     AeoStatePatch,
     AeoStrategyRequest,
+    AeoSeoContentRequest,
+    AeoSeoPageRequest,
+    AeoSeoContentResponse,
+    AeoSeoStrategyRequest,
+    AeoSeoStrategyResponse,
     AeoStrategyResponse,
     SiteChecksRequest,
     SiteChecksResponse,
@@ -67,11 +72,14 @@ from services.aeo_service import (
     generate_aeo_social,
     social_shape_ok,
     generate_aeo_strategy,
+    generate_seo_keyword_strategy,
+    generate_seo_content,
     normalise_social_link,
     run_site_checks,
 )
 from services.bedrock_service import TokenUsageTracker
 from services import brand_service as brand_svc
+from services import seo_data_service
 from services.aeo_service import _safe_get, clean_keywords, suggest_site_keywords
 from services.brand_overlay import normalise_logo, validate_logo
 from services.media_upload_service import MediaUploadError, signed_view_url, upload_image
@@ -249,6 +257,84 @@ def strategy(req: AeoStrategyRequest, user_id: str = Depends(get_current_user_id
     if len(result.blog_topics) > 2:
         result = result.model_copy(update={"blog_topics": list(result.blog_topics)[:2]})
     return _with_team_blogs(user_id, req.prompt, result)
+
+
+@router.post("/seo-strategy", response_model=AeoSeoStrategyResponse, summary="Google SEO strategy for one selected keyword")
+def seo_strategy(req: AeoSeoStrategyRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
+    """Search intent, topics, the content to publish and a 4-week plan to rank the website on Google for one keyword the
+    customer selected. Same access rules as the content strategy: a free account gets a short preview, paid gets everything,
+    and a lapsed account can open what it already has but cannot start a new one."""
+    _enforce_domain(user_id, req.url, req.company_name)
+    limited = not is_user_paid(user_id)
+    key = req.keyword.strip().lower()
+    if limited and not acting:
+        if req.refresh or not get_aeo_content(user_id, "seo", key + "|free"):
+            raise_if_lapsed(user_id)
+    return _cached_or_generate(
+        user_id, "seo", key + ("|free" if limited else ""), req.refresh, AeoSeoStrategyResponse,
+        lambda t: generate_seo_keyword_strategy(
+            req, usage_tracker=t, limited=limited,
+            # Real Google figures for this keyword (DataForSEO). Only fetched when a new strategy is made, never for a saved one.
+            market_data=seo_data_service.gather(req.keyword, req.market, req.url, related=not limited),
+        ),
+    )
+
+
+@router.get("/seo-strategy", summary="The saved Google SEO strategy for a keyword, if one was already made (never generates)")
+def seo_strategy_saved(keyword: str = Query(..., min_length=2, max_length=120), user_id: str = Depends(get_current_user_id)):
+    key = keyword.strip().lower()
+    for k in (key, key + "|free"):
+        saved = get_aeo_content(user_id, "seo", k)
+        if saved:
+            try:
+                return {"found": True, "data": AeoSeoStrategyResponse(**{**saved, "cached": True})}
+            except Exception:  # noqa: BLE001 — an older shape: treat as not made yet
+                break
+    return {"found": False}
+
+
+@router.post("/seo-content", response_model=AeoSeoContentResponse, summary="Write one keyword-focused page or article from the SEO strategy")
+def seo_content(req: AeoSeoContentRequest, user_id: str = Depends(get_current_user_id)):
+    _enforce_domain(user_id, req.url, req.company_name)
+    key = f"{req.keyword.strip().lower()}|{req.title.strip()}"
+    # Reading a page that was already written is free; writing a new one is a paid action (same as blog drafts).
+    if not get_aeo_content(user_id, "seocontent", key) and not is_user_paid(user_id):
+        raise payment_required(user_id, "Writing the full page is part of a paid plan.")
+    return _cached_or_generate(
+        user_id, "seocontent", key, req.refresh, AeoSeoContentResponse,
+        lambda t: generate_seo_content(req, usage_tracker=t),
+    )
+
+
+@router.post("/seo-page", summary="Write a keyword-focused SEO page as a designed website page")
+def seo_page(req: AeoSeoPageRequest, user_id: str = Depends(get_current_user_id)):
+    from services.aeo_service import generate_seo_page_asset, seo_page_template, seo_page_cache_key
+    _enforce_domain(user_id, req.url, req.company_name)
+    tid = seo_page_template(req.template, req.format)
+    key = seo_page_cache_key(req.keyword, tid, req.title)
+    # Reading a page that was already written is free; writing a new one is a paid action.
+    if not get_aeo_content(user_id, "seopage", key) and not is_user_paid(user_id):
+        raise payment_required(user_id, "Writing the full page is part of a paid plan.")
+    req = req.model_copy(update={"template": tid})
+    return _cached_or_generate(
+        user_id, "seopage", key, req.refresh, AeoPillarAsset,
+        lambda t: generate_seo_page_asset(req, usage_tracker=t),
+    )
+
+
+@router.get("/seo-pages", summary="Designed SEO pages already written for one keyword (so they are still there after a reload)")
+def seo_pages(keyword: str = Query(..., min_length=2, max_length=120), user_id: str = Depends(get_current_user_id)):
+    out = []
+    for c in list_aeo_content(user_id):
+        d = c.get("data") or {}
+        if c.get("kind") != "seopage" or str(d.get("prompt", "")).strip().lower() != keyword.strip().lower() or not d.get("template"):
+            continue
+        try:
+            out.append((c.get("updated_at", ""), AeoPillarAsset(**{**d, "cached": True})))
+        except Exception:
+            logger.warning(f"[aeo] skipped a saved SEO page for user={user_id} that no longer matches the schema")
+    out.sort(key=lambda x: x[0], reverse=True)
+    return {"pages": [a for _, a in out]}
 
 
 @router.post("/blog-draft", response_model=AeoBlogDraftResponse, summary="Draft one blog topic")

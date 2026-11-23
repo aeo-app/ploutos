@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from './context/AppContext';
+import { SeoStrategyPage } from './aeo/SeoStrategy';
 import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage, KeywordsAeoPage } from './aeo/pages/AnalyticsPages';
 import { DomainAuthorityAeoPage, CompanyAeoPage } from './aeo/pages/DomainCompanyPages';
 import { StrategyAeoPage, BlogsAeoPage, CalendarAeoPage } from './aeo/pages/ContentPages';
@@ -24,6 +25,7 @@ export const APP_PAGES = {
   insights:       InsightsPage,
   profile:        CompanyAeoPage,
   aeoStrategy:    StrategyAeoPage,
+  aeoSeo:         SeoStrategyPage,
   aeoBlogs:       BlogsAeoPage,
   aeoCalendar:    CalendarAeoPage,
   // Original tools, still reachable from "More tools"

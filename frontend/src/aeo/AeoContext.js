@@ -40,7 +40,7 @@ export function AeoProvider({ children }) {
   const [team, setTeam] = useState({ blogs: [], social: [], strategy: [] });   // what our team has written for this customer
   const [prev, setPrev] = useState(null);                 // the analysis before the latest one → KPI deltas
   const [lastRun, setLastRun] = useState(null);           // ISO timestamp of the latest analysis
-  const [content, setContent] = useState({ strategy: {}, blog: {}, social: {}, pillar: {} });
+  const [content, setContent] = useState({ strategy: {}, blog: {}, social: {}, pillar: {}, seo: {}, seocontent: {}, seopage: {} });
   const [busy, setBusy] = useState({});                   // "strategy|prompt" → true while generating
   const inflight = useRef(new Set());                 // de-dupes concurrent generations of the same asset
   const savedRef = useRef(saved);
@@ -202,7 +202,7 @@ export function AeoProvider({ children }) {
       if (kind === 'social' && data?.keywords?.length && (!data.cached || !(savedRef.current.calendar_keywords || []).length)) setSaved(s => ({ ...s, calendar_keywords: data.keywords }));
       return data;
     } catch (e) {
-      if (e.code === 'PaymentRequired') requirePayment(kind === 'strategy' || kind === 'pillar' ? 'aeoStrategy' : kind === 'blog' ? 'aeoBlog' : 'aeoSocial');
+      if (e.code === 'PaymentRequired') requirePayment(kind === 'strategy' || kind === 'pillar' || kind === 'seo' || kind === 'seopage' ? 'aeoStrategy' : kind === 'blog' || kind === 'seocontent' ? 'aeoBlog' : 'aeoSocial');
       else if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message });
       return null;
     } finally {
@@ -211,6 +211,30 @@ export function AeoProvider({ children }) {
     }
   }, [state.request, goScreen, logout, toast, requirePayment]);
 
+  // Google SEO strategy for one selected keyword, and the keyword-focused page written from it.
+  const loadSeoStrategy = (keyword, refresh) => generate('seo', keyword, { keyword }, aeoApi.seoStrategy, refresh);
+  const loadSeoContent = (keyword, idea) => generate('seocontent', `${keyword}|${idea.title}`, {
+    keyword, title: idea.title, format: idea.format || 'Guide', target_query: idea.target_query || '', intent: idea.intent || '', outline: idea.outline || [],
+  }, aeoApi.seoContent);
+  /** One SEO idea written as a designed website page (same designs as Content Strategy). Saved pages come back without a charge. */
+  const loadSeoPage = (keyword, idea, template, refresh) => generate('seopage', pageKey(keyword.trim().toLowerCase(), template, idea.title), {
+    keyword, template, title: idea.title, format: idea.format || '', target_query: idea.target_query || '', intent: idea.intent || '', outline: idea.outline || [],
+  }, aeoApi.seoPage, refresh);
+  const loadSavedSeoPages = useCallback(async (keyword) => {
+    try {
+      const r = await withTokenExpiry(aeoApi.seoPages(keyword), { goScreen, logout });
+      const pages = r?.pages || [];
+      setContent(c => ({ ...c, seopage: { ...pages.reduce((m, a) => ({ ...m, [pageKey(a.prompt.trim().toLowerCase(), a.template, a.title)]: a }), {}), ...c.seopage } }));
+    } catch (e) { /* a convenience list; a failure should not interrupt the page */ }
+  }, [goScreen, logout]);
+  /** Shows a strategy that was already made (after a reload) without generating anything. */
+  const peekSeoStrategy = async (keyword) => {
+    try {
+      const r = await withTokenExpiry(aeoApi.seoStrategySaved(keyword), { goScreen, logout });
+      if (r?.found && r.data) setContent(c => ({ ...c, seo: { ...c.seo, [keyword]: r.data } }));
+      return !!r?.found;
+    } catch (_) { return false; }
+  };
   const loadStrategy = (prompt, refresh) => generate('strategy', prompt, { prompt }, aeoApi.strategy, refresh);
   // Month 1 is stored under the prompt itself (so our team's edits stay attached); later months under "<prompt>#m<n>".
   const socialKey = (prompt, cycle = 0) => (cycle ? `${prompt}#m${cycle}` : prompt);
@@ -364,10 +388,10 @@ export function AeoProvider({ children }) {
   };
 
   const value = useMemo(() => ({
-    loadPage, loadSavedPages,
+    loadPage, loadSavedPages, loadSeoPage, loadSavedSeoPages,
     quota, analysis, rawAnalysis, restorePrompt, setCompanyPhotos, prev, lastRun, saved, savedLoaded, team, content, busy, loading: !!state.loading.aeoPrompts,
     addPrompt, removePrompt, addCompetitor, removeCompetitor, togglePrompt, clearSelection, setSelectedPrompts, runAnalysis,
-    loadStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
+    loadStrategy, loadSeoStrategy, loadSeoContent, peekSeoStrategy, loadSocial, socialKey, loadBlogDraft, editBlog, addBlogTopic, removeBlogTopic, editPost, refreshTeamWork, linkSocial, unlinkSocial, setBlogState, setBlogStates, setPostState, setPostStates,
     brand, detecting, saveBrand, uploadLogo, detectBrand, adoptSiteLogo, setCalendarKeywords, setCalendarStart, suggestKeywords, siteKeywords,
     // eslint-disable-next-line
   }), [analysis, rawAnalysis, prev, lastRun, saved, savedLoaded, team, content, busy, brand, state.loading.aeoPrompts, runAnalysis, generate, patch]);

@@ -411,3 +411,79 @@ class SiteStyleResponse(BaseModel):
     email: str = ""
     address: str = ""
     socials: dict = Field(default_factory=dict)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Google SEO strategy for one keyword the customer selected (separate from the AI-answer strategy above)
+# ═════════════════════════════════════════════════════════════════════════════
+class AeoSeoStrategyRequest(AnalyseRequest):
+    keyword: str = Field(..., min_length=2, max_length=120)
+    refresh: bool = False
+
+
+class SeoContentIdea(BaseModel):
+    """One page or article to publish so the site can rank on Google for the keyword."""
+    format: str = ""                 # e.g. "Service page", "Guide", "FAQ page", "Comparison", "Local page"
+    title: str
+    target_query: str = ""           # the exact search this piece should win
+    intent: str = ""                 # informational | commercial | transactional | local
+    why: str = ""                    # one sentence: why this piece helps the keyword rank
+    outline: list[str] = Field(default_factory=list)   # the H2 headings
+    meta_title: str = ""
+    meta_description: str = ""
+    slug: str = ""
+    link: str = ""                   # full suggested address on the customer's own site
+
+
+class AeoSeoStrategyResponse(BaseModel):
+    keyword: str
+    intent: str                      # primary search intent for the keyword
+    intent_note: str = ""            # what the searcher wants, in one or two sentences
+    topics: list[str] = Field(default_factory=list)          # the subtopics Google expects the page to cover
+    related_searches: list[str] = Field(default_factory=list)  # long-tail searches and questions people also ask
+    content: list[SeoContentIdea]
+    on_page: list[str] = Field(default_factory=list)         # checklist for the page that targets the keyword itself
+    plan: list[StrategyStep]
+    market_data: dict = Field(default_factory=dict)   # real Google figures for the keyword (DataForSEO); {} when not available
+    cached: bool = False
+    limited: bool = False            # free preview
+
+
+class AeoSeoContentRequest(AnalyseRequest):
+    keyword: str = Field(..., min_length=2, max_length=120)
+    title: str = Field(..., min_length=3, max_length=300)
+    format: str = Field(default="Guide", max_length=40)
+    target_query: str = Field(default="", max_length=200)
+    intent: str = Field(default="", max_length=40)
+    outline: list[str] = Field(default_factory=list, max_length=12)
+    refresh: bool = False
+
+
+class SeoFaq(BaseModel):
+    q: str
+    a: str
+
+
+class AeoSeoContentResponse(BaseModel):
+    keyword: str
+    title: str
+    format: str = ""
+    meta_title: str = ""
+    meta_description: str = ""
+    slug: str = ""
+    intro: str
+    sections: list[BlogSection]
+    faq: list[SeoFaq] = Field(default_factory=list)
+    cached: bool = False
+
+
+class AeoSeoPageRequest(AnalyseRequest):
+    """A keyword-focused page from the SEO strategy, written as a designed website page (same designs as Content Strategy)."""
+    keyword: str = Field(..., min_length=2, max_length=120)
+    template: str = Field(default="", max_length=40)        # template id; empty = chosen from `format`
+    title: str = Field(..., min_length=3, max_length=300)
+    format: str = Field(default="", max_length=40)
+    target_query: str = Field(default="", max_length=200)
+    intent: str = Field(default="", max_length=40)
+    outline: list[str] = Field(default_factory=list, max_length=12)
+    refresh: bool = False
