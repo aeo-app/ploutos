@@ -2,7 +2,7 @@
 title: "Why Original Data Gets Cited More by AI Assistants"
 description: "Original data and research give AI assistants a reason to cite your brand. Learn why it works and how to present your data so ChatGPT and others use it."
 date: 2026-11-04
-featured_image: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&q=80"
+featured_image: "/assets/blog/image-4.jpg"
 tags: [AEO, AI Search Optimization, Brand AI Visibility, Generative Engine Optimization, Original Data, SEO]
 ---
 

@@ -1,16 +1,16 @@
 {
   "files": {
-    "main.css": "/static/css/main.4d0527d2.css",
-    "main.js": "/static/js/main.8a2a8dfc.js",
+    "main.css": "/static/css/main.9518d2fe.css",
+    "main.js": "/static/js/main.2ccb8023.js",
     "static/media/aeo-icon.png": "/static/media/aeo-icon.c77254d0c8ce1182e97d.png",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
-    "static/media/chatgpt_vs_claude_brand_citations_blog_post.md": "/static/media/chatgpt_vs_claude_brand_citations_blog_post.84b9e75d793698c2bf93.md",
+    "static/media/chatgpt_vs_claude_brand_citations_blog_post.md": "/static/media/chatgpt_vs_claude_brand_citations_blog_post.fb62272470c758d5ed0e.md",
     "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.1fadcd9c7fcd8c4d83d9.md",
     "static/media/chatgpt_vs_perplexity_vs_gemini_blog_post.md": "/static/media/chatgpt_vs_perplexity_vs_gemini_blog_post.f3c4c7708676908a7922.md",
     "static/media/aeo_checklist_for_small_businesses.md": "/static/media/aeo_checklist_for_small_businesses.110ddc2a2cdc80abc802.md",
     "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.77e9b10ae98f4d24caa6.md",
-    "static/media/why_original_data_gets_cited_more_by_ai_assistants.md": "/static/media/why_original_data_gets_cited_more_by_ai_assistants.46431678677f625969ee.md",
     "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.7ba06617bef33080dd1a.md",
+    "static/media/why_original_data_gets_cited_more_by_ai_assistants.md": "/static/media/why_original_data_gets_cited_more_by_ai_assistants.a3493f84bd1e5c32c9ef.md",
     "static/media/entity_authority_blog_post.md": "/static/media/entity_authority_blog_post.51c573a6c208a72437df.md",
     "static/media/how-to-correct-wrong-brand-information-in-ai-answers.md": "/static/media/how-to-correct-wrong-brand-information-in-ai-answers.3e4958aaaba35673f655.md",
     "static/media/aeo-vs-seo-vs-geo-the-complete-guide.md": "/static/media/aeo-vs-seo-vs-geo-the-complete-guide.9d98a24759faa81bebb2.md",
@@ -19,11 +19,11 @@
     "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.2d782c113fbe7a6a7e36.md",
     "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.e2ee09412b1cea253ceb.md",
     "index.html": "/index.html",
-    "main.4d0527d2.css.map": "/static/css/main.4d0527d2.css.map",
-    "main.8a2a8dfc.js.map": "/static/js/main.8a2a8dfc.js.map"
+    "main.9518d2fe.css.map": "/static/css/main.9518d2fe.css.map",
+    "main.2ccb8023.js.map": "/static/js/main.2ccb8023.js.map"
   },
   "entrypoints": [
-    "static/css/main.4d0527d2.css",
-    "static/js/main.8a2a8dfc.js"
+    "static/css/main.9518d2fe.css",
+    "static/js/main.2ccb8023.js"
   ]
 }

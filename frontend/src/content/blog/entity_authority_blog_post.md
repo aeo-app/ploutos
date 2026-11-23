@@ -2,7 +2,7 @@
 title: "Entity Authority: How LLMs Decide Which Brands to Trust"
 description: "Learn how entity authority works and which signals make ChatGPT, Claude, and Gemini trust a brand enough to recommend it. Build your AI brand visibility."
 date: 2026-11-04
-featured_image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1200&q=80"
+featured_image: "/assets/blog/image-5.jpg"
 tags: [AEO, AI Search Optimization, Brand AI Visibility, Generative Engine Optimization, ChatGPT, SEO, Entity Authority]
 ---
 
