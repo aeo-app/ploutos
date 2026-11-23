@@ -2,7 +2,7 @@
 title: "ChatGPT vs Perplexity vs Gemini: Which Drives More Traffic?"
 description: "Which AI search engine sends more brand traffic: ChatGPT, Perplexity or Gemini? See how each works and how to track your brand mentions and citations."
 date: 2026-11-04
-featured_image: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1200&q=80"
+featured_image: "/assets/blog/image-1.jpg"
 tags: [AEO, AI Search Optimization, Brand AI Visibility, Generative Engine Optimization, ChatGPT, Perplexity, Gemini]
 ---
 
