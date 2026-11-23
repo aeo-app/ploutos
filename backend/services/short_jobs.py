@@ -1,11 +1,3 @@
-"""
-services/short_jobs.py — runs YouTube Short generation in the background
-================================================================================
-Making a Short (several AI photographs + video encoding) takes one to two minutes —
-longer than a normal web request should stay open — so the endpoint starts a job and
-returns its id straight away, and the screen polls for the result. Job state lives in
-DynamoDB (db.dynamo.save_short_job) so it works across several server processes.
-"""
 from __future__ import annotations
 
 import logging
@@ -41,6 +33,7 @@ def run_job(user_id: str, job_id: str, params: dict, on_done: Optional[Callable[
             user_id, params.get("company_name") or "", params.get("industry") or "", brand, logo,
             params.get("title") or "", params.get("visual") or params.get("text") or "", params.get("keywords") or [],
             photos=photos, heading=params.get("heading") or "", subheading=params.get("subheading") or "",
+            text=params.get("text") or "", voice=params.get("voice") or "", music=params.get("music") is not False,
         )
         video_url = upload_video(res["video"], user_id)
         thumb_url = upload_image(res["thumbnail"], "short-thumb.jpg", user_id)

@@ -13,7 +13,7 @@ import { EngCell, SocialChannelsCard } from '../parts';
 import { BrandKitGate, ShortPlayer } from '../BrandKit';
 import { CompanyPhotos } from '../CompanyPhotos';
 import { PageStudio } from '../PageStudio';
-import { MediaOptions, EMPTY_MEDIA, mediaPayload } from '../MediaOptions';
+import { MediaOptions, EMPTY_MEDIA, mediaPayload, reelPayload } from '../MediaOptions';
 import { BlogTopicsPage } from '../../pages/BlogTopicsPage';
 import { exportMarkdown, exportPdf, exportWord } from '../blogExport';
 import { BLOG_TAG, CHANNELS, channelState, hkey, engineNames, engineShort, TINTS, calendarStart, fmtDate, hostOf, isoDate, isReel, reelWord, postStateKey, CALENDAR_PROMPT, dayOffset, addDays, parseIso, dayDiff, fmtWhen, MONTH_DAYS, planWeek } from '../utils';
@@ -690,7 +690,7 @@ function CalendarBlock({ t }) {
     try {
       const { job_id } = await aeoApi.startShort({
         title: p.post.title || '', text: p.post.text.slice(0, 1500), visual: brief || visualOf(p.post, brand), ...bizPayload(), ...mediaPayload(mediaOpts[p.k]), ...posterLines(p),
-        day_date: `aeo-${isoDate(p.d)}-${p.c.id}`,
+        ...reelPayload(mediaOpts[p.k]), day_date: `aeo-${isoDate(p.d)}-${p.c.id}`,
       });
       const until = Date.now() + 9 * 60 * 1000;
       while (Date.now() < until) {
@@ -914,7 +914,7 @@ function CalendarBlock({ t }) {
                 {p.reel ? <>
                   <span className="ae-eyebrow" style={{ letterSpacing: '.06em' }}>{reelWord(p.c)} video</span>
                   <button className="ae-btn sm" style={{ fontWeight: 700 }} onClick={() => setOpenVis(o => ({ ...o, [p.k]: !o[p.k] }))}>{openVis[p.k] ? 'Hide suggestion' : '💡 Content suggestion'}</button>
-                  <button className="ae-btn sm" style={{ fontWeight: 700, ...(p.st.vid ? {} : { borderColor: '#4f46e5', background: '#eef0ff', color: '#3730a3' }) }} disabled={!!w} onClick={() => genShort(p)}>{w === 'vid' ? `Creating your ${reelWord(p.c)}… (1–2 min)` : p.st.vid ? `Regenerate ${reelWord(p.c)}` : `🎬 Generate ${reelWord(p.c)} video`}</button>
+                  <button className="ae-btn sm" style={{ fontWeight: 700, ...(p.st.vid ? {} : { borderColor: '#4f46e5', background: '#eef0ff', color: '#3730a3' }) }} disabled={!!w} onClick={() => genShort(p)}>{w === 'vid' ? `Creating your ${reelWord(p.c)}… (a few minutes)` : p.st.vid ? `Regenerate ${reelWord(p.c)}` : `🎬 Generate ${reelWord(p.c)} video`}</button>
                   <label className="ae-btn sm" style={{ fontWeight: 700, cursor: 'pointer' }}>{w === 'upv' ? 'Uploading…' : `Upload your own ${reelWord(p.c)}`}<input type="file" accept="video/mp4,video/quicktime,video/webm,video/*" style={{ display: 'none' }} disabled={!!w} onChange={e => { uploadShort(p, e.target.files && e.target.files[0]); e.target.value = ''; }} /></label>
                   {p.st.vid && <button className="ae-btn sm" style={{ fontWeight: 700 }} disabled={w === 'dl'} onClick={() => downloadShort(p)}>{w === 'dl' ? 'Preparing…' : '⬇ Download'}</button>}
                   {p.st.vid && <button className="ae-linkbtn" onClick={() => setPostState(p.k, { vid: '', vthumb: '' })}>Remove video</button>}

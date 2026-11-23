@@ -102,6 +102,7 @@ export const aeoApi = {
   // YouTube Shorts (vertical video): generate in the background, or upload your own
   startShort:  (req) => call("POST", "/short-video", req),
   shortStatus: (id) => call("GET", `/short-video/${encodeURIComponent(id)}`),
+  reelOptions: () => call("GET", "/reel-options"),
   uploadShort: (file) => upload("/short-upload", file),
   // One of the customer's own photos (already shrunk by utils/photoPrep) to build an image or reel from
   uploadPhoto: (blob) => upload("/photos", blob),

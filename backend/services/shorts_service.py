@@ -1,13 +1,3 @@
-"""
-services/shorts_service.py — real YouTube Shorts (vertical 9:16 video), generated or uploaded
-================================================================================
-Generate:  several realistic, business-relevant photographs (see openai_image_service) become
-           a ~20 second vertical video with slow camera moves, cross-fades, on-screen captions
-           and the brand bar (logo + phone + email + website) kept inside the Shorts safe zone.
-           Built with Pillow (text/logo) + ffmpeg (motion/encoding) — no extra video service.
-Upload:    a user's own Short is checked (a real video, vertical or square, <= 3 minutes,
-           <= 120 MB) and a thumbnail is taken from it.
-"""
 from __future__ import annotations
 
 import io
@@ -24,8 +14,10 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from services import brand_service as brand_svc
-from services.brand_overlay import brand_bar_layer, font, headline_layer
+from services import reels_engine
+from services.brand_overlay import accent_for, brand_bar_layer, font, headline_layer
 from services.openai_image_service import OpenAIImageError, generate_image_from_prompt
+from services.photo_service import company_photo_refs
 
 logger = logging.getLogger(__name__)
 
@@ -249,17 +241,7 @@ def photo_scene_seconds(n: int) -> float:
     return min(8.0, max(5.0, 16.0 / max(n, 1)))
 
 
-def generate_short(user_id: str, company: str, industry: str, brand: dict, logo: bytes, title: str,
-                   visual: str, keywords: list[str] | None = None, photos: list[bytes] | None = None,
-                   heading: str = "", subheading: str = "") -> dict:
-    """Returns {video(mp4 bytes), thumbnail(jpg bytes), duration}. Raises ShortError / OpenAIImageError.
-    With `photos` (up to 5 of the customer's own) they become the scenes; without, the scenes are generated."""
-    keywords = keywords or []
-    has_heading = bool((heading or "").strip() or (subheading or "").strip())
-    if photos:
-        photos = photos[:MAX_PHOTO_SCENES]
-        return compose_short(photos, brand, logo, _captions(title, keywords, len(photos), has_heading),
-                             heading=heading, subheading=subheading, seconds=photo_scene_seconds(len(photos)), real_photos=True)
+def _generated_scenes(company: str, industry: str, brand: dict, visual: str, title: str, keywords: list[str]) -> list[bytes]:
     n = max(2, min(SCENES, 4))
     prompts = [brand_svc.build_photo_prompt(company, industry, brand, sc, keywords, vertical=True)
                for sc in _scene_prompts(visual or title or company, n)]
@@ -268,11 +250,175 @@ def generate_short(user_id: str, company: str, industry: str, brand: dict, logo:
         return generate_image_from_prompt(p, width=1080, height=1920)
 
     with ThreadPoolExecutor(max_workers=n) as pool:
-        photos = list(pool.map(one, prompts))
-    return compose_short(photos, brand, logo, _captions(title, keywords, n, has_heading), heading=heading, subheading=subheading)
+        return list(pool.map(one, prompts))
 
 
-def _scene_from_photo(img: Image.Image, w: int, h: int) -> Image.Image:
+def generate_short(user_id: str, company: str, industry: str, brand: dict, logo: bytes, title: str,
+                   visual: str, keywords: list[str] | None = None, photos: list[bytes] | None = None,
+                   heading: str = "", subheading: str = "", text: str = "", voice: str = "", music: bool = True) -> dict:
+    keywords = keywords or []
+    if reels_engine.configured():
+        return _voiced_short(user_id, company, industry, brand, logo, title, text or visual, visual, keywords,
+                             photos, heading, subheading, voice, music)
+    has_heading = bool((heading or "").strip() or (subheading or "").strip())
+    if photos:
+        photos = photos[:MAX_PHOTO_SCENES]
+        return compose_short(photos, brand, logo, _captions(title, keywords, len(photos), has_heading),
+                             heading=heading, subheading=subheading, seconds=photo_scene_seconds(len(photos)), real_photos=True)
+    photos = _generated_scenes(company, industry, brand, visual, title, keywords)
+    return compose_short(photos, brand, logo, _captions(title, keywords, len(photos), has_heading), heading=heading, subheading=subheading)
+
+
+END_CARD_SECONDS = 3.0
+END_CARD_FADE = 0.4
+AUDIO_FADE = 0.4
+END_CARD_TOP, END_CARD_BOTTOM = 250, 1650     # inside the area the Shorts and Reels players leave uncovered
+# Lower than in the silent reels: the heading box stays on screen the whole time and would hide the top of the photo.
+VOICED_PHOTO_ANCHOR = 0.62
+LOGO_BOX = (560, 240)
+MAX_LOGO_UPSCALE = 2.0
+
+
+def _scene_jpeg(raw: bytes, real_photo: bool) -> bytes:
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+    scene = _scene_from_photo(img, W, H, anchor=VOICED_PHOTO_ANCHOR) if real_photo else _cover(img, W, H)
+    buf = io.BytesIO()
+    scene.convert("RGB").save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
+def _voiced_short(user_id: str, company: str, industry: str, brand: dict, logo: bytes, title: str, text: str,
+                  visual: str, keywords: list[str], photos: list[bytes] | None, heading: str, subheading: str,
+                  voice: str, music: bool) -> dict:
+    real_photos = True
+    if not photos:
+        photos = company_photo_refs(user_id, title or text or company, count=MAX_PHOTO_SCENES)
+    if not photos:
+        photos, real_photos = _generated_scenes(company, industry, brand, visual, title, keywords), False
+    scenes = [_scene_jpeg(raw, real_photos) for raw in photos[:MAX_PHOTO_SCENES]]
+    script = reels_engine.write_script(company, industry, title, text, keywords)
+    try:
+        engine_video = reels_engine.make_video(scenes, script, title, voice, music)
+    except reels_engine.ReelsEngineError as e:
+        raise ShortError(str(e))
+    overlay = _caption_layer("", brand, logo, heading, subheading)
+    return _finish_voiced(engine_video, overlay, _end_card(brand, logo, company), scenes[0])
+
+
+def _wrap_lines(draw: ImageDraw.ImageDraw, text: str, f, max_w: int, max_lines: int) -> list[str]:
+    lines, cur = [], ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        if not cur or draw.textlength(trial, font=f) <= max_w:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines[:max_lines]
+
+
+def _end_card(brand: dict, logo: bytes | None, company: str) -> Image.Image:
+    accent = accent_for(company or "brand", logo)
+    card = Image.new("RGB", (W, H), accent)
+    shade = Image.linear_gradient("L").resize((W, H)).point(lambda v: int(v * 0.45))
+    card = Image.composite(Image.new("RGB", (W, H), (0, 0, 0)), card, shade)
+    draw = ImageDraw.Draw(card)
+    max_w = W - 160
+
+    logo_img = None
+    if logo:
+        try:
+            logo_img = Image.open(io.BytesIO(logo)).convert("RGBA")
+            scale = min(LOGO_BOX[0] / logo_img.width, LOGO_BOX[1] / logo_img.height, MAX_LOGO_UPSCALE)
+            logo_img = logo_img.resize((max(1, round(logo_img.width * scale)), max(1, round(logo_img.height * scale))), Image.LANCZOS)
+        except Exception:  # noqa: BLE001
+            logo_img = None
+
+    name_font, phone_font, line_font, addr_font, cta_font = font(86), font(70), font(52), font(44), font(46)
+    cta = "Get in touch today"
+    cta_w, cta_h = int(draw.textlength(cta, font=cta_font)) + 96, 104
+    site = re.sub(r"^https?://(www\.)?", "", str(brand.get("website") or "").strip()).rstrip("/")
+    name_lines = _wrap_lines(draw, company, name_font, max_w, 2)
+    divider_h = 30 if name_lines else 0
+    rows: list[tuple[list[str], object, int]] = []
+    if str(brand.get("phone") or "").strip():
+        rows.append(([str(brand["phone"]).strip()], phone_font, 14))
+    for value in (str(brand.get("email") or "").strip(), site):
+        if value:
+            rows.append(([value], line_font, 12))
+    address = " ".join(str(brand.get("address") or "").split())
+    if address:
+        rows.append((_wrap_lines(draw, address, addr_font, max_w, 3), addr_font, 10))
+    rows = [r for r in rows if r[0]]
+
+    panel_h = (logo_img.height + 80) if logo_img else 0
+    name_h = len(name_lines) * int(name_font.size * 1.25) + divider_h
+    text_h = name_h + sum(len(lines) * int(f.size * 1.25) + gap for lines, f, gap in rows) + 50 + cta_h
+    y = END_CARD_TOP + max(0, (END_CARD_BOTTOM - END_CARD_TOP - panel_h - 60 - text_h) // 2)
+
+    if logo_img:
+        pw = logo_img.width + 120
+        px = (W - pw) // 2
+        draw.rounded_rectangle([px, y, px + pw, y + panel_h], radius=36, fill=(255, 255, 255))
+        card.paste(logo_img, ((W - logo_img.width) // 2, y + 40), logo_img)
+        y += panel_h + 60
+
+    for ln in name_lines:
+        draw.text(((W - draw.textlength(ln, font=name_font)) / 2, y), ln, font=name_font, fill=(255, 255, 255))
+        y += int(name_font.size * 1.25)
+    if name_lines:
+        draw.line([(W // 2 - 70, y + 6), (W // 2 + 70, y + 6)], fill=(255, 255, 255), width=4)
+        y += divider_h
+    for lines, f, gap in rows:
+        for ln in lines:
+            draw.text(((W - draw.textlength(ln, font=f)) / 2, y), ln, font=f, fill=(255, 255, 255))
+            y += int(f.size * 1.25)
+        y += gap
+    y += 50
+    cx = (W - cta_w) // 2
+    draw.rounded_rectangle([cx, y, cx + cta_w, y + cta_h], radius=cta_h // 2, fill=(255, 255, 255))
+    draw.text((W / 2, y + cta_h / 2), cta, font=cta_font, fill=accent, anchor="mm")
+    return card
+
+
+def _finish_voiced(engine_video: bytes, overlay: Image.Image, end_card: Image.Image, first_scene: bytes) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        src, ov, end, out = (os.path.join(tmp, n) for n in ("engine.mp4", "overlay.png", "end.png", "reel.mp4"))
+        with open(src, "wb") as f:
+            f.write(engine_video)
+        overlay.save(ov)
+        end_card.save(end)
+        main_seconds = probe(src)["duration"]
+        if main_seconds <= 0:
+            raise ShortError("The video service returned a video we could not read.")
+        fade_at = max(main_seconds - AUDIO_FADE, 0)
+        fc = ";".join([
+            f"[0:v]scale={W}:{H},setsar=1,fps={FPS}[base]",
+            "[base][1:v]overlay=0:0:shortest=1,format=yuv420p[main]",
+            f"[2:v]scale={W}:{H},setsar=1,fps={FPS},format=yuv420p,fade=t=in:st=0:d={END_CARD_FADE}[end]",
+            f"[0:a]aformat=sample_rates=44100:channel_layouts=stereo,afade=t=out:st={fade_at:.2f}:d={AUDIO_FADE}[main_a]",
+            "[3:a]aformat=sample_rates=44100:channel_layouts=stereo[end_a]",
+            "[main][main_a][end][end_a]concat=n=2:v=1:a=1[v][a]",
+        ])
+        cmd = ["ffmpeg", "-y", "-i", src, "-loop", "1", "-i", ov, "-loop", "1", "-t", f"{END_CARD_SECONDS}", "-i", end,
+               "-f", "lavfi", "-t", f"{END_CARD_SECONDS}", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+               "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
+               "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-r", str(FPS),
+               "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out]
+        _run(cmd, "Adding your logo and contact details")
+        with open(out, "rb") as f:
+            video = f.read()
+
+    thumb = Image.open(io.BytesIO(first_scene)).convert("RGBA")
+    thumb.alpha_composite(overlay)
+    buf = io.BytesIO()
+    thumb.convert("RGB").resize((540, 960), Image.LANCZOS).save(buf, format="JPEG", quality=85)
+    return {"video": video, "thumbnail": buf.getvalue(), "duration": round(main_seconds + END_CARD_SECONDS, 1)}
+
+
+def _scene_from_photo(img: Image.Image, w: int, h: int, anchor: float = 0.42) -> Image.Image:
     """A real photo as a vertical scene. Tall photos fill the frame; wide ones are shown whole over a soft blurred
     copy of themselves, so people and products are not cropped out."""
     img = img.convert("RGB")
@@ -281,7 +427,7 @@ def _scene_from_photo(img: Image.Image, w: int, h: int) -> Image.Image:
     bg = ImageOps.fit(img, (w, h), Image.LANCZOS).filter(ImageFilter.GaussianBlur(36))
     bg = Image.blend(bg, Image.new("RGB", (w, h), (12, 14, 30)), 0.35)
     fg = img.resize((w, max(1, round(img.height * w / img.width))), Image.LANCZOS)
-    bg.paste(fg, (0, int((h - fg.height) * 0.42)))
+    bg.paste(fg, (0, int((h - fg.height) * anchor)))
     return bg
 
 

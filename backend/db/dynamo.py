@@ -1535,7 +1535,7 @@ def save_short_job(user_id: str, job_id: str, data: dict) -> None:
         table.put_item(Item={
             "PK": _pk(user_id), "SK": _short_job_sk(job_id), "user_id": user_id,
             "data": json.dumps(data, default=str), "updated_at": _now_iso(),
-            "ttl": int(time.time()) + 3 * 24 * 3600,   # honoured if the table has TTL enabled on "ttl"
+            "ttl": int(time()) + 3 * 24 * 3600,   # honoured if the table has TTL enabled on "ttl"
         })
     except ClientError as e:
         logger.error(f"[dynamo] save_short_job failed: {e.response['Error']}")
