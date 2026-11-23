@@ -12,6 +12,21 @@ export const mediaPayload = (o) => {
   return { photo_urls: (m.photos || []).map(p => p.url) };
 };
 
+/** The voice and background-music choice for a reel (only used when the server adds a voiceover). */
+export const reelPayload = (o) => {
+  const m = o || EMPTY_MEDIA;
+  return { voice: m.voice || '', music: m.music !== false };
+};
+
+// Every reel panel needs the same list, so it is fetched once per page load.
+let reelOptionsRequest = null;
+const loadReelOptions = () => {
+  if (!reelOptionsRequest) {
+    reelOptionsRequest = aeoApi.reelOptions().catch(() => { reelOptionsRequest = null; return null; });
+  }
+  return reelOptionsRequest;
+};
+
 /**
  * Optional extras for generating one image or reel: the customer's own photos (up to 5), a heading and a subheading.
  * Everything is optional; with none of it, the image or reel is created from the description as before.
@@ -26,6 +41,16 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen, defau
   const photos = v.photos || [];
   const reel = kind === 'reel';
   const word = reel ? 'reel' : 'image';
+  const [reelOpts, setReelOpts] = useState(null);
+  useEffect(() => {
+    if (!reel) return undefined;
+    let active = true;
+    loadReelOptions().then(o => { if (active) setReelOpts(o); });
+    return () => { active = false; };
+  }, [reel]);
+  const voiceover = reel && !!reelOpts?.voiceover;
+  const voiceId = v.voice || reelOpts?.default_voice || '';
+  const voiceLabel = (reelOpts?.voices || []).find(o => o.id === voiceId)?.label || '';
 
   // Free the temporary preview links when this panel goes away.
   const live = useRef(photos);
@@ -65,11 +90,13 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen, defau
 
   const bits = [];
   if (photos.length) bits.push(`${photos.length} photo${photos.length > 1 ? 's' : ''}`);
+  if (voiceover && voiceLabel) bits.push(voiceLabel);
+  if (voiceover && v.music === false) bits.push('no music');
 
   return (
     <div className="ae-media" data-testid={`media-options-${kind}`}>
       <button type="button" className="ae-media-head" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span>📷 Use your own photos <em>(optional)</em></span>
+        <span>{voiceover ? '🎙️ Photos, voice & music' : '📷 Use your own photos'} <em>(optional)</em></span>
         <span className="ae-media-sum">{bits.length ? bits.join(' · ') : 'your own photos'}</span>
         <span aria-hidden="true">{open ? '▴' : '▾'}</span>
       </button>
@@ -102,11 +129,29 @@ export function MediaOptions({ kind, value, update, disabled, defaultOpen, defau
               </div>
             )}
             <p className="ae-note" style={{ margin: 0 }}>
-              {reel
-                ? 'Your photos become the scenes of the reel, in this order. With no photos, we create the scenes for you.'
-                : 'We build the image from your real photos. With no photos, we create it from the description.'}
+              {!reel
+                ? 'We build the image from your real photos. With no photos, we create it from the description.'
+                : voiceover
+                  ? 'Your photos become the scenes of the reel, in this order. With no photos, we use your saved company photos, or create the scenes if you have none.'
+                  : 'Your photos become the scenes of the reel, in this order. With no photos, we create the scenes for you.'}
             </p>
           </div>
+          {voiceover && (
+            <div className="ae-media-row">
+              <label className="ae-media-f">
+                Voiceover
+                <select value={voiceId} disabled={disabled} data-testid="media-voice"
+                  onChange={e => { const id = e.target.value; update(cur => ({ ...cur, voice: id })); }}>
+                  {reelOpts.voices.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                </select>
+              </label>
+              <label className="ae-media-check">
+                <input type="checkbox" checked={v.music !== false} disabled={disabled} data-testid="media-music"
+                  onChange={e => { const on = e.target.checked; update(cur => ({ ...cur, music: on })); }} />
+                Background music
+              </label>
+            </div>
+          )}
         </div>
       )}
     </div>

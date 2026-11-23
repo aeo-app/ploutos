@@ -716,6 +716,18 @@ class ShortRequest(BaseModel):
     heading: str = Field(default="", max_length=80)
     subheading: str = Field(default="", max_length=160)
     day_date: str = Field(default="", max_length=60)        # the calendar day this reel is for ("aeo-YYYY-MM-DD-yt"): reels are limited per week by plan
+    voice: str = Field(default="", max_length=60)
+    music: bool = True
+
+
+@router.get("/reel-options", summary="Whether reels get a voiceover, and the voices to choose from")
+def reel_options(user_id: str = Depends(get_current_user_id)):
+    from services import reels_engine
+    return {
+        "voiceover": reels_engine.configured(),
+        "voices": [{"id": vid, "label": label} for vid, label in reels_engine.VOICES.items()],
+        "default_voice": reels_engine.DEFAULT_VOICE,
+    }
 
 
 @router.post("/photos", summary="Upload one of your own photos to build an image or a reel from (JPG, PNG or WebP)")
