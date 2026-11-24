@@ -31,16 +31,36 @@ def process_due_scheduled_posts() -> int:
         try:
             results = publish_to_platforms(
                 post["user_id"], post["platforms"], post["image_url"], post["caption"],
-                cta_url=post.get("cta_url") or None,
+                cta_url=post.get("cta_url") or None, video_url=post.get("video_url") or None, title=post.get("title") or None,
             )
             successes = sum(1 for r in results if r["success"])
             overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
             update_scheduled_post_status(schedule_id, overall_status, results=results)
+            if overall_status == "posted":
+                mark_calendar_published(post["user_id"], post.get("post_key"))
         except Exception as e:
             logger.error(f"[scheduler] unexpected error processing {schedule_id}: {e}", exc_info=True)
             update_scheduled_post_status(schedule_id, "failed", results=[{"platform": "unknown", "success": False, "error": str(e)}])
 
     return len(due)
+
+
+def mark_calendar_published(user_id: str, post_key: str | None) -> None:
+    """Shows a scheduled calendar post as published in the customer's calendar once it has gone out. Never raises:
+    the post itself is already live, so a failure here only means the calendar label is updated a little later."""
+    if not post_key:
+        return
+    try:
+        from db import get_aeo_state, save_aeo_state
+        st = get_aeo_state(user_id)
+        cur = dict((st.get("post_state") or {}).get(post_key) or {})
+        if cur.get("published"):
+            return
+        cur.update({"approved": True, "published": True, "pub_at": _now_iso(), "sched_id": "", "sched_at": ""})
+        st.setdefault("post_state", {})[post_key] = cur
+        save_aeo_state(user_id, st)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[scheduler] could not mark calendar post {post_key!r} published for {user_id}: {e}")
 
 
 def _now_iso() -> str:

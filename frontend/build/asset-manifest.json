@@ -1,7 +1,7 @@
 {
   "files": {
-    "main.css": "/static/css/main.9518d2fe.css",
-    "main.js": "/static/js/main.2ccb8023.js",
+    "main.css": "/static/css/main.9abe8487.css",
+    "main.js": "/static/js/main.cf469387.js",
     "static/media/aeo-icon.png": "/static/media/aeo-icon.c77254d0c8ce1182e97d.png",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
     "static/media/chatgpt_vs_claude_brand_citations_blog_post.md": "/static/media/chatgpt_vs_claude_brand_citations_blog_post.fb62272470c758d5ed0e.md",
@@ -11,19 +11,17 @@
     "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.77e9b10ae98f4d24caa6.md",
     "static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.md": "/static/media/how-to-check-if-your-website-is-invisible-to-ai-crawlers.7ba06617bef33080dd1a.md",
     "static/media/why_original_data_gets_cited_more_by_ai_assistants.md": "/static/media/why_original_data_gets_cited_more_by_ai_assistants.a3493f84bd1e5c32c9ef.md",
-    "static/media/entity_authority_blog_post.md": "/static/media/entity_authority_blog_post.51c573a6c208a72437df.md",
     "static/media/how-to-correct-wrong-brand-information-in-ai-answers.md": "/static/media/how-to-correct-wrong-brand-information-in-ai-answers.3e4958aaaba35673f655.md",
+    "static/media/entity_authority_blog_post.md": "/static/media/entity_authority_blog_post.0dbf98e82e5d95306ade.md",
     "static/media/aeo-vs-seo-vs-geo-the-complete-guide.md": "/static/media/aeo-vs-seo-vs-geo-the-complete-guide.9d98a24759faa81bebb2.md",
     "static/media/server_logs_ai_crawlers_blog_post.md": "/static/media/server_logs_ai_crawlers_blog_post.b93346e5d26d1ea94a89.md",
     "static/media/updating_old_content_for_ai_search_blog_post.md": "/static/media/updating_old_content_for_ai_search_blog_post.c16c384e4c4450480655.md",
     "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.2d782c113fbe7a6a7e36.md",
-    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.e2ee09412b1cea253ceb.md",
-    "index.html": "/index.html",
-    "main.9518d2fe.css.map": "/static/css/main.9518d2fe.css.map",
-    "main.2ccb8023.js.map": "/static/js/main.2ccb8023.js.map"
+    "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.27ccca8674b359d43ceb.md",
+    "index.html": "/index.html"
   },
   "entrypoints": [
-    "static/css/main.9518d2fe.css",
-    "static/js/main.2ccb8023.js"
+    "static/css/main.9abe8487.css",
+    "static/js/main.cf469387.js"
   ]
 }

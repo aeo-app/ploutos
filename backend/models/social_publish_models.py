@@ -75,7 +75,7 @@ class PublishResponse(BaseModel):
 
 # ── Scheduling (Facebook + Instagram only — see services/social_publish/
 # scheduler.py for why LinkedIn/Google Business aren't included yet) ────────
-SCHEDULABLE_PLATFORMS = {"facebook", "instagram"}
+SCHEDULABLE_PLATFORMS = {"facebook", "instagram", "linkedin", "google_business", "youtube"}
 
 
 class ScheduleRequest(_ImageSourceMixin):
@@ -85,6 +85,17 @@ class ScheduleRequest(_ImageSourceMixin):
     platforms: list[str] = Field(..., min_length=1, example=["facebook", "instagram"])
     scheduled_time: str = Field(..., description="ISO 8601 datetime, must be in the future (e.g. 2026-09-03T09:00:00Z)")
     cta_url: Optional[str] = None
+    video_url: Optional[str] = Field(None, description="A reel / YouTube Short to schedule (YouTube, Facebook or Instagram) — use INSTEAD of poster_id/image_url")
+    title: Optional[str] = Field(None, max_length=100, description="YouTube video title")
+    post_key: Optional[str] = Field(None, max_length=300, description="The calendar post this belongs to, so the calendar can show it as published once it goes out")
+
+    @model_validator(mode="after")
+    def _exactly_one_image_source(self):  # replaces the base rule: a video is a third kind of source
+        if sum([bool(self.poster_id), bool(self.image_url), bool(self.video_url)]) != 1:
+            raise ValueError("Provide exactly one of poster_id, image_url or video_url.")
+        if self.video_url and [p for p in self.platforms if p not in ("youtube", "facebook", "instagram")]:
+            raise ValueError("A video can only be scheduled to YouTube, Facebook or Instagram.")
+        return self
 
     @model_validator(mode="after")
     def _only_schedulable_platforms(self):
@@ -110,6 +121,7 @@ class ScheduledPostSummary(BaseModel):
     scheduled_time: str
     status: str  # pending | posted | partial | failed | cancelled
     results: list[PlatformPublishResult] = []
+    video_url: str = ""
 
 
 class ScheduledPostListResponse(BaseModel):

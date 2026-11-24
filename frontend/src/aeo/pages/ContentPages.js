@@ -3,7 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { usePayment } from '../../context/PaymentContext';
 import { canvaApi } from '../../api/canvaApi';
 import { socialPublishApi } from '../../api/socialPublishApi';
-import { isActingAs } from '../../api/seoApi';
+import { isActingAs, getActAs } from '../../api/seoApi';
+import { adminApi } from '../../api/adminApi';
 import { aeoApi } from '../../api/aeoApi';
 import { downloadImage } from '../../api/downloadImage';
 import { useAeo } from '../AeoContext';
@@ -502,8 +503,13 @@ function CalendarBlock({ t }) {
   const [conn, setConn] = useState({});
   const [showLink, setShowLink] = useState(false);
   const [confirmPub, setConfirmPub] = useState(null);
+  const [sched, setSched] = useState(null);       // admin: { k, value } while choosing when to schedule a post
   const brandRef = useRef(null);
-  const acting = isActingAs();   // an admin viewing a customer: connecting and publishing stay with the customer
+  const acting = isActingAs();   // an admin viewing a customer: the customer connects their own channels; the admin can publish and schedule for them
+  // Whoever is signed in posts to the accounts shown here: the customer's own, or (admin) the customer's connected accounts.
+  const pubApi = acting
+    ? { publish: (b) => adminApi.socialPublish(getActAs(), b), schedule: (b) => adminApi.socialSchedule(getActAs(), b), cancel: (id) => adminApi.socialCancelScheduled(getActAs(), id) }
+    : socialPublishApi;
   const progress = useConnectProgress();
   useEffect(() => { let off = false; socialPublishApi.statusForView().then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (!isActingAs() && x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
 
@@ -622,6 +628,10 @@ function CalendarBlock({ t }) {
   const publishNow = async (p) => {
     setConfirmPub(null);
     const cs = channelState(p.c, conn[p.c.platform], !!progress[p.c.platform]);
+    if (acting && cs.key !== 'on') {
+      toast({ type: 'info', message: `This customer has not connected ${p.c.name} yet${cs.key === 'reconnect' ? ' (it needs to be reconnected)' : ''}. They connect it from their own sign-in, then you can publish for them.` });
+      return;
+    }
     if (cs.key !== 'on') {
       setShowLink(true);
       toast({ type: 'info', message: cs.key === 'progress' ? `Your ${p.c.name} connection is in progress. We will be able to publish here once it is ready.` : `Connect your ${p.c.name} account first, then publish.` });
@@ -629,7 +639,9 @@ function CalendarBlock({ t }) {
     }
     setWorking(w => ({ ...w, [p.k]: 'pub' }));
     try {
-      const res = await socialPublishApi.publish({
+      // Publishing now replaces a schedule made earlier, so the same post is never sent twice.
+      if (acting && p.st.sched_id) { try { await pubApi.cancel(p.st.sched_id); } catch (_) { /* already sent or cancelled */ } }
+      const res = await pubApi.publish({
         ...(p.reel ? { video_url: p.st.vid, title: (p.post.title || '').slice(0, 100) || undefined } : { image_url: p.st.img }),
         caption: postCaption(p).slice(0, 3000), platforms: [p.c.platform],
         cta_url: hostOf(state.request.url) ? `https://${hostOf(state.request.url)}` : undefined,
@@ -638,7 +650,7 @@ function CalendarBlock({ t }) {
       const r = (res?.results || [])[0] || {};
       if (r.success) {
         const at = new Date().toISOString();
-        setPostState(p.k, { approved: true, published: true, pub_at: at });
+        setPostState(p.k, { approved: true, published: true, pub_at: at, sched_id: '', sched_at: '' });
         toast({ type: 'success', message: `Published to ${p.c.name} on ${fmtWhen(at)}.` });
       } else if (r.needs_reconnect) {
         setShowLink(true);
@@ -650,6 +662,45 @@ function CalendarBlock({ t }) {
       }
     } catch (e) {
       if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not publish. Please try again.' });
+    } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
+  };
+  /** Admin: queue a post for a time the admin picks. The scheduler publishes it to the customer's connected channel then. */
+  const defaultWhen = (p) => {
+    const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(p.c.time || '');
+    const d = new Date(p.d); d.setHours(m ? (Number(m[1]) % 12) + (/pm/i.test(m[3]) ? 12 : 0) : 9, m ? Number(m[2]) : 0, 0, 0);
+    if (d.getTime() < Date.now() + 10 * 60 * 1000) { d.setTime(Date.now() + 60 * 60 * 1000); d.setMinutes(0, 0, 0); }
+    const z = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+  };
+  const schedulePost = async (p, value) => {
+    const when = new Date(value);
+    if (isNaN(when) || when.getTime() <= Date.now() + 60 * 1000) { toast({ type: 'info', message: 'Choose a date and time in the future.' }); return; }
+    const cs = channelState(p.c, conn[p.c.platform], !!progress[p.c.platform]);
+    if (cs.key !== 'on') { toast({ type: 'info', message: `This customer has not connected ${p.c.name} yet, so it cannot be scheduled.` }); return; }
+    setWorking(w => ({ ...w, [p.k]: 'sched' }));
+    try {
+      const iso = when.toISOString();
+      const res = await pubApi.schedule({
+        ...(p.reel ? { video_url: p.st.vid, title: (p.post.title || '').slice(0, 100) || undefined } : { image_url: p.st.img }),
+        caption: postCaption(p).slice(0, 3000), platforms: [p.c.platform], scheduled_time: iso,
+        cta_url: hostOf(state.request.url) ? `https://${hostOf(state.request.url)}` : undefined,
+        day_date: isoDate(p.d), post_number: 1, post_key: p.k,
+      });
+      setPostState(p.k, { approved: true, sched_at: res?.scheduled_time || iso, sched_id: res?.schedule_id || '' });
+      setSched(null);
+      toast({ type: 'success', message: `Scheduled for ${p.c.name} on ${fmtWhen(res?.scheduled_time || iso)}.` });
+    } catch (e) {
+      if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not schedule this post. Please try again.' });
+    } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
+  };
+  const cancelSchedule = async (p) => {
+    setWorking(w => ({ ...w, [p.k]: 'sched' }));
+    try {
+      if (p.st.sched_id) await pubApi.cancel(p.st.sched_id);
+      setPostState(p.k, { approved: false, sched_at: '', sched_id: '' });
+      toast({ type: 'success', message: 'The scheduled post was cancelled.' });
+    } catch (e) {
+      if (e.code !== 'TokenExpired') toast({ type: 'error', message: e.message || 'Could not cancel it. It may already have been posted.' });
     } finally { setWorking(w => { const n = { ...w }; delete n[p.k]; return n; }); }
   };
   const needBrand = () => {
@@ -872,7 +923,7 @@ function CalendarBlock({ t }) {
                 <span className="ae-col" style={{ alignItems: 'flex-start', gap: 1, minWidth: 0 }}>
                   <b style={{ fontSize: 13 }}>{p.c.name}</b>
                   <span style={{ fontSize: 11.5, fontWeight: 700, color: p.st.published ? '#047857' : p.st.approved ? '#1d4ed8' : '#64748b' }}>
-                    {p.st.published ? `● Published ${fmtWhen(p.st.pub_at)}` : p.st.approved ? `Scheduled · ${p.c.time}` : 'Needs approval'}</span>
+                    {p.st.published ? `● Published ${fmtWhen(p.st.pub_at)}` : p.st.approved ? `Scheduled · ${p.st.sched_at ? fmtWhen(p.st.sched_at) : p.c.time}` : 'Needs approval'}</span>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: cs.color }}>{cs.label}</span>
                 </span>
               </button>
@@ -880,7 +931,9 @@ function CalendarBlock({ t }) {
           })}
         </div>
         {(() => { const cs = channelState(ch, conn[ch.platform], !!progress[ch.platform]);
-          if (acting || cs.key === 'on') return null;
+          if (cs.key === 'on') return null;
+          if (acting) return <div className="ae-note" data-testid="cust-not-connected" style={{ background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', padding: '10px 14px', borderRadius: 12 }}>
+            <b>This customer has not connected {ch.name}{cs.key === 'reconnect' ? ' (it needs to be reconnected)' : ''}.</b> They connect it from their own sign-in. Until then you can write and prepare the post, but not publish or schedule it.</div>;
           const prog = cs.key === 'progress';
           return <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '10px 14px', borderRadius: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span>{prog ? <><b>{ch.name} is in progress.</b> We are finishing this connection. You can write, edit and approve now, and we will publish once it is ready.</>
@@ -905,6 +958,15 @@ function CalendarBlock({ t }) {
               {sameCore(p).length > 0 && <div className="ae-note" style={{ padding: '8px 16px', borderTop: '1px solid var(--ae-line2)' }}>Same content on {sameCore(p).map(q => q.c.name).join(', ')}. Only the caption, hashtags and format change for each platform.</div>}
               {isPub && <div style={{ padding: '8px 16px', background: '#ecfdf5', borderTop: '1px solid #a7f3d0', color: '#065f46', fontSize: 13, fontWeight: 700 }}>
                 ● Published on {fmtWhen(p.st.pub_at)}{lateDay ? ` (it was planned for ${fmtDate(p.d, { weekday: 'short', day: 'numeric', month: 'short' })})` : ''}</div>}
+              {acting && !isPub && p.st.sched_id && p.st.sched_at && <div data-testid="sched-banner" style={{ padding: '8px 16px', background: '#eff6ff', borderTop: '1px solid #bfdbfe', color: '#1e40af', fontSize: 13, fontWeight: 700, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                🗓 Scheduled for {p.c.name} on {fmtWhen(p.st.sched_at)}. It will be posted automatically.
+                <button className="ae-linkbtn" disabled={!!w} onClick={() => cancelSchedule(p)}>Cancel schedule</button></div>}
+              {acting && sched && sched.k === p.k && <div data-testid="sched-form" style={{ padding: '12px 16px', background: '#f8fafc', borderTop: '1px solid var(--ae-line2)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>Post to {p.c.name} on</span>
+                <input type="datetime-local" className="ae-input" style={{ width: 'auto' }} value={sched.value} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} onChange={e => setSched({ k: p.k, value: e.target.value })} data-testid="sched-when" aria-label="Date and time to post" />
+                <span className="ae-note" style={{ fontSize: 12 }}>Your local time ({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
+                <button className="ae-btn sm" style={{ fontWeight: 800, background: '#4f46e5', color: '#fff', borderColor: '#4f46e5' }} disabled={!!w} onClick={() => schedulePost(p, sched.value)} data-testid="sched-confirm">Schedule post</button>
+                <button className="ae-btn sm" onClick={() => setSched(null)}>Cancel</button></div>}
               {editing[p.k] && <PostEditForm ch={p.c} post={p.post} reel={p.reel} saving={!!savingPost[p.k]}
                 onCancel={() => setEditing(m => ({ ...m, [p.k]: false }))}
                 onSave={async (d) => { if (await savePost(p, d)) setEditing(m => ({ ...m, [p.k]: false })); }} />}
@@ -928,15 +990,20 @@ function CalendarBlock({ t }) {
                 </>}
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {hasMedia(p) && reusable(p).length > 0 && <button className="ae-btn sm" style={{ fontWeight: 700 }} title={`Use this ${p.reel ? 'video' : 'image'} on ${reusable(p).map(q => q.c.name).join(', ')}`} onClick={() => reuseMedia(p)}>↔ Use on {reusable(p).length} other platform{reusable(p).length > 1 ? 's' : ''}</button>}
-                  {acting ? null : confirmPub === p.k
+                  {confirmPub === p.k
                     ? <><span className="ae-note" style={{ fontSize: 12.5 }}>Post to {p.c.name} now?</span>
                         <button className="ae-btn sm" style={{ fontWeight: 800, background: '#4f46e5', color: '#fff', borderColor: '#4f46e5' }} onClick={() => publishNow(p)}>Yes, publish</button>
                         <button className="ae-btn sm" onClick={() => setConfirmPub(null)}>Cancel</button></>
                     : manualOnly(p)
                       ? <button className="ae-btn sm" style={{ fontWeight: 800 }} disabled={!!w || !p.st.vid} title={`${p.c.name} does not accept reels from other apps. Download the reel, post it there, then mark it as posted here.`} onClick={() => markPosted(p)}>{isPub ? '↻ Posted again today' : '✓ I posted this myself'}</button>
-                      : <button className="ae-btn sm" style={{ fontWeight: 800 }} disabled={!!w || !hasMedia(p) || !!data.limited}
-                          title={data.limited ? 'Publishing is available on paid plans.' : !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : `Post this to ${p.c.name} right now`}
-                          onClick={() => setConfirmPub(p.k)}>{w === 'pub' ? 'Publishing…' : isPub ? '↻ Publish again' : '🚀 Publish now'}</button>}
+                      : <>
+                        {acting && !isPub && !manualOnly(p) && <button className="ae-btn sm" style={{ fontWeight: 800 }} data-testid="sched-open"
+                          disabled={!!w || !hasMedia(p) || channelState(p.c, conn[p.c.platform], false).key !== 'on'}
+                          title={!hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : channelState(p.c, conn[p.c.platform], false).key !== 'on' ? `This customer has not connected ${p.c.name}.` : `Schedule this post to ${p.c.name} for a date and time you choose`}
+                          onClick={() => setSched({ k: p.k, value: defaultWhen(p) })}>{w === 'sched' ? 'Working…' : p.st.sched_id ? '🗓 Reschedule' : '🗓 Schedule'}</button>}
+                        <button className="ae-btn sm" style={{ fontWeight: 800 }} data-testid="publish-now" disabled={!!w || !hasMedia(p) || !!data.limited || (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on')}
+                          title={data.limited ? 'Publishing is available on paid plans.' : !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on') ? `This customer has not connected ${p.c.name}.` : `Post this to ${p.c.name} right now`}
+                          onClick={() => setConfirmPub(p.k)}>{w === 'pub' ? 'Publishing…' : isPub ? '↻ Publish again' : '🚀 Publish now'}</button></>}
                   <button className="ae-btn good" style={{ fontWeight: 800, padding: '8px 16px', background: ap ? '#ecfdf5' : '#10b981', color: ap ? '#047857' : '#fff' }} onClick={() => setPostState(p.k, { approved: !ap })}>{ap ? 'Approved ✓' : 'Approve'}</button>
                 </span>
               </div>

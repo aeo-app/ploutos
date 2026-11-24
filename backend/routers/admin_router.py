@@ -462,8 +462,9 @@ async def admin_upload_media(user_id: str, admin_id: str = Depends(require_admin
     summary="Post to a customer's connected Facebook/Instagram/LinkedIn/Google Business right now",
 )
 async def admin_publish(user_id: str, req: SocialPublishRequest, admin_id: str = Depends(require_admin)):
-    image_url = _resolve_social_image_url(user_id, req.poster_id, req.image_url)
-    results = _publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url)
+    image_url = req.video_url if req.video_url else _resolve_social_image_url(user_id, req.poster_id, req.image_url)
+    results = _publish_to_platforms(user_id, req.platforms, image_url, req.caption, cta_url=req.cta_url,
+                                    video_url=req.video_url, title=req.title)
 
     # Same persistence the customer-facing /publish endpoint has — without
     # this, an admin's "post now" on a customer's behalf left no history
@@ -476,7 +477,7 @@ async def admin_publish(user_id: str, req: SocialPublishRequest, admin_id: str =
         schedule_id=schedule_id, user_id=user_id,
         day_date=req.day_date or _datetime.now(_timezone.utc).date().isoformat(), post_number=req.post_number,
         platforms=req.platforms, caption=req.caption, image_url=image_url, cta_url=req.cta_url or "",
-        scheduled_time_iso=now_iso, status=overall_status, results=results,
+        scheduled_time_iso=now_iso, status=overall_status, results=results, video_url=req.video_url or "", title=req.title or "",
     )
     logger.info(f"[admin] {admin_id} published to {req.platforms} on behalf of user {user_id}: {overall_status}")
     return SocialPublishResponse(results=results)
@@ -495,13 +496,21 @@ async def admin_schedule(user_id: str, req: SocialScheduleRequest, admin_id: str
     if scheduled_dt <= _datetime.now(_timezone.utc):
         raise HTTPException(status_code=422, detail="scheduled_time must be in the future")
 
-    image_url = _resolve_social_image_url(user_id, req.poster_id, req.image_url)
+    # Scheduling for a customer only makes sense for channels the customer has connected (and that still work).
+    conns = {c["platform"]: c for c in _list_social_connections(user_id)}
+    names = {"facebook": "Facebook", "instagram": "Instagram", "linkedin": "LinkedIn", "google_business": "Google Business Profile", "youtube": "YouTube"}
+    missing = [names.get(p, p) for p in req.platforms if p not in conns or conns[p].get("needs_reconnect")]
+    if missing:
+        raise HTTPException(status_code=409, detail=f"This customer has not connected (or needs to reconnect) {', '.join(missing)}, so a post cannot be scheduled there yet.")
+
+    image_url = req.video_url if req.video_url else _resolve_social_image_url(user_id, req.poster_id, req.image_url)
     schedule_id = str(_uuid.uuid4())
     scheduled_iso = scheduled_dt.astimezone(_timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     _save_scheduled_post(
         schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, post_number=req.post_number, platforms=req.platforms,
         caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
+        video_url=req.video_url or "", title=req.title or "", post_key=req.post_key or "", scheduled_by=admin_id,
     )
     logger.info(f"[admin] {admin_id} scheduled a post for user {user_id} at {scheduled_iso}")
     return SocialScheduleResponse(schedule_id=schedule_id, scheduled_time=scheduled_iso, status="pending")
@@ -551,7 +560,8 @@ async def admin_retry_scheduled(user_id: str, schedule_id: str, admin_id: str = 
     if post.get("status") not in ("failed", "partial"):
         raise HTTPException(status_code=409, detail=f"Only failed or partially-failed posts can be retried (this one is {post.get('status')!r}).")
 
-    results = _publish_to_platforms(user_id, post["platforms"], post["image_url"], post["caption"], cta_url=post.get("cta_url") or None)
+    results = _publish_to_platforms(user_id, post["platforms"], post["image_url"], post["caption"], cta_url=post.get("cta_url") or None,
+                                    video_url=post.get("video_url") or None, title=post.get("title") or None)
     successes = sum(1 for r in results if r["success"])
     overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
     _update_scheduled_post_status(schedule_id, overall_status, results=results)

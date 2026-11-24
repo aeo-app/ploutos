@@ -863,6 +863,7 @@ def save_scheduled_post(
     *, schedule_id: str, user_id: str, day_date: str, platforms: list[str],
     caption: str, image_url: str, cta_url: str = "", scheduled_time_iso: str,
     status: str = "pending", results: Optional[list] = None, post_number: Optional[int] = None,
+    video_url: str = "", title: str = "", post_key: str = "", scheduled_by: str = "",
 ) -> None:
     table = _get_table()
     item = {
@@ -883,6 +884,10 @@ def save_scheduled_post(
         "created_at": _now_iso(),
         "updated_at": _now_iso(),
     }
+    # Reels, and the calendar entry to mark as published afterwards, are only stored when there is one.
+    for k, v in (("video_url", video_url), ("title", title), ("post_key", post_key), ("scheduled_by", scheduled_by)):
+        if v:
+            item[k] = v
     try:
         table.put_item(Item=_to_dynamo(item))
         logger.info(f"[dynamo] scheduled post {schedule_id} for user={user_id} at {scheduled_time_iso}")

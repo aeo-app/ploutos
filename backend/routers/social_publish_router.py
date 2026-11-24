@@ -37,6 +37,9 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from core.security import get_real_user_id as get_current_user_id  # never "act as" a customer here
+# Uploads are the one exception: an admin preparing a post for a customer uploads the picture or reel INTO the customer's
+# account, so the customer's own publish (and the admin's publish for them) can read it.
+from core.security import get_current_user_id as get_upload_owner_id
 from core.paywall import paywall_guard
 from db import (
     cancel_scheduled_post,
@@ -348,7 +351,7 @@ def _resolve_image_url(user_id: str, poster_id: str | None, image_url: str | Non
 
 # ── Direct image upload (a user's own poster, not created via Canva) ───────
 @router.post("/uploads", response_model=UploadMediaResponse, summary="Upload your own image to post/schedule (instead of a Canva poster)")
-async def upload_media(user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+async def upload_media(user_id: str = Depends(get_upload_owner_id), file: UploadFile = File(...)):
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=422, detail="Uploaded file is empty")
@@ -377,7 +380,7 @@ def _finish_short(data: bytes, user_id: str):
 
 
 @router.post("/uploads/video", summary="Upload your own YouTube Short (vertical or square video, up to 3 minutes)")
-async def upload_short_video(user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+async def upload_short_video(user_id: str = Depends(get_upload_owner_id), file: UploadFile = File(...)):
     return _finish_short(await file.read(), user_id)
 
 
@@ -394,7 +397,7 @@ def _upload_prefix(user_id: str, upload_id: str) -> str:
 
 
 @router.post("/uploads/video/part", summary="One piece of a large video upload")
-async def upload_video_part(upload_id: str = Query(...), index: int = Query(..., ge=0), user_id: str = Depends(get_current_user_id), file: UploadFile = File(...)):
+async def upload_video_part(upload_id: str = Query(...), index: int = Query(..., ge=0), user_id: str = Depends(get_upload_owner_id), file: UploadFile = File(...)):
     from services.media_upload_service import put_temp_part
 
     if index >= MAX_VIDEO_PARTS:
@@ -415,7 +418,7 @@ class VideoCompleteRequest(BaseModel):
 
 
 @router.post("/uploads/video/complete", summary="Put the pieces of a large video together and finish the upload")
-async def upload_video_complete(req: VideoCompleteRequest, user_id: str = Depends(get_current_user_id)):
+async def upload_video_complete(req: VideoCompleteRequest, user_id: str = Depends(get_upload_owner_id)):
     from services.media_upload_service import delete_temp_parts, read_temp_parts
 
     if not 1 <= req.parts <= MAX_VIDEO_PARTS:
@@ -845,13 +848,14 @@ async def schedule(req: ScheduleRequest, user_id: str = Depends(get_current_user
     if scheduled_dt <= datetime.now(timezone.utc):
         raise HTTPException(status_code=422, detail="scheduled_time must be in the future")
 
-    image_url = _resolve_image_url(user_id, req.poster_id, req.image_url)
+    image_url = req.video_url if req.video_url else _resolve_image_url(user_id, req.poster_id, req.image_url)
     schedule_id = str(uuid.uuid4())
     scheduled_iso = scheduled_dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     save_scheduled_post(
         schedule_id=schedule_id, user_id=user_id, day_date=req.day_date, post_number=req.post_number, platforms=req.platforms,
         caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
+        video_url=req.video_url or "", title=req.title or "", post_key=req.post_key or "",
     )
     logger.info(f"[social-publish] scheduled post {schedule_id} for user={user_id} at {scheduled_iso}")
     return ScheduleResponse(schedule_id=schedule_id, scheduled_time=scheduled_iso, status="pending")
@@ -895,7 +899,8 @@ async def retry_scheduled(schedule_id: str, user_id: str = Depends(get_current_u
     # harmless; the alternative (tracking exactly which platforms still
     # need it) adds real complexity for a case where a duplicate
     # successful post is a minor, visible thing, not a hidden problem.
-    results = publish_to_platforms(user_id, post["platforms"], post["image_url"], post["caption"], cta_url=post.get("cta_url") or None)
+    results = publish_to_platforms(user_id, post["platforms"], post["image_url"], post["caption"], cta_url=post.get("cta_url") or None,
+                                   video_url=post.get("video_url") or None, title=post.get("title") or None)
     successes = sum(1 for r in results if r["success"])
     overall_status = "posted" if successes == len(results) else ("partial" if successes > 0 else "failed")
     update_scheduled_post_status(schedule_id, overall_status, results=results)

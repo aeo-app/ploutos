@@ -25,8 +25,8 @@ const FALSE_KEYS = Object.fromEntries(Object.keys(EMPTY_KEYS).map(k => [k, false
 /**
  * Shows a customer's own screens to an admin: the same components, the same data, the same
  * edits. Every request carries X-Act-As-User (the server re-checks the caller is an admin), so
- * everything is read and saved on the customer's account. Publishing and connecting social
- * accounts stay with the customer.
+ * everything is read and saved on the customer's account. Connecting social accounts stays with
+ * the customer; the admin can publish and schedule posts to the channels the customer has connected.
  *
  * Nothing is shared between customers: the header is set before anything below renders, and
  * all results live in a scope keyed by the customer, so switching customer starts from zero.
