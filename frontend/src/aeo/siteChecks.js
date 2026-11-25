@@ -20,6 +20,11 @@ export function loadSiteChecks(url) {
   return pending.get(url);
 }
 
+/** The saved result only: never starts a new check (used by the Full Report). */
+export function readSavedSiteChecks(url) {
+  return latest.has(url) ? Promise.resolve(latest.get(url)) : aeoApi.siteChecksSaved();
+}
+
 export function useSiteChecks(url) {
   const [data, setData] = useState(() => latest.get(url) || null);
   const [busy, setBusy] = useState(false);

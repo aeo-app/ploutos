@@ -9,7 +9,7 @@ import { ManageAccounts } from '../ManageAccounts';
 import { useSocialChannels } from '../social';
 import { usePayment } from '../../context/PaymentContext';
 import { BrandKitCard } from '../BrandKit';
-import { ENGINES, checkedAnswers, citedCount, engineNames, engineStats, hostOf, isReal, num, overallVis, searchesTitle, sovRank, youSov } from '../utils';
+import { ENGINES, checkedAnswers, citedCount, hostOf, isReal, num, overallVis, sovRank, youSov } from '../utils';
 
 const FIRST_REAL = { text: 'First check with real answers', color: '#6b6a85' };
 const band =(v, cuts, labels, colors) => { const i = v < cuts[0] ? 0 : v < cuts[1] ? 1 : 2; return { label: labels[i], color: colors[i] }; };
@@ -167,7 +167,7 @@ export function DashboardPage() {
             <KpiCard title="Share of voice" badge={<ResultBadge analysis={analysis} />} value={sov != null ? sov + '%' : '—'} label={rk ? `#${rk.rank} of ${rk.of}` : ''} labelColor={sovColor} delta={sinceLast(sov, psov, '%')} pct={sov || 0} barColor={sovColor}
               text={`How often AI suggests you vs your competitors${r.market ? ` in ${r.market}` : ''}.`} linkText="View all competitors →" onLink={go('aeoCompetitors')} />
             <KpiCard title="Times AI linked to you" badge={<ResultBadge analysis={analysis} />} value={cited} unit={` of ${totalAnswers}`} label={citeB.label} labelColor={citeB.color} delta={sinceLast(cited, pcited)} pct={totalAnswers ? cited / totalAnswers * 100 : 0} barColor={citeB.color}
-              text="Answers where an AI tool linked to your website." linkText="Go to AI Engines →" onLink={go('aeoEngines')} />
+              text="Answers where an AI tool linked to your website." linkText="View all prompts →" onLink={go('aeoPrompts')} />
             {daNow == null ? (
               <KpiCard title="Website strength" sub="Domain Authority" text="How much Google and AI trust your website." >
                 <span className="dv-notchecked">Not checked yet</span><div className="dv-meter" />
@@ -238,39 +238,5 @@ export function CompetitorsAeoPage() {
       </div>
       {analysis?.disclaimer && <span className="ae-note">{analysis.disclaimer}</span>}
     </section>
-  );
-}
-
-export function EnginesPage() {
-  const { analysis } = useAeo();
-  if (!analysis) return <EmptyAnalysis />;
-  return (
-    <>
-      <section className="ae-engs">
-        {engineNames(analysis).map((name, j) => {
-          const st = engineStats(analysis.prompts, j);
-          return (
-            <div key={name} className="ae-card" style={{ padding: 22, gap: 16 }}>
-              <div className="ae-row" style={{ alignItems: 'baseline', flexWrap: 'nowrap' }}><span style={{ fontSize: 17, fontWeight: 800 }}>{name}</span><span style={{ fontSize: 26, fontWeight: 800, color: '#4f46e5' }}>{st.vis}%</span></div>
-              <div className="ae-3">
-                <div style={{ background: '#ecfdf5', color: '#065f46' }}><b>{st.cited}</b>Cited</div>
-                <div style={{ background: '#fffbeb', color: '#92400e' }}><b>{st.mentioned}</b>Mentioned</div>
-                <div style={{ background: '#f6f6fb', color: '#4a4966' }}><b>{st.absent}</b>Absent</div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                <div className="ae-row" style={{ flexWrap: 'nowrap' }}><span style={{ color: 'var(--ae-mute)' }}>Average position when cited</span><b>{st.avg}</b></div>
-                <div className="ae-row" style={{ flexWrap: 'nowrap' }}><span style={{ color: 'var(--ae-mute)' }}>Most-recommended competitor</span><b style={{ textAlign: 'right' }}>{analysis.engine_leaders?.[j] || '—'}</b></div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid var(--ae-line2)', paddingTop: 14 }}>
-                <span className="ae-eyebrow">Biggest gaps</span>
-                {st.gaps.length === 0 && <span className="ae-sub">No gaps — you appear for every tracked prompt.</span>}
-                {st.gaps.map(g => <div key={g.text} className="ae-row" style={{ flexWrap: 'nowrap', fontSize: 13, gap: 10 }}><b style={{ fontWeight: 600 }}>{g.text}</b><span className="ae-mono" style={{ color: 'var(--ae-mute)', flexShrink: 0 }} title={searchesTitle(g)}>{g.volume_estimate ? `${num(g.volume_estimate)}/mo` : '—'}</span></div>)}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-      {analysis.disclaimer && <span className="ae-note">{analysis.disclaimer}</span>}
-    </>
   );
 }
