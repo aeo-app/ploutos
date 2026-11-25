@@ -40,13 +40,11 @@ from db import (
     get_aeo_content,
     get_aeo_state,
     list_aeo_content,
-    get_insight,
     get_user_domain_lock,
     list_analyses,
     is_user_paid,
     save_aeo_content,
     save_aeo_state,
-    save_insight,
 )
 from db.dynamo import normalize_domain
 from models.aeo_models import (
@@ -80,11 +78,10 @@ from services.aeo_service import (
     generate_seo_content,
     normalise_social_link,
     run_site_checks,
-    speed_check,
 )
-from routers.insights_router import SPEED
 from services.bedrock_service import TokenUsageTracker
 from services import brand_service as brand_svc
+from db.dynamo import get_registered_user
 from services import seo_data_service
 from services.aeo_service import _safe_get, clean_keywords, suggest_site_keywords
 from services.brand_overlay import normalise_logo, validate_logo
@@ -105,6 +102,11 @@ def _enforce_domain(user_id: str, url: str, company_name: str) -> None:
         check_and_lock_domain(user_id, url, company_name)
     except DomainMismatchError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    try:        # the owner's own description of the business (Brand kit) guides everything written for this site
+        from services.aeo_service import set_site_about
+        set_site_about(url, brand_svc.get_brand(user_id).get("about", ""))
+    except Exception as e:  # noqa: BLE001
+        logger.info(f"[aeo] could not apply the business description for {user_id}: {e}")
 
 
 def _cached_or_generate(
@@ -596,10 +598,23 @@ def keywords_from_site(req: KeywordSuggestRequest, user_id: str = Depends(get_cu
 
 
 # ── Brand kit: logo + contact details printed on every generated image / Short ────────────────
+def _login_email(user_id: str) -> str:
+    """The email the person signs in with ("" if unknown). Used when the website shows no email address."""
+    try:
+        return brand_svc.clean_email((get_registered_user(user_id) or {}).get("email", ""))
+    except Exception as e:  # noqa: BLE001 - a missing/odd address must never break the brand kit
+        logger.info(f"[aeo] login email unavailable for {user_id}: {e}")
+        return ""
+
+
 def _brand_view(user_id: str) -> dict:
     b = brand_svc.get_brand(user_id)
+    if not str(b.get("email") or "").strip():
+        mail = _login_email(user_id)       # no email on the kit (or on the website): show, and keep, the logged-in one
+        if mail:
+            b = brand_svc.save_brand(user_id, email=mail) or {**b, "email": mail}
     missing = brand_svc.missing_fields(b)
-    view = {k: b.get(k, "") for k in ("phone", "email", "website", "address")}
+    view = {k: b.get(k, "") for k in ("phone", "email", "website", "address", "about")}
     view.update(logo_url=b.get("logo_url", ""), business=b.get("business") or {}, socials=b.get("socials") or {}, detected=bool(b.get("detected_at")))
     view["logo_view_url"] = (signed_view_url(b["logo_url"], user_id) if b.get("logo_url") else "") or ""
     return {"brand": view, "missing": missing, "complete": not missing}
@@ -615,6 +630,7 @@ class BrandUpdate(BaseModel):
     email: str = Field(default="", max_length=120)
     website: str = Field(default="", max_length=140)
     address: str = Field(default="", max_length=200)
+    about: str | None = Field(default=None, max_length=600)     # what the business does, in the owner's words (None = leave as is)
 
 
 @router.put("/brand", summary="Save the contact details printed on every generated image")
@@ -626,6 +642,8 @@ def put_brand_kit(req: BrandUpdate, user_id: str = Depends(get_current_user_id))
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    if req.about is not None:
+        fields["about"] = " ".join(req.about.split())[:600]
     brand_svc.save_brand(user_id, **fields)
     return _brand_view(user_id)
 
@@ -667,8 +685,10 @@ def detect_brand(req: BrandDetectRequest, user_id: str = Depends(get_current_use
             fill["phone"] = brand_svc.clean_phone(found["phones"][0])
         except ValueError:
             pass
-    if not str(cur.get("email") or "").strip() and found["emails"]:
-        fill["email"] = found["emails"][0]
+    if not str(cur.get("email") or "").strip():
+        mail = found["emails"][0] if found["emails"] else _login_email(user_id)    # the website's, else the logged-in email
+        if mail:
+            fill["email"] = mail
     if not str(cur.get("website") or "").strip():
         try:
             fill["website"] = brand_svc.clean_website(req.url)
@@ -694,7 +714,25 @@ def detect_brand(req: BrandDetectRequest, user_id: str = Depends(get_current_use
     if added:
         st["social_links"] = links
         save_aeo_state(user_id, AeoState(**st).model_dump())
+    # Use the logo found on the website straight away (first candidate that downloads and is a usable image), unless one is already saved.
+    logo_taken = False
+    usable: list[tuple[str, bytes]] = []
+    for cand in found.get("logo_candidates") or []:     # keep only images that are big enough to use (not 16px favicons)
+        try:
+            r = _safe_get(cand, timeout=8.0)
+            if r.ok and r.headers.get("content-type", "").lower().startswith("image/") and r.content and validate_logo(r.content)[0]:
+                usable.append((cand, r.content))
+        except Exception as e:  # noqa: BLE001 - skip this candidate
+            logger.info(f"[aeo] site logo candidate skipped ({cand}): {e}")
+    found["logo_candidates"] = [c for c, _ in usable]
+    if usable and not str(cur.get("logo_url") or "").strip():
+        try:
+            _store_logo(user_id, usable[0][1])
+            logo_taken = True
+        except HTTPException as e:
+            logger.info(f"[aeo] site logo could not be saved: {e.detail}")
     out = _brand_view(user_id)
+    out["logo_from_site"] = logo_taken
     out["found"] = {k: found[k] for k in ("phones", "emails", "address", "socials", "logo_candidates", "pages_read")}
     out["filled"] = sorted(fill)
     out["social_links"] = links
@@ -831,47 +869,18 @@ async def upload_short(file: UploadFile = File(...), user_id: str = Depends(get_
     }
 
 
-SITE_CHECKS = "site_checks"
-SITE_RECHECK_COOLDOWN = timedelta(minutes=5)
-
-
-def _site_checks_response(user_id: str, saved: dict) -> SiteChecksResponse:
-    result = SiteChecksResponse(**saved)
-    if result.checks:
-        # added on every read, so a newer speed test shows without re-checking the website
-        result.checks.append(speed_check((get_insight(user_id, SPEED) or {}).get("report")))
-    return result
-
-
-@router.get("/site-checks", response_model=SiteChecksResponse, summary="Last saved checks of your own website")
-def saved_site_checks(user_id: str = Depends(get_current_user_id)):
-    return _site_checks_response(user_id, get_insight(user_id, SITE_CHECKS) or {})
-
-
+# ── Website checks ───────────────────────────────────────────────────────────
 @router.post("/site-checks", response_model=SiteChecksResponse, summary="Real checks of your own website")
 def site_checks(req: SiteChecksRequest, user_id: str = Depends(get_current_user_id)):
     # Only the user's own (locked) domain can be checked — this endpoint fetches
     # a URL on the server's behalf, so it must not work as a general-purpose fetcher.
     lock = get_user_domain_lock(user_id)
-    wanted = normalize_domain(req.url) if req.url.strip() else ""
+    wanted = normalize_domain(req.url)
     if lock and wanted and lock.get("domain") != wanted:
         raise HTTPException(status_code=403, detail=f"You can only check your own website ({lock.get('domain')}).")
     if not lock:
         raise HTTPException(status_code=409, detail="Run an analysis for your website first, then checks become available.")
-
-    last = (get_insight(user_id, SITE_CHECKS) or {}).get("checked_at")
-    wait = datetime.fromisoformat(last) + SITE_RECHECK_COOLDOWN - datetime.now(timezone.utc) if last else None
-    if wait and wait.total_seconds() > 0:
-        minutes = int(-(-wait.total_seconds() // 60))
-        raise HTTPException(status_code=429, detail=f"Your website was just checked. You can check it again in {minutes} min.")
-
-    has_address = bool(str(brand_svc.get_brand(user_id).get("address") or "").strip())
-    result = run_site_checks(req.url.strip() or f"https://{lock['domain']}", has_address=has_address)
-    result.checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    saved = result.model_dump()
-    save_insight(user_id, SITE_CHECKS, saved)
-    logger.info(f"[aeo] site checks saved for user={user_id}: {len(result.checks)} checks, error={result.error!r}")
-    return _site_checks_response(user_id, saved)
+    return run_site_checks(req.url)
 
 
 # ── Saved dashboard state ────────────────────────────────────────────────────

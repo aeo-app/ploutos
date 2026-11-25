@@ -315,7 +315,7 @@ class SocialLinkRequest(BaseModel):
 # ── Website readiness checks ─────────────────────────────────────────────────
 
 class SiteChecksRequest(BaseModel):
-    url: str = Field(default="", max_length=300)
+    url: str = Field(..., min_length=3, max_length=300)
 
 
 class SiteCheck(BaseModel):
@@ -323,14 +323,12 @@ class SiteCheck(BaseModel):
     label: str
     value: str
     status: Literal["good", "warn", "bad", "info"] = "info"
-    hint: str = ""
 
 
 class SiteChecksResponse(BaseModel):
-    url: str = ""
-    checks: list[SiteCheck] = Field(default_factory=list)
+    url: str
+    checks: list[SiteCheck]
     error: Optional[str] = None
-    checked_at: Optional[str] = None
 
 
 # ── A finished, designed web page: content written for a template the customer picked ───────────────────────────

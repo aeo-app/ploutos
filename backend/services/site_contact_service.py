@@ -17,7 +17,7 @@ import logging
 import re
 from urllib.parse import urljoin, urlparse
 
-from services.aeo_service import _safe_get
+from services.aeo_service import _safe_get, spa_site_info
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +223,18 @@ def analyse_site(url: str) -> dict:
             og = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]*content=["\'](.*?)["\']', h, re.I)
             if og:
                 logos.append(urljoin(u, _html.unescape(og.group(1))))
+
+    # A page that the browser fills in with JavaScript has nothing to read above: look in the app's own files for what is missing.
+    if home and (not phone_score or not email_score or not any(not x.lower().endswith(".svg") for x in logos)):
+        spa = spa_site_info(base)
+        for e in spa["emails"]:
+            add_email(e, 3)
+        for p_ in spa["phones"]:
+            add_phone(p_, 3)
+        logos.extend(spa["logos"])
+        logos.extend(spa["icons"])        # the site's own icon is the last resort
+        if spa["emails"] or spa["phones"] or spa["logos"]:
+            result["pages_read"].append(base + " (app code)")
 
     phones, seen_digits = [], set()
     for p_, _ in sorted(phone_score.items(), key=lambda kv: (-kv[1], -len(kv[0]))):   # nicest-formatted copy wins

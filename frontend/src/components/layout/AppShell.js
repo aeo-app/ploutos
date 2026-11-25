@@ -199,9 +199,12 @@ export function AppShell({ children, profile, onEnterAdminView }) {
       <div className="ae-main">
         <TopBar onMenu={() => setOpen(v => !v)} onEnterAdminView={onEnterAdminView} />
         {pass?.eligible && !lapsed && !isActingAs() && (
-          <div className="ae-banner" data-testid="pass-banner">
-            <span>Free plan. Unlock the full SEO analysis, 5 prompts, 1 content strategy page, 1 blog, 1 poster and 1 reel with a one-time Starter Pass{passPrice ? `: ${passPrice.label}` : ''}.</span>
-            <button type="button" className="ae-btn sm primary" data-testid="pass-banner-btn" onClick={() => openPaywall({ reason: 'pass' })}>Get the Starter Pass</button>
+          <div className="ae-passbanner" data-testid="pass-banner">
+            <div className="ae-passbanner-txt">
+              <strong>You're on the Free plan.</strong>
+              <span>Unlock the <b>full audit</b>, <b>5 prompts</b>, <b>1 content strategy page</b>, <b>1 blog</b> and <b>1 week of posters and reels</b> with a one time payment {passPrice ? <> for just <b className="ae-passbanner-price">{passPrice.label}</b></> : ''}. No subscription.</span>
+            </div>
+            <button type="button" className="ae-passbanner-btn" data-testid="pass-banner-btn" onClick={() => openPaywall({ reason: 'pass' })}>Get the Starter Pass{passPrice ? ` · ${passPrice.label}` : ''}</button>
           </div>
         )}
         {pass?.active && !isActingAs() && <StarterPassStatus style={{ margin: '10px 20px 0' }} />}

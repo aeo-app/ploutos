@@ -20,7 +20,7 @@ from services.media_upload_service import read_user_image
 
 logger = logging.getLogger(__name__)
 
-BRAND_FIELDS = ("logo_url", "phone", "email", "website", "address", "business", "socials", "detected_at")
+BRAND_FIELDS = ("logo_url", "phone", "email", "website", "address", "about", "business", "socials", "detected_at")
 _PHONE_OK = re.compile(r"^\+?[0-9][0-9 ()./\-]{5,28}$")
 _EMAIL_OK = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 

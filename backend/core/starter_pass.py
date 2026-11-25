@@ -3,12 +3,11 @@ core/starter_pass.py - the one-time Starter Pass for free accounts
 ===================================================================
 A free account can pay ONCE (INR 700 or SGD 10) for a small, fixed bundle:
 
-    * the full SEO analysis (nothing locked)
+    * the full audit (nothing locked)
     * up to 5 selected prompts
     * 1 content strategy page   ("page")
     * 1 blog
-    * 1 poster
-    * 1 reel
+    * 1 week of posters and reels: 3 posters and 2 reels
 
 It is kept apart from subscriptions: it lives in its own record (SK "PASS#STARTER") next to the entitlement
 record and never touches is_paid / paid_until / auto-renew. A subscriber (an active paid plan) does not need it; an account
@@ -31,7 +30,8 @@ PASS_PRICES: dict[str, str] = {
     "SGD": os.getenv("STARTER_PASS_PRICE_SGD", "10.00"),
 }
 # What one pass includes. Keys are the counters kept per account.
-PASS_LIMITS: dict[str, int] = {"prompts": 5, "page": 1, "blog": 1, "poster": 1, "reel": 1}
+# One week of posters and reels = the Starter plan's weekly amount (3 posters + 2 reels), see core/plan_limits.py.
+PASS_LIMITS: dict[str, int] = {"prompts": 5, "page": 1, "blog": 1, "poster": 3, "reel": 2}
 COUNTED = ("page", "blog", "poster", "reel")      # "prompts" is a selection cap, not a counter
 
 _lock = threading.Lock()
