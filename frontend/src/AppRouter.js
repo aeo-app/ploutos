@@ -2,10 +2,11 @@ import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from './context/AppContext';
 import { SeoStrategyPage } from './aeo/SeoStrategy';
-import { DashboardPage, PromptsPage, CompetitorsAeoPage, EnginesPage } from './aeo/pages/AnalyticsPages';
+import { DashboardPage, PromptsPage, CompetitorsAeoPage } from './aeo/pages/AnalyticsPages';
 import { DomainAuthorityAeoPage, CompanyAeoPage } from './aeo/pages/DomainCompanyPages';
 import { StrategyAeoPage, BlogsAeoPage, CalendarAeoPage } from './aeo/pages/ContentPages';
 import { InsightsPage } from './aeo/pages/InsightsPage';
+import { FullReportPage } from './aeo/pages/FullReportPage';
 import { CompetitorsPage }     from './pages/CompetitorsPage';
 import { KeywordsPage }        from './pages/KeywordsPage';
 import { ContentStrategyPage } from './pages/ContentStrategyPage';
@@ -17,9 +18,9 @@ import { ArticleGeneratorPage } from './pages/ArticleGeneratorPage';
 export const APP_PAGES = {
   // AEO dashboard
   home:           DashboardPage,
+  report:         FullReportPage,
   aeoPrompts:     PromptsPage,
   aeoCompetitors: CompetitorsAeoPage,
-  aeoEngines:     EnginesPage,
   da:             DomainAuthorityAeoPage,
   insights:       InsightsPage,
   profile:        CompanyAeoPage,

@@ -10,7 +10,6 @@ const META = {
   home:           ['Dashboard', 'How AI answer engines see your business'],
   aeoPrompts:     ['Prompts', 'What people ask AI about your business'],
   aeoCompetitors: ['Competitors', 'Who AI engines recommend in your category'],
-  aeoEngines:     ['AI Engines', 'Your visibility in each answer engine'],
   da:             ['Domain Authority', 'Gap analysis and backlink roadmap'],
   insights:       ['Insights', 'Real measurements of your website, from Google'],
   profile:        ['Company Profile', 'Your website and business details, as AI engines should see them'],
@@ -26,11 +25,11 @@ const META = {
   blogTopics:     ['Team Blog Topics', 'Topics prepared for you by the AEO-APP team'],
   publishCalendar:['Publishing & Canva', 'Generate posters, connect accounts and schedule posts'],
   relocationCalendar: ['Publishing & Canva', 'Generate posters, connect accounts and schedule posts'],
-  report:         ['Full SEO Report', 'All four analyses in one consolidated view'],
+  report:         ['Full Report', 'Everything about how you show up in AI search, on one page'],
   history:        ['History', 'Everything you have generated'],
   billing:        ['Billing & Plans', 'Your plan, usage and invoices'],
 };
-const RERUN_PAGES = new Set(['home', 'aeoPrompts', 'aeoCompetitors', 'aeoEngines']);
+const RERUN_PAGES = new Set(['home', 'aeoPrompts', 'aeoCompetitors']);
 
 export function TopBar({ onMenu, onEnterAdminView }) {
   const { state } = useApp();
