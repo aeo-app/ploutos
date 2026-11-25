@@ -1,11 +1,16 @@
 {
   "files": {
-    "main.css": "/static/css/main.9abe8487.css",
-    "main.js": "/static/js/main.cf469387.js",
+    "main.css": "/static/css/main.927f08f2.css",
+    "main.js": "/static/js/main.ab9e9ae0.js",
     "static/media/aeo-icon.png": "/static/media/aeo-icon.c77254d0c8ce1182e97d.png",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
+    "static/media/aeo-app-beginners-guide-free-audit-first-ai-citation.md": "/static/media/aeo-app-beginners-guide-free-audit-first-ai-citation.b296c41f67706f98ae62.md",
+    "static/media/ai_visibility_audit_guide.md": "/static/media/ai_visibility_audit_guide.429f2ee1102e4cf9591e.md",
+    "static/media/does-automated-blog-posting-help-chatgpt-ranking.md": "/static/media/does-automated-blog-posting-help-chatgpt-ranking.5d24dbdf02fe192fed35.md",
     "static/media/chatgpt_vs_claude_brand_citations_blog_post.md": "/static/media/chatgpt_vs_claude_brand_citations_blog_post.fb62272470c758d5ed0e.md",
     "static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.md": "/static/media/the-complete-guide-to-schema-markup-for-ai-search-visibility.1fadcd9c7fcd8c4d83d9.md",
+    "static/media/what-is-aeo-and-how-businesses-improve-ai-search-visibility.md": "/static/media/what-is-aeo-and-how-businesses-improve-ai-search-visibility.fa68f7e5e778e13dfdfd.md",
+    "static/media/what-is-aeo-12-questions.md": "/static/media/what-is-aeo-12-questions.de6074090b8c0c6736bc.md",
     "static/media/chatgpt_vs_perplexity_vs_gemini_blog_post.md": "/static/media/chatgpt_vs_perplexity_vs_gemini_blog_post.f3c4c7708676908a7922.md",
     "static/media/aeo_checklist_for_small_businesses.md": "/static/media/aeo_checklist_for_small_businesses.110ddc2a2cdc80abc802.md",
     "static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.md": "/static/media/how-chatgpt-perplexity-and-gemini-choose-what-to-recommend.77e9b10ae98f4d24caa6.md",
@@ -18,10 +23,12 @@
     "static/media/updating_old_content_for_ai_search_blog_post.md": "/static/media/updating_old_content_for_ai_search_blog_post.c16c384e4c4450480655.md",
     "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.2d782c113fbe7a6a7e36.md",
     "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.27ccca8674b359d43ceb.md",
-    "index.html": "/index.html"
+    "index.html": "/index.html",
+    "main.927f08f2.css.map": "/static/css/main.927f08f2.css.map",
+    "main.ab9e9ae0.js.map": "/static/js/main.ab9e9ae0.js.map"
   },
   "entrypoints": [
-    "static/css/main.9abe8487.css",
-    "static/js/main.cf469387.js"
+    "static/css/main.927f08f2.css",
+    "static/js/main.ab9e9ae0.js"
   ]
 }

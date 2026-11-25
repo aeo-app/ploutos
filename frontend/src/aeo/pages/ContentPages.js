@@ -511,7 +511,15 @@ function CalendarBlock({ t }) {
     ? { publish: (b) => adminApi.socialPublish(getActAs(), b), schedule: (b) => adminApi.socialSchedule(getActAs(), b), cancel: (id) => adminApi.socialCancelScheduled(getActAs(), id) }
     : socialPublishApi;
   const progress = useConnectProgress();
-  useEffect(() => { let off = false; socialPublishApi.statusForView().then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (!isActingAs() && x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {}); return () => { off = true; }; }, []);
+  // The customer's connections, re-read when the admin returns to this tab (the customer may have connected meanwhile).
+  useEffect(() => {
+    let off = false;
+    const load = () => socialPublishApi.statusForView().then(d => { if (off) return; const m = {}; (d?.platforms || []).forEach(x => { m[x.platform] = x; if (!isActingAs() && x.connected && !x.needs_reconnect) clearConnectInProgress(x.platform); }); setConn(m); }).catch(() => {});
+    load();
+    const onVis = () => { if (!document.hidden && isActingAs()) load(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { off = true; document.removeEventListener('visibilitychange', onVis); };
+  }, []);
 
   // Month 1 starts on the first Monday we planned for. Every later month is the next 4 weeks.
   const start0 = useMemo(() => parseIso(saved.calendar_start) || calendarStart(), [saved.calendar_start]);
@@ -1001,12 +1009,19 @@ function CalendarBlock({ t }) {
                           disabled={!!w || !hasMedia(p) || channelState(p.c, conn[p.c.platform], false).key !== 'on'}
                           title={!hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : channelState(p.c, conn[p.c.platform], false).key !== 'on' ? `This customer has not connected ${p.c.name}.` : `Schedule this post to ${p.c.name} for a date and time you choose`}
                           onClick={() => setSched({ k: p.k, value: defaultWhen(p) })}>{w === 'sched' ? 'Working…' : p.st.sched_id ? '🗓 Reschedule' : '🗓 Schedule'}</button>}
-                        <button className="ae-btn sm" style={{ fontWeight: 800 }} data-testid="publish-now" disabled={!!w || !hasMedia(p) || !!data.limited || (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on')}
-                          title={data.limited ? 'Publishing is available on paid plans.' : !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on') ? `This customer has not connected ${p.c.name}.` : `Post this to ${p.c.name} right now`}
+                        <button className="ae-btn sm" style={{ fontWeight: 800 }} data-testid="publish-now" disabled={!!w || !hasMedia(p) || (!acting && !!data.limited) || (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on')}
+                          title={(!acting && data.limited) ? 'Publishing is available on paid plans.' : !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on') ? `This customer has not connected ${p.c.name}.` : `Post this to ${p.c.name} right now`}
                           onClick={() => setConfirmPub(p.k)}>{w === 'pub' ? 'Publishing…' : isPub ? '↻ Publish again' : '🚀 Publish now'}</button></>}
                   <button className="ae-btn good" style={{ fontWeight: 800, padding: '8px 16px', background: ap ? '#ecfdf5' : '#10b981', color: ap ? '#047857' : '#fff' }} onClick={() => setPostState(p.k, { approved: !ap })}>{ap ? 'Approved ✓' : 'Approve'}</button>
                 </span>
               </div>
+              {acting && !manualOnly(p) && !isPub && (() => {
+                const k = channelState(p.c, conn[p.c.platform], false).key;
+                const why = !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.')
+                  : k === 'reconnect' ? `The customer's ${p.c.name} connection has expired. They need to reconnect it from their own sign-in.`
+                  : k !== 'on' ? `The customer has not connected ${p.c.name}. They connect it from their own sign-in (Social Media Calendar → connect), then Publish now and Schedule turn on here.` : '';
+                return why ? <div className="ae-note" data-testid="why-disabled" style={{ padding: '0 16px 12px', color: '#92400e', fontWeight: 600 }}>Why Publish now and Schedule are off: {why}</div> : null;
+              })()}
               {manualOnly(p) && <div className="ae-note" style={{ padding: '0 16px 12px' }}>{p.c.name} does not accept reels from other apps. Download the reel, post it there, then tap “I posted this myself” so the calendar shows the date and time.</div>}
             </div>
           );

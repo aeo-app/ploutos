@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { adminAeoApi } from '../../api/adminApi';
+import { adminAeoApi, adminApi } from '../../api/adminApi';
 import { canvaApi } from '../../api/canvaApi';
 import { prepPhoto } from '../../utils/photoPrep';
 import { downloadImage } from '../../api/downloadImage';
-import { CALENDAR_PROMPT, CHANNELS, channelState, isReel, reelWord, postStateKey, dayOffset } from '../../aeo/utils';
+import { CALENDAR_PROMPT, CHANNELS, channelState, isReel, reelWord, postStateKey, dayOffset, fmtWhen, isoDate } from '../../aeo/utils';
 import { Badge, Card, Empty, SectionHeader, SkeletonCard } from '../../components/ui/UI';
 import { useApp } from '../../context/AppContext';
 import { AdminImg, AdminVideo, CustomerList, UserHeader, promptsOf, useAdminCall, useWorkspace } from './shared';
@@ -15,7 +15,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const brandVisual = (post, brand) => (post.visual && post.visual.trim())
   || `A realistic, real-world photograph for ${brand} showing: ${(post.title || post.text || '').replace(/\s+/g, ' ').slice(0, 160)}`;
 
-function PostEditor({ siblings, userId, brand, brandOk, prompt, ch, i, post, st, onChange, onFlag, onSaveDoc, saving, dirty, justSaved, saveError }) {
+function PostEditor({ siblings, userId, brand, brandOk, site, connState, prompt, ch, i, post, st, onChange, onFlag, onSaveDoc, saving, dirty, justSaved, saveError }) {
   const call = useAdminCall();
   const { toast } = useApp();
   const fileRef = useRef(null);
@@ -95,6 +95,95 @@ function PostEditor({ siblings, userId, brand, brandOk, prompt, ch, i, post, st,
     if (!ok) toast({ type: 'info', message: 'Opened the image in a new tab — right-click it to save.' });
   };
   const set = (k, v) => onChange({ ...post, [k]: v });
+
+  // ── Publish now / Schedule, on the customer's connected channel ──
+  const [pubBusy, setPubBusy] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [when, setWhen] = useState(null);                  // datetime-local value while choosing a schedule time
+  const media = reel ? vid : img;
+  const manual = reel && (ch.id === 'li' || ch.id === 'gbp');       // LinkedIn and Google Business do not take reels
+  const conn = channelState(ch, connState).key;
+  const isPub = !!st.published;
+  const block = manual ? `${ch.name} does not accept ${reelWord(ch)}s from other apps. Post it there by hand.`
+    : !media ? (reel ? `Create or upload a ${reelWord(ch)} first.` : 'Add an image first. Every poster needs one.')
+    : conn !== 'on' ? `This customer has not connected ${ch.name}${conn === 'reconnect' ? ' (it needs reconnecting)' : ''} yet.`
+    : dirty ? 'Save your changes first, so the customer sees exactly what was posted.' : '';
+  const caption = [post.text, post.cta, post.tags].map(x => (x || '').trim()).filter(Boolean).join('\n\n').slice(0, 3000);
+  const payload = () => ({
+    ...(reel ? { video_url: vid, title: (post.title || '').slice(0, 100) || undefined } : { image_url: img }),
+    caption, platforms: [ch.platform], cta_url: site ? `https://${site}` : undefined,
+    day_date: isoDate(new Date()), post_number: 1, post_key: key,
+  });
+  const defaultWhen = () => {
+    const d = new Date(Date.now() + 24 * 3600 * 1000); d.setHours(9, 0, 0, 0);
+    const z = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+  };
+  const publishNow = async () => {
+    setConfirm(false); setPubBusy('pub');
+    try {
+      if (st.sched_id) { try { await adminApi.socialCancelScheduled(userId, st.sched_id); } catch (_) { /* already sent or cancelled */ } }
+      const res = await adminApi.socialPublish(userId, payload());
+      const r = (res?.results || [])[0] || {};
+      if (r.success) {
+        onFlag(key, { ...st, approved: true, published: true, pub_at: new Date().toISOString(), sched_id: '', sched_at: '' });
+        toast({ type: 'success', message: `Published to ${ch.name} for the customer.` });
+      } else toast({ type: 'error', message: r.needs_reconnect ? `The customer's ${ch.name} connection needs to be reconnected by them.` : (r.error || `Could not publish to ${ch.name}. Please try again.`) });
+    } catch (e) { if (e?.code !== 'TokenExpired') toast({ type: 'error', message: e?.message || 'Could not publish. Please try again.' }); }
+    setPubBusy('');
+  };
+  const schedule = async () => {
+    const t = new Date(when);
+    if (isNaN(t) || t.getTime() <= Date.now() + 60 * 1000) { toast({ type: 'info', message: 'Choose a date and time in the future.' }); return; }
+    setPubBusy('sched');
+    try {
+      const iso = t.toISOString();
+      const res = await adminApi.socialSchedule(userId, { ...payload(), scheduled_time: iso });
+      onFlag(key, { ...st, approved: true, published: false, sched_id: res?.schedule_id || '', sched_at: res?.scheduled_time || iso });
+      setWhen(null);
+      toast({ type: 'success', message: `Scheduled for ${ch.name} on ${fmtWhen(res?.scheduled_time || iso)}.` });
+    } catch (e) { if (e?.code !== 'TokenExpired') toast({ type: 'error', message: e?.message || 'Could not schedule this post.' }); }
+    setPubBusy('');
+  };
+  const cancelSchedule = async () => {
+    setPubBusy('sched');
+    try {
+      if (st.sched_id) await adminApi.socialCancelScheduled(userId, st.sched_id);
+      onFlag(key, { ...st, approved: false, sched_id: '', sched_at: '' });
+      toast({ type: 'success', message: 'The scheduled post was cancelled.' });
+    } catch (e) { if (e?.code !== 'TokenExpired') toast({ type: 'error', message: e?.message || 'Could not cancel it. It may already have been posted.' }); }
+    setPubBusy('');
+  };
+  const publishBar = (
+    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #e5e7eb' }} data-testid="admin-publish">
+      {isPub && <p className={s.note} style={{ margin: '0 0 8px', color: '#059669', fontWeight: 700 }}>● Published {fmtWhen(st.pub_at)}</p>}
+      {!isPub && st.sched_id && st.sched_at && <p className={s.note} style={{ margin: '0 0 8px', color: '#1e40af', fontWeight: 700 }}>🗓 Scheduled for {ch.name} on {fmtWhen(st.sched_at)}.{' '}
+        <button type="button" className={`${s.btn} ${s.sm}`} disabled={!!pubBusy} onClick={cancelSchedule}>Cancel schedule</button></p>}
+      {confirm ? (
+        <div className={s.actions}>
+          <span className={s.note} style={{ fontWeight: 700 }}>Publish this to the customer's {ch.name} now?</span>
+          <button type="button" className={`${s.btn} ${s.sm} ${s.primary}`} data-testid="admin-pub-yes" onClick={publishNow}>Yes, publish</button>
+          <button type="button" className={`${s.btn} ${s.sm}`} onClick={() => setConfirm(false)}>Cancel</button>
+        </div>
+      ) : when !== null ? (
+        <div className={s.actions}>
+          <span className={s.note} style={{ fontWeight: 700 }}>Post to {ch.name} on</span>
+          <input type="datetime-local" className={s.input} style={{ width: 'auto' }} value={when} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} onChange={e => setWhen(e.target.value)} data-testid="admin-sched-when" aria-label="Date and time to post" />
+          <span className={s.note}>Your local time ({Intl.DateTimeFormat().resolvedOptions().timeZone})</span>
+          <button type="button" className={`${s.btn} ${s.sm} ${s.primary}`} disabled={!!pubBusy} data-testid="admin-sched-confirm" onClick={schedule}>{pubBusy === 'sched' ? 'Scheduling…' : 'Schedule post'}</button>
+          <button type="button" className={`${s.btn} ${s.sm}`} onClick={() => setWhen(null)}>Cancel</button>
+        </div>
+      ) : (
+        <div className={s.actions}>
+          <button type="button" className={`${s.btn} ${s.sm} ${s.primary}`} data-testid="admin-pub" disabled={!!block || !!pubBusy} title={block || `Post this to the customer's ${ch.name} right now`} onClick={() => setConfirm(true)}>
+            {pubBusy === 'pub' ? 'Publishing…' : isPub ? '↻ Publish again' : '🚀 Publish now'}</button>
+          {!manual && !isPub && <button type="button" className={`${s.btn} ${s.sm}`} data-testid="admin-sched" disabled={!!block || !!pubBusy} title={block || `Schedule this post to ${ch.name} for a date and time you choose`} onClick={() => setWhen(defaultWhen())}>
+            {st.sched_id ? '🗓 Reschedule' : '🗓 Schedule'}</button>}
+        </div>
+      )}
+      {block && <p className={s.note} style={{ margin: '6px 0 0' }}>{block}</p>}
+    </div>
+  );
 
   const connectCanva = async () => {
     setBusy('cc');
@@ -177,6 +266,7 @@ function PostEditor({ siblings, userId, brand, brandOk, prompt, ch, i, post, st,
           </div>
         )}
         <p className={s.note} style={{ margin: '8px 0 0' }}>Reels and Shorts are vertical videos (9:16, up to 3 minutes). Generated videos carry the customer's logo and contact details.</p>
+        {publishBar}
       </div>
       ) : (
       <div>
@@ -219,6 +309,7 @@ function PostEditor({ siblings, userId, brand, brandOk, prompt, ch, i, post, st,
           </div>
         )}
         {(!approved || open) && st.cd && <p className={s.note} style={{ margin: '8px 0 0' }}>Finished editing in Canva? Click “Get edited image” to update this post for you and the customer. Image changes are saved automatically.</p>}
+        {publishBar}
       </div>
       )}
     </div>
@@ -320,7 +411,7 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
           );
         })}
       </div>
-      {channelState(ch, conn[ch.platform]).key !== 'on' && <div className={s.banner} style={{ marginBottom: 12 }}>{ch.name} is not connected for this customer yet — posts can be prepared and approved now, and published once they connect it.</div>}
+      {channelState(ch, conn[ch.platform]).key !== 'on' && <div className={s.banner} style={{ marginBottom: 12 }}>{ch.name} is not connected for this customer yet. You can prepare and approve posts now, and publish or schedule them once the customer connects it.</div>}
       {dirtyCount > 0 && <div className={s.banner} style={{ marginBottom: 12 }}>You have {dirtyCount} unsaved change{dirtyCount > 1 ? 's' : ''}. They are not visible to the customer until you save.</div>}
       {posts.some(x => x.week != null) && (
         <div className={s.tabs} style={{ margin: '0 0 12px' }}>
@@ -330,7 +421,7 @@ function PromptCalendar({ ws, setWs, prompt, reload }) {
       )}
       <div className={s.main}>
         {posts.map((p, i) => (weekSel !== 'all' && p.week != null && p.week !== weekSel) ? null : (
-          <PostEditor key={`${channel}${i}`} siblings={posts} userId={userId} brand={brand} brandOk={ws.brand_complete !== false} prompt={prompt} ch={ch} i={i} post={p}
+          <PostEditor key={`${channel}${i}`} siblings={posts} userId={userId} brand={brand} brandOk={ws.brand_complete !== false} site={ws.user.domain || ''} connState={conn[ch.platform]} prompt={prompt} ch={ch} i={i} post={p}
             st={ps[postStateKey(prompt, 0, ch.id, i, p)] || {}}
             onChange={np => setChannels(c => ({ ...c, [channel]: c[channel].map((x, j) => (j === i ? np : x)) }))}
             onFlag={setEntry} onSaveDoc={() => saveDoc('edited')} saving={saving}

@@ -479,6 +479,9 @@ async def admin_publish(user_id: str, req: SocialPublishRequest, admin_id: str =
         platforms=req.platforms, caption=req.caption, image_url=image_url, cta_url=req.cta_url or "",
         scheduled_time_iso=now_iso, status=overall_status, results=results, video_url=req.video_url or "", title=req.title or "",
     )
+    if successes == len(results):
+        from services.social_publish.scheduler import mark_calendar_published
+        mark_calendar_published(user_id, req.post_key)
     logger.info(f"[admin] {admin_id} published to {req.platforms} on behalf of user {user_id}: {overall_status}")
     return SocialPublishResponse(results=results)
 
@@ -512,6 +515,8 @@ async def admin_schedule(user_id: str, req: SocialScheduleRequest, admin_id: str
         caption=req.caption, image_url=image_url, cta_url=req.cta_url or "", scheduled_time_iso=scheduled_iso,
         video_url=req.video_url or "", title=req.title or "", post_key=req.post_key or "", scheduled_by=admin_id,
     )
+    from services.social_publish.scheduler import update_calendar_state
+    update_calendar_state(user_id, req.post_key, {"approved": True, "published": False, "sched_id": schedule_id, "sched_at": scheduled_iso})
     logger.info(f"[admin] {admin_id} scheduled a post for user {user_id} at {scheduled_iso}")
     return SocialScheduleResponse(schedule_id=schedule_id, scheduled_time=scheduled_iso, status="pending")
 
@@ -539,9 +544,14 @@ async def admin_list_scheduled(user_id: str, admin_id: str = Depends(require_adm
     summary="Cancel a customer's pending scheduled post",
 )
 async def admin_cancel_scheduled(user_id: str, schedule_id: str, admin_id: str = Depends(require_admin)):
+    from db import get_scheduled_post as _get_scheduled_post
+    from services.social_publish.scheduler import update_calendar_state
+    prior = _get_scheduled_post(schedule_id) or {}
     ok = _cancel_scheduled_post(schedule_id, user_id)
     if not ok:
         raise HTTPException(status_code=404, detail="No pending scheduled post found with that id for this customer")
+    if prior.get("user_id") == user_id:
+        update_calendar_state(user_id, prior.get("post_key"), {"approved": False, "sched_id": "", "sched_at": ""})
     return CancelScheduledPostResponse(cancelled=True)
 
 

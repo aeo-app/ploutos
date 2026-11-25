@@ -51,6 +51,7 @@ class PublishRequest(_ImageSourceMixin):
     post_number: Optional[int] = Field(None, description="Which of that day's posts (1 or 2) this is, if posting from a specific post card — lets the calendar UI match this history record back to the exact post it came from")
     video_url: Optional[str] = Field(None, description="A reel / YouTube Short (a vertical video the user generated or uploaded) — YouTube, Facebook or Instagram; use INSTEAD of poster_id/image_url")
     title: Optional[str] = Field(None, max_length=100, description="YouTube video title (defaults to the caption's first line)")
+    post_key: Optional[str] = Field(None, max_length=300, description="The calendar post this is, so the calendar can show it as published")
 
     @model_validator(mode="after")
     def _exactly_one_image_source(self):  # replaces the base rule: a video is a third kind of source

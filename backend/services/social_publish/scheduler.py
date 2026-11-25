@@ -45,22 +45,26 @@ def process_due_scheduled_posts() -> int:
     return len(due)
 
 
-def mark_calendar_published(user_id: str, post_key: str | None) -> None:
-    """Shows a scheduled calendar post as published in the customer's calendar once it has gone out. Never raises:
-    the post itself is already live, so a failure here only means the calendar label is updated a little later."""
+def update_calendar_state(user_id: str, post_key: str | None, fields: dict) -> None:
+    """Updates one calendar post's saved state (approved / published / scheduled) in the customer's account, so the customer's
+    calendar and the admin's both show it. Never raises: the post itself has already been handled, so a failure here only
+    means the label on the calendar is updated a little later."""
     if not post_key:
         return
     try:
         from db import get_aeo_state, save_aeo_state
         st = get_aeo_state(user_id)
         cur = dict((st.get("post_state") or {}).get(post_key) or {})
-        if cur.get("published"):
-            return
-        cur.update({"approved": True, "published": True, "pub_at": _now_iso(), "sched_id": "", "sched_at": ""})
+        cur.update(fields)
         st.setdefault("post_state", {})[post_key] = cur
         save_aeo_state(user_id, st)
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"[scheduler] could not mark calendar post {post_key!r} published for {user_id}: {e}")
+        logger.warning(f"[scheduler] could not update calendar post {post_key!r} for {user_id}: {e}")
+
+
+def mark_calendar_published(user_id: str, post_key: str | None) -> None:
+    """Shows a calendar post as published once it has gone out."""
+    update_calendar_state(user_id, post_key, {"approved": True, "published": True, "pub_at": _now_iso(), "sched_id": "", "sched_at": ""})
 
 
 def _now_iso() -> str:

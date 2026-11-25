@@ -22,3 +22,31 @@
 .userName { font-size: 13px; font-weight: 700; color: var(--c-slate-800); }
 .userEmail { font-size: 11.5px; color: var(--c-slate-500); }
 .userMeta { display: flex; gap: 6px; flex-shrink: 0; }
+
+.tableCard { padding: 0; overflow: hidden; }
+.tableCount { padding: 12px 16px; font-size: 12px; font-weight: 700; color: var(--c-slate-500); border-bottom: 1px solid var(--c-slate-100); }
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--c-slate-800); }
+.table th { text-align: left; padding: 0; background: var(--c-slate-50); border-bottom: 1px solid var(--c-slate-200); white-space: nowrap; }
+.thBtn { all: unset; box-sizing: border-box; cursor: pointer; display: block; width: 100%; padding: 10px 14px; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-slate-600); }
+.thBtn:hover, .thBtn:focus-visible { color: var(--c-indigo-600); }
+.table th.thPlain { padding: 10px 14px; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--c-slate-600); }
+.table td { padding: 11px 14px; border-bottom: 1px solid var(--c-slate-100); vertical-align: middle; }
+.tr { cursor: pointer; }
+.tr:hover td { background: var(--c-slate-50); }
+.tr:last-child td { border-bottom: none; }
+.tdStrong { font-weight: 700; }
+.tdEmail { color: var(--c-slate-600); word-break: break-all; }
+.tdNowrap { white-space: nowrap; color: var(--c-slate-600); }
+.tdAct { text-align: right; white-space: nowrap; }
+.muted { color: var(--c-slate-400); }
+.openBtn { border: 1.5px solid var(--c-slate-200); background: #fff; border-radius: var(--r-md); padding: 5px 12px; font-size: 12px; font-weight: 700; color: var(--c-indigo-600); cursor: pointer; }
+.openBtn:hover { border-color: var(--c-indigo-400); }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.planTabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.planTab { border: 1.5px solid var(--c-slate-200); background: #fff; border-radius: 999px; padding: 7px 16px; font-size: 13px; font-weight: 700; color: var(--c-slate-700); cursor: pointer; }
+.planTab span { margin-left: 4px; color: var(--c-slate-400); font-weight: 800; }
+.planTab:hover { border-color: var(--c-indigo-400); }
+.planTabOn { background: var(--c-indigo-600); border-color: var(--c-indigo-600); color: #fff; }
+.planTabOn span { color: #e0e7ff; }
