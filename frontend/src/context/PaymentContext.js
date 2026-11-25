@@ -4,6 +4,8 @@ import { withTokenExpiry } from '../api/authApi';
 import { useAuth } from './AuthContext';
 
 const PaymentCtx = createContext(null);
+/** The one-time Starter Pass (INR 700 / SGD 10): what a free account can buy, and what is left once bought. */
+const NO_PASS = { eligible: false, active: false, bought: false, prices: { INR: '700.00', SGD: '10.00' }, remaining: {}, prompts: 5 };
 export const PaymentContext = PaymentCtx;
 
 export function PaymentProvider({ children }) {
@@ -11,7 +13,7 @@ export function PaymentProvider({ children }) {
   const [status, setStatus] = useState({
     is_paid: false, lapsed: false, lapse_reason: null, ever_paid: false, paid_until: null, plan: null, plan_name: null,
     auto_renew: false, payment_method_summary: null, renewal_status: null,
-    renewal_failure_reason: null, last_renewal_attempt_at: null,
+    renewal_failure_reason: null, last_renewal_attempt_at: null, pass: NO_PASS,
   });
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState(null);
@@ -32,7 +34,7 @@ export function PaymentProvider({ children }) {
         setStatus({
           is_paid: false, lapsed: false, lapse_reason: null, ever_paid: false, paid_until: null, plan: null, plan_name: null,
           auto_renew: false, payment_method_summary: null, renewal_status: null,
-          renewal_failure_reason: null, last_renewal_attempt_at: null,
+          renewal_failure_reason: null, last_renewal_attempt_at: null, pass: NO_PASS,
         });
       }
       return null;
@@ -50,6 +52,7 @@ export function PaymentProvider({ children }) {
       autoRenew: status.auto_renew, paymentMethodSummary: status.payment_method_summary,
       renewalStatus: status.renewal_status, renewalFailureReason: status.renewal_failure_reason,
       lastRenewalAttemptAt: status.last_renewal_attempt_at,
+      pass: status.pass || NO_PASS, passActive: !!status.pass?.active,
       checking, error, refresh,
     }}>
       {children}

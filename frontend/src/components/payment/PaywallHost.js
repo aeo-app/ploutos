@@ -17,11 +17,12 @@ export function PaywallHost() {
     if (paid) toast({ type: 'success', message: '✓ Payment confirmed — continuing with what you asked for.' });
     done(paid);
   };
+  const offer = req.info.reason === 'pass';
   const why = LAPSE_TEXT[req.info.reason] || req.info.message || LAPSE_TEXT.expired;
   return (
     <UnlockModal
-      title="Choose a plan to continue"
-      subtitle={`${why} Pick a plan and complete the payment to carry on where you left off.`}
+      title={offer ? 'Unlock your results' : 'Choose a plan to continue'}
+      subtitle={offer ? 'Get the one-time Starter Pass, or choose a plan for everything.' : `${why} Pick a plan and complete the payment to carry on where you left off.`}
       onClose={() => finish(false)}
       onUnlocked={() => finish(true)}
     />

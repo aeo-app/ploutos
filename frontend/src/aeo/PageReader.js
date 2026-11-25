@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { copyToClipboard } from './utils';
 import { pageHtml, pageEmbedCode, downloadHtml, downloadPdf } from './pageExport';
 import { StylePicker } from './PageUi';
+import { forPreview } from './pageRender';
 
 const plainText = (a) => [a.headline || a.title, a.intro,
   ...(a.highlights || []).map(h => `${h.title}${h.text ? ` — ${h.text}` : ''}`),
@@ -111,7 +112,7 @@ export function PageReader({ asset, onClose, onRefresh, refreshing, theme, onThe
               {styling && <div className="ae-pg-box"><StylePicker theme={theme} onChange={onTheme} site={site} /></div>}
               <p className="ae-sub" style={{ margin: 0 }}>This is how your page looks. The HTML file is a complete web page you can upload. The PDF opens your print window: choose “Save as PDF”. Your logo and contact details were taken from your website.</p>
               <div className={`ae-view ${device}`}>
-                <iframe title="Your generated page" data-testid="page-frame" srcDoc={html} sandbox="allow-same-origin" />
+                <iframe title="Your generated page" data-testid="page-frame" srcDoc={forPreview(html)} sandbox="allow-same-origin" />
               </div>
               {asset.link && <div className="ae-pg-box"><span className="ae-eyebrow">Page address on your site</span><div className="ae-mono" style={{ wordBreak: 'break-all' }}>{asset.link}</div></div>}
             </div>

@@ -48,10 +48,13 @@ from services.airwallex_service import (
     get_plan,
     create_customer as awx_create_customer,
     create_payment_intent as awx_create_payment_intent,
+    create_pass_intent as awx_create_pass_intent,
     get_payment_intent as awx_get_payment_intent,
     verify_webhook_signature,
 )
 from services.cognito_service import get_user_country_from_token
+from core import starter_pass
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Payments"])
@@ -230,7 +233,10 @@ async def payment_status(
             live = awx_get_payment_intent(payment_intent_id)
             live_status = live.get("status", "")
             record = update_payment_intent_status(payment_intent_id, live_status)
-            if record and live_status in SUCCESS_STATUSES:
+            if record and live_status in SUCCESS_STATUSES and record.get("plan_id") == starter_pass.PASS_PLAN_ID:
+                if record.get("user_id") == user_id:
+                    starter_pass.grant_pass(user_id, payment_intent_id, str(record.get("amount")), str(record.get("currency")))
+            elif record and live_status in SUCCESS_STATUSES:
                 set_user_paid(
                     user_id=record["user_id"], is_paid=True,
                     paid_until=_compute_paid_until(record.get("plan_id") or "starter"), plan=record.get("plan_id") or "starter",
@@ -281,6 +287,63 @@ async def payment_status(
         "renewal_status": ent.get("renewal_status"),  # 'succeeded' | 'failed' | 'pending' | None (never attempted)
         "renewal_failure_reason": ent.get("renewal_failure_reason"),
         "last_renewal_attempt_at": ent.get("last_renewal_attempt_at"),
+        "pass": starter_pass.public_state(user_id),
+    }
+
+
+class CreatePassIntentRequest(BaseModel):
+    country: str | None = None      # the browser's hint, same as for the plans; the server decides the currency and amount
+
+
+def _pass_currency(request: Request, country: str | None, authorization: str | None, access_token: str | None) -> str:
+    """INR for India, SGD for Singapore (and for every other country, as the pass has just those two prices). Same country order as the plans."""
+    c = currency_for_country(viewer_country_from_headers(request.headers) or country or _country_from_authorization(authorization, access_token))
+    return c if c in starter_pass.PASS_PRICES else "SGD"
+
+
+@router.get("/api/v1/payment/pass", summary="The one-time Starter Pass: price, whether this account can buy it, what is left")
+async def pass_state(
+    request: Request,
+    country: str | None = Query(default=None, max_length=100),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    access_token: str | None = Header(default=None, alias="X-Access-Token"),
+    user_id: str = Depends(get_current_user_id),
+):
+    cur = _pass_currency(request, country, authorization, access_token)
+    return {**starter_pass.public_state(user_id), "currency": cur, "amount": starter_pass.PASS_PRICES[cur]}
+
+
+@router.post("/api/v1/payment/pass/create-intent", summary="Create the payment for the one-time Starter Pass (free accounts only)")
+async def create_pass_intent(
+    req: CreatePassIntentRequest,
+    request: Request,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    access_token: str | None = Header(default=None, alias="X-Access-Token"),
+    user_id: str = Depends(get_current_user_id),
+):
+    currency = _pass_currency(request, req.country, authorization, access_token)
+    st = starter_pass.public_state(user_id)
+    if not st["eligible"]:
+        raise HTTPException(status_code=409, detail="The Starter Pass is for free accounts, and can be bought once." if not st["bought"] else "You already have the Starter Pass.")
+    amount = starter_pass.PASS_PRICES[currency]
+    ent = get_user_entitlement(user_id)
+    customer_id = ent.get("airwallex_customer_id")
+    try:
+        if not customer_id:
+            registered = get_registered_user(user_id) or {}
+            customer_id = awx_create_customer(user_id, registered.get("email", ""))["id"]
+            set_user_paid(user_id=user_id, is_paid=ent.get("is_paid", False), paid_until=ent.get("paid_until"),
+                          plan=ent.get("plan", "one_time"), airwallex_customer_id=customer_id)
+        intent = awx_create_pass_intent(user_id, currency, amount, customer_id=customer_id)
+    except AirwallexError as e:
+        logger.error(f"[payment] pass intent failed for user={user_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"Could not start payment: {e}")
+    save_payment_intent(user_id=user_id, payment_intent_id=intent["id"], amount=amount, currency=currency,
+                        status=intent.get("status", "CREATED"), description=starter_pass.PASS_NAME, plan_id=starter_pass.PASS_PLAN_ID)
+    return {
+        "payment_intent_id": intent["id"], "client_secret": intent["client_secret"], "plan_id": starter_pass.PASS_PLAN_ID,
+        "plan_name": starter_pass.PASS_NAME, "amount": amount, "currency": currency,
+        "description": starter_pass.PASS_NAME, "status": intent.get("status", "CREATED"),
     }
 
 
@@ -388,6 +451,11 @@ async def airwallex_webhook(request: Request):
         return {"received": True}
 
     is_renewal = record.get("is_renewal", False)
+
+    if record.get("plan_id") == starter_pass.PASS_PLAN_ID:
+        if status in SUCCESS_STATUSES:
+            starter_pass.grant_pass(record["user_id"], payment_intent_id, str(record.get("amount")), str(record.get("currency")))
+        return {"received": True}
 
     if status in SUCCESS_STATUSES:
         plan_id = record.get("plan_id") or "starter"

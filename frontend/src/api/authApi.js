@@ -1,6 +1,6 @@
 
-// const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
-const BASE_URL = "https://api.aeo-app.com/api/v1";
+const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+// const BASE_URL = "https://api.aeo-app.com/api/v1";
 const ERROR_MESSAGES = {
   UsernameExistsException:
     "This email is already registered. Please sign in instead.",

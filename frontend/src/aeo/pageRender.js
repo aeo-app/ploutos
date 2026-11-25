@@ -377,8 +377,14 @@ const docHead = (c, theme, title) => `<!doctype html>
 <meta name="description" content="${esc(c.meta_description || '')}">
 <style>html{scroll-behavior:smooth}body{margin:0}@page{margin:12mm}${pageCss(theme)}</style>
 </head>
-<body>
-<!-- Page created with AEO-APP.ai. Check the details once, then publish. -->`;
+<body>`;
+
+/**
+ * For showing a page inside an <iframe srcDoc>. There, a link like href="#contact" would otherwise resolve against the app's own address
+ * and load the app inside the frame (a blank page). With this base the link just scrolls within the page. Never use it for the
+ * downloaded file: on a real website the page's own address is the right base.
+ */
+export const forPreview = (html) => String(html || '').replace('<head>', '<head>\n<base href="about:srcdoc">');
 
 /** A complete standalone web page (what the .html download and the preview use). */
 export function renderPageHtml(content, { template, theme, company, profile } = {}) {

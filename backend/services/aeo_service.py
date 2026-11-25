@@ -1248,6 +1248,87 @@ def seo_page_cache_key(keyword: str, template: str, title: str) -> str:
     return f"{keyword.strip().lower()}|{template.upper()}|{_slugify(title, 50)}"
 
 
+_VENDOR = re.compile(r"aeo[\s_-]?app", re.I)
+_VENDOR_URL = re.compile(r"(?:https?://|www\.)?\S*aeo[\s_-]?app\S*", re.I)
+
+
+def _drop_vendor(v):
+    """A customer's page is about the customer. Any mention of, or link to, this app (AEO-APP) that the model writes is removed:
+    list items that are only that are dropped, and inside a sentence the name or address is cut out."""
+    if isinstance(v, str):
+        if not _VENDOR.search(v):
+            return v
+        # drop each sentence that names or links to the app; keep the rest of the text (paragraph breaks stay)
+        kept = []
+        for para in v.split("\n"):
+            kept.append(" ".join(s for s in re.split(r"(?<=[.!?])\s+", para) if not _VENDOR.search(s)))
+        return "\n".join(kept).strip()
+    if isinstance(v, list):
+        return [y for y in ((None if (isinstance(x, str) and _VENDOR.search(x)) else _drop_vendor(x)) for x in v) if y not in ("", None)]
+    if isinstance(v, dict):
+        return {k: _drop_vendor(x) for k, x in v.items()}
+    return v
+
+
+_PAGE_HINTS = ("service", "about", "contact", "pricing", "price", "product", "solution", "location", "area", "faq", "team", "blog", "work", "quote", "book")
+_SKIP_EXT = (".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".pdf", ".zip", ".css", ".js", ".ico", ".xml", ".mp4")
+_PAGES_CACHE: dict[str, tuple[float, str]] = {}
+
+
+def _site_pages_block(url: str) -> str:
+    """What the customer's website really contains beyond the home page: its real internal pages (path and what each says).
+    Pages are written and linked from THESE, never from guesses. Cached; never raises."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if not u.startswith(("http://", "https://")):
+        u = "https://" + u
+    key = _domain_of(u)
+    hit = _PAGES_CACHE.get(key)
+    if hit and time.time() - hit[0] < _SITE_TTL:
+        return hit[1]
+    out = ""
+    try:
+        r = _safe_get(u, timeout=6.0)
+        if r.ok:
+            base = urlparse(r.url if getattr(r, "url", None) else u)
+            host = (base.hostname or "").lower().removeprefix("www.")
+            found: dict[str, int] = {}
+            for href in re.findall(r'<a[^>]+href=["\']([^"\'#]+)["\']', r.text[:600_000], re.I):
+                full = urljoin(u, href.strip())
+                p = urlparse(full)
+                if p.scheme not in ("http", "https") or (p.hostname or "").lower().removeprefix("www.") != host:
+                    continue
+                path = p.path or "/"
+                if path == "/" or path.lower().endswith(_SKIP_EXT) or "?" in href or len(path) > 80:
+                    continue
+                path = path.rstrip("/") or "/"
+                found[path] = found.get(path, 0) + 1 + (3 if any(h in path.lower() for h in _PAGE_HINTS) else 0)
+            picks = [p for p, _ in sorted(found.items(), key=lambda kv: -kv[1])[:6]]
+            lines = []
+            for path in picks:
+                try:
+                    pr = _safe_get(f"{base.scheme}://{base.netloc}{path}", timeout=5.0)
+                    if not pr.ok:
+                        continue
+                    html = pr.text[:300_000]
+                    title = _clean((re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I) or [None, ""])[1])[:120]
+                    heads = [_clean(h) for h in re.findall(r"<h[12][^>]*>(.*?)</h[12]>", html, re.S | re.I)]
+                    heads = [h for h in heads if 3 < len(h) < 120][:5]
+                    body = re.sub(r"<(script|style|noscript|svg|nav|footer|header)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+                    text = _clean(body)[:700]
+                    lines.append(f"- {path}  |  {title}  |  {' / '.join(heads)}  |  {text}")
+                except Exception:       # noqa: BLE001 - one page failing must not stop the rest
+                    continue
+            if lines:
+                out = "REAL PAGES ON THE WEBSITE (path | title | headings | text). These are the ONLY internal pages that exist:\n" + "\n".join(lines)
+    except Exception as e:      # noqa: BLE001
+        logger.info(f"[aeo] site pages unavailable for {key}: {e}")
+    if out:
+        _PAGES_CACHE[key] = (time.time(), out)
+    return out
+
+
 def generate_seo_page_asset(req, usage_tracker: TokenUsageTracker | None = None):
     """Writes one keyword-focused SEO page as the content of a designed page. The frontend turns it into HTML,
     in the customer's colours, fonts and logo, exactly like a Content Strategy page."""
@@ -1260,6 +1341,7 @@ def generate_seo_page_asset(req, usage_tracker: TokenUsageTracker | None = None)
     prompt = f"""
 Company: {req.company_name}   Website: {req.url}   Market: {req.market}   Industry: {req.industry}
 {_site_block(req.url, req.company_name)}
+{_site_pages_block(req.url)}
 Target Google keyword: "{req.keyword}"
 Search to win: "{req.target_query or req.keyword}"   Search intent: {req.intent or "match the keyword"}
 Page to write: a "{tpl['name']}" titled "{req.title}".
@@ -1273,6 +1355,10 @@ intro and in one heading, and natural variations elsewhere (never stuffed). Use 
 Do NOT invent client names, quotes, prices, statistics, awards, review counts, phone numbers, emails or addresses. If a figure or detail is not in the
 website content, leave it out of the sentence completely: NEVER write square-bracket placeholders. The company logo and contact details are added to
 the page automatically, so do not write them out. Write for the customer, in plain words, no jargon.
+The page belongs to {req.company_name} and must read as written by that business, about that business's own services, places and customers, and
+only as accurately as the website content above allows. Never mention, name or link to AEO-APP, aeo-app.ai, or any other tool, vendor or
+agency; every link the page suggests is to a page of {req.company_name}'s own website. In "link_from" name ONLY pages listed under REAL PAGES (by
+path) or the main menu; if none fit, use the main menu or home page.
 Return ONE JSON object with EXACTLY these keys (use [] or null for any the template does not use):
 {{
   "slug": "short-url-slug-with-hyphens",
@@ -1293,7 +1379,7 @@ Return ONE JSON object with EXACTLY these keys (use [] or null for any the templ
   "checklist": ["4 to 6 short facts in this page worth double-checking against the real business before publishing"]
 }}
 Plain text only, no markdown."""
-    d = _strip_placeholders(_parse_json(_converse(_SEO_SYSTEM, prompt, max_tokens=7000, usage_tracker=usage_tracker)))
+    d = _drop_vendor(_strip_placeholders(_parse_json(_converse(_SEO_SYSTEM, prompt, max_tokens=7000, usage_tracker=usage_tracker))))
     slug = _slugify(d.get("slug") or req.title)
     sections = [_BS(h=str(x.get("h", ""))[:200], p=str(x.get("p", ""))) for x in (d.get("sections") or []) if isinstance(x, dict) and x.get("h")][:12]
     faqs = [PillarFaq(q=str(f.get("q", ""))[:300], a=str(f.get("a", ""))) for f in (d.get("faqs") or []) if isinstance(f, dict) and f.get("q") and f.get("a")][:14]

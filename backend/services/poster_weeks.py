@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import HTTPException
 
 from core.paywall import payment_required, raise_if_lapsed
+from core import starter_pass
 from core.plan_limits import plan_id_of, weekly_limits
 from db.dynamo import get_aeo_content, get_aeo_state, save_aeo_content
 from db.payments_dynamo import is_user_paid
@@ -102,12 +103,18 @@ def status(user_id: str, week: int | None = None) -> dict:
     start = week_start(user_id, week)
     nxt = start + timedelta(days=7)
     code, reason = _gate(user_id, week)
+    # A Starter Pass adds one poster and one reel on top of the free allowance, and works past the first month.
+    prec = starter_pass.active_pass(user_id)
+    pr = starter_pass.remaining(prec) if prec else {}
+    pass_poster = bool(pr.get("poster")) and code in ("", "pay")
+    pass_reel = bool(pr.get("reel")) and code in ("", "pay")
     return {
         "week": week, "current_week": cur, "week_start": start.isoformat(), "plan": plan_id_of(user_id),
         "poster_limit": posters, "posters_made": len(made), "reel_limit": reels, "reels_made": len(rmade),
-        "can_generate": not code and len(made) < posters, "can_generate_reels": not code and len(rmade) < reels,
+        "can_generate": (not code and len(made) < posters) or pass_poster, "can_generate_reels": (not code and len(rmade) < reels) or pass_reel,
+        "pass_remaining": pr or None,
         "next_available": nxt.isoformat() if (len(made) >= posters) else None,
-        "needs_payment": code == "pay", "reason": reason if code else "",
+        "needs_payment": code == "pay" and not (pass_poster or pass_reel), "reason": reason if (code and not (pass_poster or pass_reel)) else "",
     }
 
 
@@ -116,8 +123,11 @@ def _check(user_id: str, day_date: str, acting: bool, field: str, limit_idx: int
         return
     day = _day_of(day_date)
     week = week_of(_start0(user_id), day)
+    kind = "poster" if field == "dates" else "reel"
     code, reason = _gate(user_id, week)
     if code == "pay":
+        if starter_pass.can_use(user_id, kind):
+            return      # the Starter Pass covers it
         raise_if_lapsed(user_id)
         raise payment_required(user_id, "Posters and reels for later months need an active paid plan.")
     if code:
@@ -131,6 +141,8 @@ def _check(user_id: str, day_date: str, acting: bool, field: str, limit_idx: int
             return      # this day's poster slot is already paid for: an empty poster (another platform, or an image the customer removed) can still get its image
         raise HTTPException(status_code=409, detail=f"This {noun} is already created for this week. Your next generation will be available on {_fmt(nxt)}.")
     if len(made) >= limit:
+        if starter_pass.can_use(user_id, kind):
+            return      # the Starter Pass covers one more
         raise HTTPException(status_code=409, detail=f"Your plan includes {limit} {noun}s a week and they are all created. Your next generation will be available on {_fmt(nxt)}.")
 
 
@@ -153,6 +165,9 @@ def _record(user_id: str, day_date: str, acting: bool, field: str) -> None:
             rec = _rec(user_id, week)
             items = list(rec.get(field) or [])
             if day and day.isoformat() not in items:
+                # Past the plan's own allowance (or beyond the first month), this one is paid for by the Starter Pass.
+                if len(items) >= weekly_limits(user_id)[0 if field == "dates" else 1] or week >= WEEKS_PER_CYCLE:
+                    starter_pass.consume(user_id, "poster" if field == "dates" else "reel")
                 items.append(day.isoformat())
             save_aeo_content(user_id, KIND, f"w{week}", {**rec, "week": week, field: items, "first_at": rec.get("first_at") or datetime.now(timezone.utc).isoformat(timespec="seconds")})
         except Exception as e:  # noqa: BLE001 - never lose a poster over bookkeeping

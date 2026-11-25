@@ -14,7 +14,9 @@ const EMPTY = { custom_prompts: [], custom_competitors: [], hidden_competitors: 
 export function AeoProvider({ children }) {
   const { state, runApi, toast, requirePayment } = useApp();
   const { goScreen, logout } = useAuth();
-  const { isPaid } = usePayment();
+  const { isPaid, passActive } = usePayment();
+  const unlocked = isPaid || passActive;       // a subscription or the one-time Starter Pass: the full results
+  const promptCap = isPaid ? 20 : passActive ? 5 : 20;
   const rawAnalysis = state.results.aeoPrompts || null;
 
   const [saved, setSaved] = useState(EMPTY);
@@ -49,7 +51,7 @@ export function AeoProvider({ children }) {
   contentRef.current = content;
 
   // Upgrading earns one fresh analysis: re-check the limit as soon as the account becomes paid.
-  useEffect(() => { loadQuota(); }, [isPaid, loadQuota]);
+  useEffect(() => { loadQuota(); }, [isPaid, passActive, loadQuota]);
 
   /* ── saved dashboard state ─────────────────────────────── */
   useEffect(() => {
@@ -147,11 +149,11 @@ export function AeoProvider({ children }) {
   });
   const togglePrompt = (text) => {
     const on = saved.selected_prompts.includes(text);
-    if (!on && saved.selected_prompts.length >= 20) { toast({ type: 'info', message: 'You can select up to 20 prompts.' }); return; }
+    if (!on && saved.selected_prompts.length >= promptCap) { toast({ type: 'info', message: `You can select up to ${promptCap} prompts${promptCap === 5 ? ' with the Starter Pass. Choose a plan for more.' : '.'}` }); return; }
     patch({ selected_prompts: on ? saved.selected_prompts.filter(p => p !== text) : [...saved.selected_prompts, text] });
   };
   const clearSelection = () => patch({ selected_prompts: [] });
-  const setSelectedPrompts = (list) => patch({ selected_prompts: [...new Set(list)].slice(0, 20) });
+  const setSelectedPrompts = (list) => patch({ selected_prompts: [...new Set(list)].slice(0, promptCap) });
 
   /* ── the analysis itself ───────────────────────────────── */
   const runningRef = useRef(false);
@@ -338,7 +340,7 @@ export function AeoProvider({ children }) {
   /* ── after paying, replace the locked previews with the full results ─── */
   const unlockedOnce = useRef(false);
   useEffect(() => {
-    if (!isPaid || unlockedOnce.current) return;
+    if (!unlocked || unlockedOnce.current) return;
     const locked = (o) => { try { return JSON.stringify(o || {}).includes('"locked":true'); } catch (_) { return false; } };
     const r = state.results;
     const todo = [];
@@ -349,8 +351,10 @@ export function AeoProvider({ children }) {
     unlockedOnce.current = true;
     (async () => { for (const f of todo) { try { await f(); } catch (_) { /* shown by the page */ } } })();
     // eslint-disable-next-line
-  }, [isPaid, state.results.aeoPrompts, state.results.domainAuthority, state.results.profile]);
-  useEffect(() => { if (!isPaid) unlockedOnce.current = false; }, [isPaid]);
+  }, [unlocked, state.results.aeoPrompts, state.results.domainAuthority, state.results.profile]);
+  useEffect(() => { if (!unlocked) unlockedOnce.current = false; }, [unlocked]);
+  // The Starter Pass unlocks the full strategies: drop the short previews that were kept for this session.
+  useEffect(() => { if (passActive) setContent(c => ({ ...c, strategy: {}, seo: {}, blog: {} })); }, [passActive]);
 
   /* ── Brand kit (logo + contact details) ────────────────── */
   const applyBrand = (d) => { if (d?.social_links) setSaved(sv => ({ ...sv, social_links: d.social_links })); if (d) setBrandState(b => ({ ...b, loaded: true, complete: !!d.complete, missing: d.missing || [], data: d.brand || {}, ...(d.found ? { found: d.found } : {}) })); return d; };

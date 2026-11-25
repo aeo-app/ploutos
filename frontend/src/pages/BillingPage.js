@@ -5,6 +5,7 @@ import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
 import { PlanCards, PricingSectionHeader, PricingFooter } from '../components/payment/PlanCards';
 import { PaymentDropIn } from '../components/payment/PaymentDropIn';
+import { StarterPassOffer, StarterPassStatus } from '../components/payment/StarterPass';
 import { Card, Badge, SectionHeader, DataTable, SkeletonCard, ErrorCard } from '../components/ui/UI';
 import s from './BillingPage.module.css';
 
@@ -118,6 +119,9 @@ export function BillingPage() {
   return (
     <div className={s.page}>
       <SectionHeader title="Billing & Plans" subtitle="Your current plan, upgrade or renew, and past payments." />
+
+      <StarterPassOffer onDone={load} />
+      <StarterPassStatus style={{ marginBottom: 20 }} />
 
       <Card style={{ marginBottom: 20 }}>
         <div className={s.statusRow}>

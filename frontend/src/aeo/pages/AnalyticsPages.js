@@ -199,42 +199,6 @@ export function PromptsPage() {
   return analysis || pendingCount ? <PromptsView /> : <EmptyAnalysis />;
 }
 
-/** The keywords found on the customer's own website. For now this page only shows them. */
-export function KeywordsAeoPage() {
-  const { siteKeywords } = useAeo();
-  const { state, toast } = useApp();
-  const [list, setList] = useState(null);       // null = loading
-  const [err, setErr] = useState('');
-  const [checked, setChecked] = useState('');
-  const load = React.useCallback(() => {
-    setErr(''); setList(null);
-    siteKeywords().then(d => { setList(d?.keywords || []); setChecked(d?.checked_at || ''); })
-      .catch(e => { if (e?.code === 'TokenExpired') return; setList([]); setErr(e?.message || 'We could not read your website. Please try again.'); });
-    // eslint-disable-next-line
-  }, [state.request.url]);
-  React.useEffect(() => { if (state.request.url) load(); else setList([]); }, [load, state.request.url]);
-  const copy = () => navigator.clipboard?.writeText((list || []).join('\n')).then(() => toast({ type: 'success', message: 'Keywords copied.' })).catch(() => {});
-  const domain = String(state.request.url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
-
-  if (!state.request.url) return <section className="ae-card"><div className="ae-col"><h2>Keywords</h2><span className="ae-sub">Add your company website in your profile first. We read your keywords from it.</span></div></section>;
-  return (
-    <section className="ae-card" style={{ gap: 16 }} data-testid="keywords-page">
-      <div className="ae-row" style={{ alignItems: 'flex-start' }}>
-        <div className="ae-col"><h2>Keywords from your website</h2>
-          <span className="ae-sub">What customers search for, taken from what {domain || 'your website'} says about your products, services and locations.{checked ? ` Read on ${new Date(checked).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}.` : ''}</span></div>
-        {!!(list || []).length && <button type="button" className="ae-btn sm" style={{ marginLeft: 'auto' }} onClick={copy} data-testid="kw-copy">Copy all</button>}
-      </div>
-      {list === null && <div className="ae-dots" data-testid="kw-loading"><i /><i /><i /></div>}
-      {err && <div className="ae-note" role="alert" data-testid="kw-error">{err} <button className="ae-linkbtn" onClick={load}>Try again</button></div>}
-      {!!(list || []).length && (
-        <ol className="kw-list" data-testid="kw-list">
-          {list.map((k, i) => <li key={k}><span className="kw-n">{i + 1}</span><span className="kw-t">{k}</span></li>)}
-        </ol>
-      )}
-    </section>
-  );
-}
-
 export function CompetitorsAeoPage() {
   const { analysis, addCompetitor, removeCompetitor } = useAeo();
   const { state } = useApp();

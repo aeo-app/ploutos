@@ -6,7 +6,7 @@ import { Icon } from '../../aeo/Icon';
 import Logo from '../../assets/screens/aeo-icon.png';
 
 
-const NAV_ICON = { home: 'layout-dashboard', aeoPrompts: 'message-square-text', aeoKeywords: 'search', aeoSeo: 'lightbulb', aeoCompetitors: 'users', aeoEngines: 'bot', da: 'gauge', insights: 'activity', profile: 'building-2', aeoStrategy: 'lightbulb', aeoBlogs: 'file-text', aeoCalendar: 'calendar-days', billing: 'credit-card' };
+const NAV_ICON = { home: 'layout-dashboard', aeoPrompts: 'message-square-text', aeoSeo: 'lightbulb', aeoCompetitors: 'users', aeoEngines: 'bot', da: 'gauge', insights: 'activity', profile: 'building-2', aeoStrategy: 'lightbulb', aeoBlogs: 'file-text', aeoCalendar: 'calendar-days', billing: 'credit-card' };
 
 export function Sidebar({ open, onClose }) {
   const { state, setPage } = useApp();
@@ -23,7 +23,6 @@ export function Sidebar({ open, onClose }) {
     { section: 'Overview', items: [{ id: 'home', label: 'Dashboard' }] },
     { section: 'Analytics', items: [
       { id: 'aeoPrompts', label: 'Prompts', meta: nPrompts ? String(nPrompts) : '' },
-      { id: 'aeoKeywords', label: 'Keywords' },
       { id: 'aeoCompetitors', label: 'Competitors', meta: nComps ? String(nComps) : '' },
       { id: 'aeoEngines', label: 'AI Engines', meta: '4' },
       { id: 'da', label: 'Domain Authority', meta: da?.current_da != null ? String(da.current_da) : '' },

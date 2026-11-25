@@ -495,6 +495,21 @@ def create_payment_intent(
     return _request_with_retry("POST", "/api/v1/pa/payment_intents/create", json=body)
 
 
+def create_pass_intent(user_id: str, currency: str, amount: str, customer_id: str | None = None) -> dict:
+    """One-off PaymentIntent for the Starter Pass. Fixed server-side amount, NO saved consent (it never renews)."""
+    cur = currency.upper()
+    body = {
+        "request_id": str(uuid.uuid4()),
+        "amount": float(amount),
+        "currency": cur,
+        "merchant_order_id": f"user_{user_id}_pass_{uuid.uuid4().hex[:12]}",
+        "descriptor": "Starter Pass",
+    }
+    if customer_id:
+        body["customer_id"] = customer_id
+    return _request_with_retry("POST", "/api/v1/pa/payment_intents/create", json=body)
+
+
 def confirm_renewal_with_consent(intent_id: str, customer_id: str, payment_consent_id: str) -> dict:
     """Charges a saved payment method with NO shopper present — this is
     the actual auto-renewal mechanism. Airwallex calls this pattern a

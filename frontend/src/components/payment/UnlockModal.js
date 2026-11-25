@@ -5,6 +5,7 @@ import { paymentApi } from '../../api/paymentApi';
 import { withTokenExpiry } from '../../api/authApi';
 import { PlanCards, PricingSectionHeader, PricingFooter } from './PlanCards';
 import { PaymentDropIn } from './PaymentDropIn';
+import { StarterPassOffer } from './StarterPass';
 import s from './UnlockModal.module.css';
 
 /**
@@ -88,6 +89,7 @@ export function UnlockModal({
         {stage === 'plans' && (
           <>
             <PricingSectionHeader eyebrow="Pricing" title="Simple pricing," accent="priced by prompts." subtitle={subtitle} />
+            <StarterPassOffer onDone={() => onUnlocked?.()} />
             {catalogError && <div className={s.errorBox}>{catalogError}</div>}
             {!catalog && !catalogError && <div className={s.loadingRow}><span className={s.spinner} /><span>Loading plans…</span></div>}
             {catalog && (

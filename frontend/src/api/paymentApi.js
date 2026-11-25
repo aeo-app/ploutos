@@ -77,6 +77,10 @@ export const paymentApi = {
   getStatus: (paymentIntentId) =>
     get(`/payment/status${paymentIntentId ? `?payment_intent_id=${encodeURIComponent(paymentIntentId)}` : ""}`),
   getHistory: () => get("/payment/history"),
+  /** The one-time Starter Pass for free accounts. The server picks INR (India) or SGD from the country. */
+  createPassIntent: () => post("/payment/pass/create-intent", { country: getBrowserCountry() }),
+  /** The pass price for this account's country: { currency, amount, eligible, ... } */
+  getPass: () => get(`/payment/pass?country=${encodeURIComponent(getBrowserCountry())}`),
   /** @param {boolean} enabled */
   setAutoRenew: (enabled) => post(`/payment/auto-renew?enabled=${enabled}`),
 };

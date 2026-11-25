@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useAeo } from './AeoContext';
 import { aeoApi } from '../api/aeoApi';
 import { PAGE_TEMPLATES, templateById, templateOfSuggestion, defaultTitle, pageKey, pageLink, slugify, sampleContent } from './pageTemplates';
-import { renderPageHtml, DEFAULT_THEME } from './pageRender';
+import { renderPageHtml, DEFAULT_THEME, forPreview } from './pageRender';
 import { ScaledFrame, StylePicker } from './PageUi';
 import { PageReader } from './PageReader';
 
@@ -47,7 +47,7 @@ export function DesignPreview({ tpl, html, onUse, onClose }) {
               <button className="ae-btn primary" onClick={onUse} data-testid="use-design">Use this design</button>
             </div>
           </div>
-          <div className={`ae-view ${device}`}><iframe title={`${tpl.name} preview`} srcDoc={html} sandbox="allow-same-origin" /></div>
+          <div className={`ae-view ${device}`}><iframe title={`${tpl.name} preview`} srcDoc={forPreview(html)} sandbox="allow-same-origin" /></div>
         </div>
       </article>
     </div>

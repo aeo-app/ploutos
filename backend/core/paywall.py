@@ -49,6 +49,8 @@ def _ever_paid(user_id: str, ent: dict) -> bool:
     try:
         from db.payments_dynamo import list_user_payments
         for p in list_user_payments(user_id, limit=50):
+            if p.get("plan_id") == "starter_pass":
+                continue        # the one-time Starter Pass is not a subscription: buying it never makes an account "lapsed"
             if str(p.get("status", "")).upper() in SUCCESS_STATUSES:
                 return True
     except Exception as e:      # never lock someone out because the history lookup failed

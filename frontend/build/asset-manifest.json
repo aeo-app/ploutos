@@ -1,7 +1,7 @@
 {
   "files": {
-    "main.css": "/static/css/main.927f08f2.css",
-    "main.js": "/static/js/main.ab9e9ae0.js",
+    "main.css": "/static/css/main.0b11dcab.css",
+    "main.js": "/static/js/main.707f0955.js",
     "static/media/aeo-icon.png": "/static/media/aeo-icon.c77254d0c8ce1182e97d.png",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
     "static/media/aeo-app-beginners-guide-free-audit-first-ai-citation.md": "/static/media/aeo-app-beginners-guide-free-audit-first-ai-citation.b296c41f67706f98ae62.md",
@@ -23,12 +23,10 @@
     "static/media/updating_old_content_for_ai_search_blog_post.md": "/static/media/updating_old_content_for_ai_search_blog_post.c16c384e4c4450480655.md",
     "static/media/how-to-add-faq-page-schema-in-10-minutes.md": "/static/media/how-to-add-faq-page-schema-in-10-minutes.2d782c113fbe7a6a7e36.md",
     "static/media/how-to-write-an-llmstxt-file-for-your-website.md": "/static/media/how-to-write-an-llmstxt-file-for-your-website.27ccca8674b359d43ceb.md",
-    "index.html": "/index.html",
-    "main.927f08f2.css.map": "/static/css/main.927f08f2.css.map",
-    "main.ab9e9ae0.js.map": "/static/js/main.ab9e9ae0.js.map"
+    "index.html": "/index.html"
   },
   "entrypoints": [
-    "static/css/main.927f08f2.css",
-    "static/js/main.ab9e9ae0.js"
+    "static/css/main.0b11dcab.css",
+    "static/js/main.707f0955.js"
   ]
 }

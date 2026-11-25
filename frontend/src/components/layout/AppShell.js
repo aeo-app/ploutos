@@ -5,6 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { usePayment } from '../../context/PaymentContext';
 import { openPaywall, LAPSE_TEXT } from '../../utils/paywall';
 import { UnlockModal } from '../payment/UnlockModal';
+import { StarterPassStatus, usePassPrice } from '../payment/StarterPass';
 import { PagePickerModal } from '../canva/PagePickerModal';
 import { historyApi } from '../../api/historyApi';
 import { isActingAs } from '../../api/seoApi';
@@ -37,7 +38,8 @@ export function AppShell({ children, profile, onEnterAdminView }) {
   const [disconnectedPlatforms, setDisconnectedPlatforms] = useState([]);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const { state, setRequest, setResultKey, clearPaymentRequired, toast, setAdmin, setPage } = useApp();
-  const { lapsed, lapseReason } = usePayment();
+  const { lapsed, lapseReason, pass } = usePayment();
+  const passPrice = usePassPrice();
 
   // Checked once on load — a SCHEDULED post can fail overnight when the
   // background scheduler runs, well after the user was last looking at
@@ -196,6 +198,13 @@ export function AppShell({ children, profile, onEnterAdminView }) {
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className="ae-main">
         <TopBar onMenu={() => setOpen(v => !v)} onEnterAdminView={onEnterAdminView} />
+        {pass?.eligible && !lapsed && !isActingAs() && (
+          <div className="ae-banner" data-testid="pass-banner">
+            <span>Free plan. Unlock the full SEO analysis, 5 prompts, 1 content strategy page, 1 blog, 1 poster and 1 reel with a one-time Starter Pass{passPrice ? `: ${passPrice.label}` : ''}.</span>
+            <button type="button" className="ae-btn sm primary" data-testid="pass-banner-btn" onClick={() => openPaywall({ reason: 'pass' })}>Get the Starter Pass</button>
+          </div>
+        )}
+        {pass?.active && !isActingAs() && <StarterPassStatus style={{ margin: '10px 20px 0' }} />}
         {lapsed && !isActingAs() && (
           <div className="ae-banner" role="alert" data-testid="lapsed-banner">
             <span>

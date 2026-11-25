@@ -9,7 +9,6 @@ import { fmtDate } from '../../aeo/utils';
 const META = {
   home:           ['Dashboard', 'How AI answer engines see your business'],
   aeoPrompts:     ['Prompts', 'What people ask AI about your business'],
-  aeoKeywords:    ['Keywords', 'The keywords found on your website'],
   aeoCompetitors: ['Competitors', 'Who AI engines recommend in your category'],
   aeoEngines:     ['AI Engines', 'Your visibility in each answer engine'],
   da:             ['Domain Authority', 'Gap analysis and backlink roadmap'],

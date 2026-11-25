@@ -31,6 +31,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Qu
 from core.security import get_current_user_id, get_real_user_id, require_paid_access
 from core.plan_limits import weekly_limits
 from core.paywall import paywall_guard, payment_required, raise_if_lapsed, subscription_state
+from core import starter_pass
+from services.aeo_service import _drop_vendor
 from db import (
     AeoStateTooLargeError,
     DomainMismatchError,
@@ -148,7 +150,7 @@ def _parse_ts(v):
 
 
 def _analysis_quota(user_id: str, acting_admin: bool = False) -> dict:
-    paid = is_user_paid(user_id)
+    paid = starter_pass.full_access(user_id)
     last = None
     try:
         items = (list_analyses(user_id, analysis_type="aeo_prompts", limit=1) or {}).get("items") or []
@@ -157,7 +159,7 @@ def _analysis_quota(user_id: str, acting_admin: bool = False) -> dict:
         # the account became paid does not count toward the 30-day gap.
         if last and paid:
             from db.payments_dynamo import get_user_entitlement
-            since = _parse_ts(get_user_entitlement(user_id).get("paid_since"))
+            since = _parse_ts(get_user_entitlement(user_id).get("paid_since") or starter_pass.get_pass(user_id).get("paid_at"))
             if since and last < since:
                 last = None
     except Exception as e:      # never block someone because the history lookup failed
@@ -204,7 +206,7 @@ def prompts(req: AeoPromptsRequest, background: BackgroundTasks, user_id: str = 
         raise HTTPException(status_code=429, detail=f"An analysis can be run once every {FREE_ANALYSIS_INTERVAL_DAYS} days. Your next analysis is available on {when}.")
     job_id, is_new = analysis_jobs.start_job(user_id)
     if is_new:
-        background.add_task(analysis_jobs.run_job, user_id, job_id, req, is_user_paid(user_id))
+        background.add_task(analysis_jobs.run_job, user_id, job_id, req, starter_pass.full_access(user_id))
     return {"job_id": job_id, "status": "running"}
 
 
@@ -239,11 +241,42 @@ def _with_team_blogs(user_id: str, prompt: str, result):
     return result
 
 
+def _pass_only(user_id: str) -> bool:
+    """True for an account whose access is the one-time Starter Pass (no subscription): it cannot refresh saved content for free."""
+    return bool(starter_pass.active_pass(user_id))
+
+
+def _paid_or_pass(user_id: str, kind: str, message: str):
+    """Allow a new generation for a subscriber, or for a Starter Pass with a unit left (returns the unit to spend once it is made)."""
+    if is_user_paid(user_id):
+        return None
+    if starter_pass.can_use(user_id, kind):
+        return kind
+    rec = starter_pass.active_pass(user_id)
+    if rec:
+        names = {"page": "content strategy page", "blog": "blog"}
+        raise payment_required(user_id, f"Your Starter Pass includes 1 {names.get(kind, kind)} and it is already used. Choose a plan to create more.")
+    raise payment_required(user_id, message)
+
+
+def _strategy_limited(user_id: str, prompt: str) -> bool:
+    """Free preview vs full strategy. A Starter Pass unlocks the full strategy for the (up to 5) prompts the customer selected."""
+    if is_user_paid(user_id):
+        return False
+    if starter_pass.active_pass(user_id):
+        try:
+            if prompt in list(get_aeo_state(user_id).get("selected_prompts") or [])[:starter_pass.PASS_LIMITS["prompts"]]:
+                return False
+        except Exception as e:      # noqa: BLE001
+            logger.warning(f"[aeo] could not read selected prompts for {user_id}: {e}")
+    return True
+
+
 @router.post("/strategy", response_model=AeoStrategyResponse, summary="Strategy and blog topics for one prompt")
 def strategy(req: AeoStrategyRequest, user_id: str = Depends(get_current_user_id), acting: bool = Depends(_acting_admin)):
     # Free accounts get a trimmed preview (cheaper to generate); paid accounts get everything.
     _enforce_domain(user_id, req.url, req.company_name)
-    limited = not is_user_paid(user_id)
+    limited = _strategy_limited(user_id, req.prompt)
     if limited and not acting:
         # Someone who paid before and has lapsed can still open what a free account would see, but a new
         # generation (or a refresh) is a paid action.
@@ -265,7 +298,7 @@ def seo_strategy(req: AeoSeoStrategyRequest, user_id: str = Depends(get_current_
     customer selected. Same access rules as the content strategy: a free account gets a short preview, paid gets everything,
     and a lapsed account can open what it already has but cannot start a new one."""
     _enforce_domain(user_id, req.url, req.company_name)
-    limited = not is_user_paid(user_id)
+    limited = not starter_pass.full_access(user_id)
     key = req.keyword.strip().lower()
     if limited and not acting:
         if req.refresh or not get_aeo_content(user_id, "seo", key + "|free"):
@@ -298,12 +331,14 @@ def seo_content(req: AeoSeoContentRequest, user_id: str = Depends(get_current_us
     _enforce_domain(user_id, req.url, req.company_name)
     key = f"{req.keyword.strip().lower()}|{req.title.strip()}"
     # Reading a page that was already written is free; writing a new one is a paid action (same as blog drafts).
-    if not get_aeo_content(user_id, "seocontent", key) and not is_user_paid(user_id):
-        raise payment_required(user_id, "Writing the full page is part of a paid plan.")
-    return _cached_or_generate(
-        user_id, "seocontent", key, req.refresh, AeoSeoContentResponse,
+    spend = None if get_aeo_content(user_id, "seocontent", key) else _paid_or_pass(user_id, "page", "Writing the full page is part of a paid plan.")
+    out = _cached_or_generate(
+        user_id, "seocontent", key, req.refresh and not _pass_only(user_id), AeoSeoContentResponse,
         lambda t: generate_seo_content(req, usage_tracker=t),
     )
+    if spend:
+        starter_pass.consume(user_id, spend)
+    return out
 
 
 @router.post("/seo-page", summary="Write a keyword-focused SEO page as a designed website page")
@@ -313,13 +348,15 @@ def seo_page(req: AeoSeoPageRequest, user_id: str = Depends(get_current_user_id)
     tid = seo_page_template(req.template, req.format)
     key = seo_page_cache_key(req.keyword, tid, req.title)
     # Reading a page that was already written is free; writing a new one is a paid action.
-    if not get_aeo_content(user_id, "seopage", key) and not is_user_paid(user_id):
-        raise payment_required(user_id, "Writing the full page is part of a paid plan.")
-    req = req.model_copy(update={"template": tid})
-    return _cached_or_generate(
+    spend = None if get_aeo_content(user_id, "seopage", key) else _paid_or_pass(user_id, "page", "Writing the full page is part of a paid plan.")
+    req = req.model_copy(update={"template": tid, "refresh": req.refresh and not _pass_only(user_id)})
+    out = _cached_or_generate(
         user_id, "seopage", key, req.refresh, AeoPillarAsset,
         lambda t: generate_seo_page_asset(req, usage_tracker=t),
     )
+    if spend:
+        starter_pass.consume(user_id, spend)
+    return out
 
 
 @router.get("/seo-pages", summary="Designed SEO pages already written for one keyword (so they are still there after a reload)")
@@ -341,12 +378,14 @@ def seo_pages(keyword: str = Query(..., min_length=2, max_length=120), user_id: 
 def blog_draft(req: AeoBlogDraftRequest, user_id: str = Depends(get_current_user_id)):
     _enforce_domain(user_id, req.url, req.company_name)
     # Reading an existing draft (including one written by our team) is free; generating a new one is paid.
-    if not get_aeo_content(user_id, "blog", f"{req.prompt}|{req.title}") and not is_user_paid(user_id):
-        raise payment_required(user_id, "Blog drafts are part of a paid plan.")
-    return _cached_or_generate(
-        user_id, "blog", f"{req.prompt}|{req.title}", req.refresh, AeoBlogDraftResponse,
+    spend = None if get_aeo_content(user_id, "blog", f"{req.prompt}|{req.title}") else _paid_or_pass(user_id, "blog", "Blog drafts are part of a paid plan.")
+    out = _cached_or_generate(
+        user_id, "blog", f"{req.prompt}|{req.title}", req.refresh and not _pass_only(user_id), AeoBlogDraftResponse,
         lambda t: generate_aeo_blog_draft(req, usage_tracker=t),
     )
+    if spend:
+        starter_pass.consume(user_id, spend)
+    return out
 
 
 @router.post("/strategy/page", summary="Write a full website page from the template the customer picked")
@@ -358,13 +397,15 @@ def strategy_page(req: AeoPillarAssetRequest, user_id: str = Depends(get_current
         raise HTTPException(status_code=422, detail=f"Choose one of the page templates: {', '.join(PAGE_TEMPLATES)}.")
     key = page_cache_key(req.prompt, tid, req.title)
     # Reading a page that was already written is free; writing a new one is a paid action.
-    if not get_aeo_content(user_id, "pillar", key) and not is_user_paid(user_id):
-        raise payment_required(user_id, "Writing the full page is part of a paid plan.")
-    req = req.model_copy(update={"template": tid})
-    return _cached_or_generate(
+    spend = None if get_aeo_content(user_id, "pillar", key) else _paid_or_pass(user_id, "page", "Writing the full page is part of a paid plan.")
+    req = req.model_copy(update={"template": tid, "refresh": req.refresh and not _pass_only(user_id)})
+    out = _cached_or_generate(
         user_id, "pillar", key, req.refresh, AeoPillarAsset,
-        lambda t: generate_aeo_pillar_asset(req, usage_tracker=t),
+        lambda t: AeoPillarAsset.model_validate(_drop_vendor(generate_aeo_pillar_asset(req, usage_tracker=t).model_dump())),
     )
+    if spend:
+        starter_pass.consume(user_id, spend)
+    return out
 
 
 @router.post("/site-style", response_model=SiteStyleResponse, summary="Read the customer's website CSS for its brand colours and fonts")
@@ -828,7 +869,7 @@ def write_state(patch: AeoStatePatch, user_id: str = Depends(get_current_user_id
     if "custom_prompts" in changes:
         changes["custom_prompts"] = _clean_str_list(changes["custom_prompts"], 50, 200)
     if "selected_prompts" in changes:
-        changes["selected_prompts"] = _clean_str_list(changes["selected_prompts"], 20)
+        changes["selected_prompts"] = _clean_str_list(changes["selected_prompts"], starter_pass.PASS_LIMITS["prompts"] if starter_pass.active_pass(user_id) else 20)
     if "custom_competitors" in changes:
         comps = []
         for c in changes["custom_competitors"]:
