@@ -25,8 +25,9 @@ from datetime import datetime, timezone
 import re
 import socket
 import time
+import zlib
 from collections import Counter
-from typing import Callable, Optional
+from typing import Callable, NamedTuple, Optional
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -934,14 +935,63 @@ def normalise_social_link(platform: str, raw: str) -> str:
     return (host[4:] if host.startswith("www.") else host) + path
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# Website readiness checks (real HTTP fetches of the customer's own site)
-# ═════════════════════════════════════════════════════════════════════════════
-
 _UA = "AEO-APP-SiteCheck/1.0 (+https://www.aeo-app.ai)"
 _MAX_BYTES = 1_500_000
-_AI_BOTS = ["GPTBot", "ClaudeBot", "PerplexityBot", "Google-Extended", "CCBot"]
-_ORG_TYPES = {"organization", "corporation", "ngo", "educationalorganization"}
+
+_SITEMAP_MAX_FILES = 12
+_SITEMAP_MAX_BYTES = 20_000_000
+_SITEMAP_KEEP_BYTES = 400_000
+_SITEMAP_TIME_BUDGET = 25.0
+_LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+_RobotsGroup = tuple[list[str], list[tuple[str, str]]]
+
+_AI_BOTS = [
+    "GPTBot", "OAI-SearchBot", "ChatGPT-User",
+    "ClaudeBot", "Claude-SearchBot", "Claude-User",
+    "PerplexityBot", "Perplexity-User",
+    "Google-Extended", "Applebot-Extended", "CCBot",
+]
+
+_ORG_TYPES = frozenset("""
+organization corporation ngo onlinebusiness onlinestore airline consortium fundingscheme librarysystem
+educationalorganization collegeoruniversity school elementaryschool highschool middleschool preschool
+governmentorganization medicalorganization diagnosticlab veterinarycare newsmediaorganization
+performinggroup dancegroup musicgroup theatergroup politicalparty researchorganization
+searchrescueorganization sportsorganization sportsteam workersunion
+""".split())
+
+# schema.org LocalBusiness and its subtypes; a site marked up as e.g. "Dentist" never says "LocalBusiness".
+_LOCAL_TYPES = frozenset("""
+localbusiness animalshelter archiveorganization childcare dentist drycleaningorlaundry employmentagency
+internetcafe library radiostation realestateagent recyclingcenter selfstorage shoppingcenter
+televisionstation touristinformationcenter travelagency professionalservice
+automotivebusiness autobodyshop autodealer autopartsstore autorental autorepair autowash gasstation
+motorcycledealer motorcyclerepair
+emergencyservice firestation hospital policestation
+entertainmentbusiness adultentertainment amusementpark artgallery casino comedyclub movietheater nightclub
+financialservice accountingservice automatedteller bankorcreditunion insuranceagency
+foodestablishment bakery barorpub brewery cafeorcoffeeshop distillery fastfoodrestaurant icecreamshop
+restaurant winery
+governmentoffice postoffice
+healthandbeautybusiness beautysalon dayspa hairsalon healthclub nailsalon tattooparlor
+homeandconstructionbusiness electrician generalcontractor hvacbusiness housepainter locksmith movingcompany
+plumber roofingcontractor
+legalservice attorney notary
+lodgingbusiness bedandbreakfast campground hostel hotel motel resort skiresort vacationrental
+medicalbusiness communityhealth dermatology dietnutrition medicalclinic optician pharmacy physician
+individualphysician physiciansoffice physiotherapy plasticsurgery podiatric psychiatric
+sportsactivitylocation bowlingalley exercisegym golfcourse publicswimmingpool sportsclub stadiumorarena
+tenniscomplex
+store bikestore bookstore clothingstore computerstore conveniencestore departmentstore electronicsstore
+florist furniturestore gardenstore grocerystore hardwarestore hobbyshop homegoodsstore jewelrystore
+liquorstore mensclothingstore mobilephonestore movierentalstore musicstore officeequipmentstore outletstore
+pawnshop petstore shoestore sportinggoodsstore tireshop toystore wholesalestore
+""".split())
+
+_SCHEMA_HINT = "We read your page code. Schema added later by JavaScript or Google Tag Manager isn't seen here."
+_LOCAL_HINT = "Only needed if customers visit you at an address (office, shop, clinic)."
+_CLOUDFLARE_HINT = ("Your site uses Cloudflare, which can block AI tools without changing robots.txt. "
+                    "In Cloudflare, check that blocking AI bots is turned off.")
 
 
 def _host_is_public(host: str) -> bool:
@@ -953,7 +1003,7 @@ def _host_is_public(host: str) -> bool:
     return bool(addrs) and all(ipaddress.ip_address(a.split("%")[0]).is_global for a in addrs)
 
 
-def _safe_get(url: str, timeout: float = 6.0, max_redirects: int = 3) -> requests.Response:
+def _safe_open(url: str, timeout: float = 6.0, max_redirects: int = 3) -> requests.Response:
     """GET that refuses non-public destinations, on every redirect hop too — this
     endpoint takes a user-supplied URL, so it must not become a way to reach
     internal addresses (cloud metadata, localhost, private ranges)."""
@@ -968,128 +1018,278 @@ def _safe_get(url: str, timeout: float = 6.0, max_redirects: int = 3) -> request
             url = urljoin(url, r.headers.get("location", ""))
             r.close()
             continue
-        body = b""
-        for chunk in r.iter_content(65536):
-            body += chunk
-            if len(body) > _MAX_BYTES:
-                break
-        r._content = body  # noqa: SLF001 — cap what we keep in memory
         return r
     raise ValueError("Too many redirects.")
 
 
-def _jsonld_types(html: str) -> set[str]:
+def _safe_get(url: str, timeout: float = 6.0, max_redirects: int = 3) -> requests.Response:
+    r = _safe_open(url, timeout=timeout, max_redirects=max_redirects)
+    body = b""
+    for chunk in r.iter_content(65536):
+        body += chunk
+        if len(body) > _MAX_BYTES:
+            break
+    r._content = body  # noqa: SLF001 — cap what we keep in memory
+    return r
+
+
+def _bare_host(host: Optional[str]) -> str:
+    host = (host or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _same_site(url: str, host: str) -> bool:
+    return _bare_host(urlparse(url).hostname) == _bare_host(host)
+
+
+def _schema_types(page: str) -> set[str]:
     types: set[str] = set()
+
+    def add(name: str) -> None:
+        # "https://schema.org/Dentist" and "schema:Dentist" both name the type "Dentist"
+        types.add(re.split(r"[/:#]", name.strip())[-1].lower())
 
     def walk(node):
         if isinstance(node, dict):
             t = node.get("@type")
             for x in (t if isinstance(t, list) else [t]):
                 if isinstance(x, str):
-                    types.add(x.lower())
+                    add(x)
             for v in node.values():
                 walk(v)
         elif isinstance(node, list):
             for v in node:
                 walk(v)
 
-    for m in re.finditer(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.S | re.I):
+    for m in re.finditer(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', page, re.S | re.I):
         try:
             walk(json.loads(m.group(1).strip()))
         except ValueError:
             continue
+    for m in re.finditer(r'itemtype=["\']([^"\']+)["\']', page, re.I):
+        for name in m.group(1).split():
+            add(name)
     return types
 
 
-def run_site_checks(url: str) -> SiteChecksResponse:
-    raw = (url or "").strip()
-    base = raw if "//" in raw else "https://" + raw
-    p = urlparse(base)
-    if not p.hostname:
-        return SiteChecksResponse(url=raw, checks=[], error="Enter a valid website address.")
-    root = f"{p.scheme}://{p.netloc}"
-    checks: list[SiteCheck] = []
+class _Sitemap(NamedTuple):
+    locs: int
+    head: str
+    complete: bool
+    is_index: bool
 
-    t0 = time.monotonic()
-    try:
-        home = _safe_get(root + "/")
-    except (ValueError, requests.RequestException) as e:
-        return SiteChecksResponse(url=root, checks=[], error=f"Couldn't reach the website: {e}")
-    elapsed = time.monotonic() - t0
-    html = home.text if home.status_code < 400 else ""
-    types = _jsonld_types(html)
 
-    # Sitemap — count URLs, and sample a few pages for schema that isn't on the homepage.
-    sitemap_urls: list[str] = []
+def _read_sitemap(url: str, deadline: float) -> Optional[_Sitemap]:
+    if time.monotonic() > deadline:
+        return None
     try:
-        s = _safe_get(root + "/sitemap.xml")
-        if s.status_code == 200:
-            sitemap_urls = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", s.text)
+        r = _safe_open(url, timeout=6.0)
     except (ValueError, requests.RequestException):
-        pass
-    own = [u for u in sitemap_urls if urlparse(u).hostname == p.hostname and not u.endswith(".xml")]
-    prio = sorted(own, key=lambda u: 0 if re.search(r"faq|about|contact|service", u, re.I) else 1)[:3]
-    for u in prio:
+        return None
+    with r:
+        if r.status_code != 200:
+            return None
+        gunzip = None
+        head, carry = b"", b""
+        locs = size = 0
+        complete = True
         try:
-            types |= _jsonld_types(_safe_get(u, timeout=5.0).text)
-        except (ValueError, requests.RequestException):
-            continue
+            for chunk in r.iter_content(65536):
+                # .xml.gz files arrive still compressed: requests only undoes Content-Encoding
+                if gunzip is None:
+                    gunzip = zlib.decompressobj(16 + zlib.MAX_WBITS) if chunk[:2] == b"\x1f\x8b" else False
+                if gunzip:
+                    chunk = gunzip.decompress(chunk)
+                data = carry + chunk
+                locs += data.count(b"<loc>")
+                carry = data[-4:]
+                if len(head) < _SITEMAP_KEEP_BYTES:
+                    head += chunk
+                size += len(chunk)
+                if size > _SITEMAP_MAX_BYTES or time.monotonic() > deadline:
+                    complete = False
+                    break
+        except (requests.RequestException, zlib.error):
+            complete = False
+    text = head[:_SITEMAP_KEEP_BYTES].decode("utf-8", "replace")
+    # single-page apps answer every path with their HTML shell and a 200
+    if "<urlset" not in text and "<sitemapindex" not in text:
+        return None
+    return _Sitemap(locs, text, complete, "<sitemapindex" in text)
 
-    checks.append(SiteCheck(key="sitemap", label="Pages in sitemap",
-                            value=str(len(own)) if own else "No sitemap found", status="info" if own else "warn"))
-    org = bool(types & _ORG_TYPES) or any("localbusiness" in t for t in types)
-    checks.append(SiteCheck(key="org_schema", label="Organization schema", value="Found" if org else "Missing", status="good" if org else "bad"))
-    lb = any("localbusiness" in t or t in {"store", "movingcompany", "professionalservice"} for t in types)
-    checks.append(SiteCheck(key="local_schema", label="LocalBusiness schema", value="Found" if lb else "Missing", status="good" if lb else "bad"))
-    faq = "faqpage" in types
-    checks.append(SiteCheck(key="faq_schema", label="FAQPage schema", value="Found" if faq else "Missing", status="good" if faq else "bad"))
 
-    try:
-        l = _safe_get(root + "/llms.txt", timeout=5.0)
-        has_llms = l.status_code == 200 and "<html" not in l.text[:300].lower()
-    except (ValueError, requests.RequestException):
-        has_llms = False
-    checks.append(SiteCheck(key="llms_txt", label="llms.txt", value="Found" if has_llms else "Missing", status="good" if has_llms else "warn"))
+def _sitemap_pages(root: str, host: str, listed: list[str]) -> tuple[Optional[int], bool, list[str]]:
+    deadline = time.monotonic() + _SITEMAP_TIME_BUDGET
+    ours = [u for u in dict.fromkeys(listed) if _same_site(u, host)][:_SITEMAP_MAX_FILES]
+    tops = [(u, s) for u in ours if (s := _read_sitemap(u, deadline))]
+    if not tops:
+        for u in (root + "/sitemap.xml", root + "/sitemap_index.xml"):
+            if s := _read_sitemap(u, deadline):
+                tops = [(u, s)]
+                break
+    if not tops:
+        return None, True, []
 
-    blocked: list[str] = []
-    all_blocked = False
-    try:
-        r = _safe_get(root + "/robots.txt", timeout=5.0)
-        if r.status_code == 200:
-            # A robots.txt "group" is a run of User-agent lines followed by its rules.
-            group: list[str] = []
-            in_rules = False
-            for line in r.text.splitlines():
-                key, _, val = line.split("#", 1)[0].partition(":")
-                key, val = key.strip().lower(), val.strip()
-                if key == "user-agent":
-                    if in_rules:
-                        group, in_rules = [], False
-                    group.append(val)
-                elif key in ("disallow", "allow"):
-                    in_rules = True
-                    if key == "disallow" and val == "/":
-                        for agent in group:
-                            if agent == "*":
-                                all_blocked = True
-                            for bot in _AI_BOTS:
-                                if agent.lower() == bot.lower() and bot not in blocked:
-                                    blocked.append(bot)
-    except (ValueError, requests.RequestException):
-        pass
-    if all_blocked:
-        crawler_value, crawler_status = "All crawlers blocked in robots.txt", "bad"
+    already = {u for u, _ in tops}
+    children = list(dict.fromkeys(c for _, s in tops if s.is_index for c in _LOC_RE.findall(s.head) if c not in already))
+    picked = [c for c in children if _same_site(c, host)][:max(0, _SITEMAP_MAX_FILES - len(tops))]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        child_reads = list(pool.map(lambda u: _read_sitemap(u, deadline), picked))
+
+    files = [s for _, s in tops if not s.is_index] + [s for s in child_reads if s and not s.is_index]
+    complete = (
+        all(s.complete for _, s in tops)
+        and len(picked) == len(children)
+        and all(s and s.complete and not s.is_index for s in child_reads)
+    )
+    pages = [u for s in files for u in _LOC_RE.findall(s.head) if _same_site(u, host) and not u.endswith((".xml", ".xml.gz"))]
+    return sum(s.locs for s in files), complete, pages
+
+
+def _robots(text: str) -> tuple[list[_RobotsGroup], list[str]]:
+    groups: list[_RobotsGroup] = []
+    sitemaps: list[str] = []
+    agents: list[str] = []
+    rules: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        key, _, val = line.split("#", 1)[0].partition(":")
+        key, val = key.strip().lower(), val.strip()
+        if key == "sitemap" and val:
+            sitemaps.append(val)
+        elif key == "user-agent":
+            if rules:
+                groups.append((agents, rules))
+                agents, rules = [], []
+            agents.append(val.lower())
+        elif key in ("allow", "disallow") and agents:
+            rules.append((key, val))
+    if agents:
+        groups.append((agents, rules))
+    return groups, sitemaps
+
+
+def _bot_access(groups: list[_RobotsGroup], bot: str) -> str:
+    token = bot.lower()
+    # a crawler obeys only the groups naming it; the "*" group applies only when none do
+    named = [rs for agents, rs in groups if token in agents]
+    fallback = [rs for agents, rs in groups if "*" in agents]
+    rules = [r for rs in (named or fallback) for r in rs]
+    closed = {path for kind, path in rules if kind == "disallow" and path}
+    if not closed:
+        return "open"
+    root_reopened = any(kind == "allow" and path in ("/", "/*") for kind, path in rules)
+    if closed & {"/", "/*"} and not root_reopened:
+        return "blocked"
+    # rules for every crawler (/wp-admin/, search pages) are housekeeping, not a decision about AI
+    return "partial" if named else "open"
+
+
+def _bot_list(bots: list[str]) -> str:
+    return ", ".join(bots[:3]) + (f" +{len(bots) - 3} more" if len(bots) > 3 else "")
+
+
+def _crawler_check(robots_text: Optional[str], on_cloudflare: bool) -> SiteCheck:
+    hint = _CLOUDFLARE_HINT if on_cloudflare else ""
+    if robots_text is None:
+        return SiteCheck(key="ai_crawlers", label="AI crawlers", value="Couldn't read robots.txt", status="info", hint=hint)
+    groups, _ = _robots(robots_text)
+    access = {bot: _bot_access(groups, bot) for bot in _AI_BOTS}
+    blocked = [b for b, a in access.items() if a == "blocked"]
+    partial = [b for b, a in access.items() if a == "partial"]
+    if len(blocked) == len(_AI_BOTS):
+        value, status = "All AI crawlers blocked in robots.txt", "bad"
     elif blocked:
-        crawler_value, crawler_status = "Blocked: " + ", ".join(blocked), "bad"
+        value, status = "Blocked: " + _bot_list(blocked), "bad"
+    elif partial:
+        value, status = "Partly blocked: " + _bot_list(partial), "warn"
+        hint = "Some pages are closed to these AI tools in robots.txt. " + hint
     else:
-        crawler_value, crawler_status = "Not blocked in robots.txt", "good"
-    checks.append(SiteCheck(key="ai_crawlers", label="AI crawlers", value=crawler_value, status=crawler_status))
+        value, status = "Not blocked in robots.txt", "good"
+    return SiteCheck(key="ai_crawlers", label="AI crawlers", value=value, status=status, hint=hint.strip())
 
-    viewport = bool(re.search(r'<meta[^>]+name=["\']viewport["\']', html, re.I))
-    checks.append(SiteCheck(key="mobile", label="Mobile viewport", value="Set" if viewport else "Missing", status="good" if viewport else "warn"))
-    checks.append(SiteCheck(key="speed", label="Homepage response", value=f"{elapsed:.1f}s",
-                            status="good" if elapsed < 2.5 else "warn" if elapsed < 4.5 else "bad"))
+
+def _fetch_text(url: str) -> Optional[str]:
+    try:
+        r = _safe_get(url, timeout=5.0)
+    except (ValueError, requests.RequestException):
+        return None
+    return r.text if r.status_code == 200 else ""
+
+
+def run_site_checks(url: str, has_address: bool = False) -> SiteChecksResponse:
+    raw = (url or "").strip()
+    p = urlparse(raw if "//" in raw else "https://" + raw)
+    if not p.hostname:
+        return SiteChecksResponse(url=raw, error="Enter a valid website address.")
+    start = f"{p.scheme}://{p.netloc}"
+
+    try:
+        home = _safe_get(start + "/")
+    except ValueError as e:
+        return SiteChecksResponse(url=start, error=f"We couldn't check your website: {e}")
+    except requests.RequestException:
+        return SiteChecksResponse(url=start, error="We couldn't reach your website. It took too long to answer or refused the connection.")
+    if home.status_code >= 400:
+        return SiteChecksResponse(url=start, error=f"We couldn't read your homepage (error {home.status_code}). "
+                                                    "Your website may be blocking automated checks.")
+
+    final = urlparse(home.url)
+    root, host = f"{final.scheme}://{final.netloc}", final.hostname or p.hostname
+    on_cloudflare = "cf-ray" in home.headers or home.headers.get("server", "").lower() == "cloudflare"
+    page = home.text
+    types = _schema_types(page)
+
+    robots_text = _fetch_text(root + "/robots.txt")
+    listed = _robots(robots_text)[1] if robots_text else []
+    count, complete, pages = _sitemap_pages(root, host, listed)
+    for u in sorted(pages, key=lambda u: 0 if re.search(r"faq|about|contact|service", u, re.I) else 1)[:3]:
+        types |= _schema_types(_fetch_text(u) or "")
+
+    checks: list[SiteCheck] = []
+    if count is None:
+        checks.append(SiteCheck(key="sitemap", label="Pages in sitemap", value="No sitemap found", status="warn"))
+    elif not count and not complete:
+        checks.append(SiteCheck(key="sitemap", label="Pages in sitemap", value="Couldn't read your sitemap", status="warn"))
+    else:
+        checks.append(SiteCheck(key="sitemap", label="Pages in sitemap", value=f"{count:,}" + ("" if complete else "+"), status="info",
+                                hint="" if complete else "Your sitemap is very large, so we counted part of it."))
+
+    has_org = bool(types & (_ORG_TYPES | _LOCAL_TYPES))
+    has_local = bool(types & _LOCAL_TYPES)
+    schema = [
+        SiteCheck(key="org_schema", label="Organization schema", value="Found" if has_org else "Not found",
+                  status="good" if has_org else "bad"),
+        SiteCheck(key="local_schema", label="LocalBusiness schema", value="Found" if has_local else "Not found",
+                  status="good" if has_local else "bad" if has_address else "info",
+                  hint="" if has_local or has_address else _LOCAL_HINT),
+        SiteCheck(key="faq_schema", label="FAQPage schema", value="Found" if "faqpage" in types else "Not found · recommended",
+                  status="good" if "faqpage" in types else "warn"),
+    ]
+    first_missing = next((c for c in schema if c.value != "Found" and not c.hint), None)
+    if first_missing:
+        first_missing.hint = _SCHEMA_HINT
+    checks += schema
+
+    llms = _fetch_text(root + "/llms.txt")
+    has_llms = bool(llms) and "<html" not in llms[:300].lower()
+    checks.append(SiteCheck(key="llms_txt", label="llms.txt", value="Found" if has_llms else "Not found", status="good" if has_llms else "warn"))
+    checks.append(_crawler_check(robots_text, on_cloudflare))
+
+    viewport = bool(re.search(r'<meta[^>]+name=["\']viewport["\']', page, re.I))
+    checks.append(SiteCheck(key="mobile", label="Mobile viewport", value="Set" if viewport else "Not found", status="good" if viewport else "warn"))
     return SiteChecksResponse(url=root, checks=checks)
+
+
+def speed_check(report: Optional[dict]) -> SiteCheck:
+    devices = [(report or {}).get(d) or {} for d in ("mobile", "desktop")]
+    scores = [d.get("score") for d in devices]
+    if not report or all(s is None for s in scores):
+        return SiteCheck(key="speed", label="Speed (Google)", value="Not tested yet", status="info",
+                         hint="Test your website's speed on the Insights page.")
+    rank = {"bad": 0, "warn": 1, "good": 2}
+    worst = min((d.get("status") for d in devices if d.get("status") in rank), key=rank.get, default="info")
+    value = " · ".join(f"{name} {'–' if s is None else s}" for name, s in zip(("Phone", "Computer"), scores))
+    return SiteCheck(key="speed", label="Speed (Google)", value=value, status=worst)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
