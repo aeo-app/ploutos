@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { usePayment } from '../context/PaymentContext';
 import { useAeo, usePromptRows } from './AeoContext';
@@ -6,7 +6,7 @@ import { useCompetitorRows } from './parts';
 import { Icon } from './Icon';
 import { RealAnswersButton } from './RealAnswers';
 import { engineNames, fmtDate, isReal, promptVis, num, searchesTitle } from './utils';
-import { aeoApi } from '../api/aeoApi';
+import { useSiteChecks } from './siteChecks';
 
 const ENG_COLOR = ['#10a37f', '#1f8a9e', '#4f7cf7', '#ea4335'];
 const INTENTS = {
@@ -215,20 +215,10 @@ export function CompetitorsCard() {
 }
 
 /* ── Ideas ──────────────────────────────────────────────────────────────── */
-const _checks = {};
 export function useLlmsMissing(url) {
-  const [missing, setMissing] = useState(_checks[url] ?? null);
-  useEffect(() => {
-    if (!url || _checks[url] !== undefined) return;
-    let off = false;
-    aeoApi.siteChecks(url).then(d => {
-      const c = (d?.checks || []).find(x => x.key === 'llms_txt');
-      _checks[url] = c ? c.status !== 'good' : false;
-      if (!off) setMissing(_checks[url]);
-    }).catch(() => { _checks[url] = false; });
-    return () => { off = true; };
-  }, [url]);
-  return !!missing;
+  const { data } = useSiteChecks(url);
+  const c = (data?.checks || []).find(x => x.key === 'llms_txt');
+  return !!c && c.status !== 'good';
 }
 
 export function IdeasCard({ soc }) {

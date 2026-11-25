@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { usePayment } from '../../context/PaymentContext';
 import { seoApi } from '../../api/seoApi';
-import { aeoApi } from '../../api/aeoApi';
 import { useAeo } from '../AeoContext';
+import { useSiteChecks } from '../siteChecks';
 import { copyToClipboard, hostOf, num } from '../utils';
 
 function RunCard({ title, text, label, loading, onRun }) {
@@ -137,26 +137,28 @@ export function DomainAuthorityAeoPage() {
 const CHECK_COLOR = { good: '#059669', warn: '#d97706', bad: '#dc2626', info: '#1c1b3a' };
 
 function SiteChecks({ url }) {
-  const [data, setData] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const run = useCallback(async () => {
-    if (!url) return;
-    setBusy(true); setErr('');
-    try { setData(await aeoApi.siteChecks(url)); } catch (e) { setErr(e.message); } finally { setBusy(false); }
-  }, [url]);
-  useEffect(() => { run(); }, [run]);
+  const { setPage } = useApp();
+  const { data, busy, err, recheck } = useSiteChecks(url);
+  const checked = data?.checked_at ? new Date(data.checked_at) : null;
 
   return (
     <>
       <div className="ae-row" style={{ gap: 8 }}>
         <span className="ae-eyebrow">AI-readiness checks</span>
-        <button className="ae-btn sm" disabled={busy} onClick={run}>{busy ? 'Checking…' : 'Re-check'}</button>
+        <button className="ae-btn sm" disabled={busy} onClick={recheck}>{busy ? 'Checking…' : 'Re-check'}</button>
       </div>
+      {checked && !isNaN(checked) && <span className="ae-sub" data-testid="checks-date">Checked on {checked.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
       {err && <span className="ae-err">{err}</span>}
       {data?.error && <span className="ae-err">{data.error}</span>}
       {(data?.checks || []).map(c => (
-        <div key={c.key} className="ae-line"><span style={{ color: '#4a4966' }}>{c.label}</span><b style={{ color: CHECK_COLOR[c.status] || CHECK_COLOR.info, textAlign: 'right' }}>{c.value}</b></div>
+        <div key={c.key} className="ae-line">
+          <span style={{ color: '#4a4966', minWidth: 0 }}>
+            {c.label}
+            {c.hint && <small style={{ display: 'block', color: 'var(--ae-faint)', fontSize: 12, lineHeight: 1.4, marginTop: 2 }}>{c.hint}</small>}
+            {c.key === 'speed' && <button type="button" className="ae-linkbtn" style={{ fontSize: 12 }} onClick={() => { setPage('insights'); window.scrollTo(0, 0); }}>Open Insights →</button>}
+          </span>
+          <b style={{ color: CHECK_COLOR[c.status] || CHECK_COLOR.info, textAlign: 'right' }}>{c.value}</b>
+        </div>
       ))}
       {!data && busy && <span className="ae-sub">Fetching your website…</span>}
     </>

@@ -38,11 +38,13 @@ from db import (
     get_aeo_content,
     get_aeo_state,
     list_aeo_content,
+    get_insight,
     get_user_domain_lock,
     list_analyses,
     is_user_paid,
     save_aeo_content,
     save_aeo_state,
+    save_insight,
 )
 from db.dynamo import normalize_domain
 from models.aeo_models import (
@@ -76,7 +78,9 @@ from services.aeo_service import (
     generate_seo_content,
     normalise_social_link,
     run_site_checks,
+    speed_check,
 )
+from routers.insights_router import SPEED
 from services.bedrock_service import TokenUsageTracker
 from services import brand_service as brand_svc
 from services import seo_data_service
@@ -786,18 +790,47 @@ async def upload_short(file: UploadFile = File(...), user_id: str = Depends(get_
     }
 
 
-# ── Website checks ───────────────────────────────────────────────────────────
+SITE_CHECKS = "site_checks"
+SITE_RECHECK_COOLDOWN = timedelta(minutes=5)
+
+
+def _site_checks_response(user_id: str, saved: dict) -> SiteChecksResponse:
+    result = SiteChecksResponse(**saved)
+    if result.checks:
+        # added on every read, so a newer speed test shows without re-checking the website
+        result.checks.append(speed_check((get_insight(user_id, SPEED) or {}).get("report")))
+    return result
+
+
+@router.get("/site-checks", response_model=SiteChecksResponse, summary="Last saved checks of your own website")
+def saved_site_checks(user_id: str = Depends(get_current_user_id)):
+    return _site_checks_response(user_id, get_insight(user_id, SITE_CHECKS) or {})
+
+
 @router.post("/site-checks", response_model=SiteChecksResponse, summary="Real checks of your own website")
 def site_checks(req: SiteChecksRequest, user_id: str = Depends(get_current_user_id)):
     # Only the user's own (locked) domain can be checked — this endpoint fetches
     # a URL on the server's behalf, so it must not work as a general-purpose fetcher.
     lock = get_user_domain_lock(user_id)
-    wanted = normalize_domain(req.url)
+    wanted = normalize_domain(req.url) if req.url.strip() else ""
     if lock and wanted and lock.get("domain") != wanted:
         raise HTTPException(status_code=403, detail=f"You can only check your own website ({lock.get('domain')}).")
     if not lock:
         raise HTTPException(status_code=409, detail="Run an analysis for your website first, then checks become available.")
-    return run_site_checks(req.url)
+
+    last = (get_insight(user_id, SITE_CHECKS) or {}).get("checked_at")
+    wait = datetime.fromisoformat(last) + SITE_RECHECK_COOLDOWN - datetime.now(timezone.utc) if last else None
+    if wait and wait.total_seconds() > 0:
+        minutes = int(-(-wait.total_seconds() // 60))
+        raise HTTPException(status_code=429, detail=f"Your website was just checked. You can check it again in {minutes} min.")
+
+    has_address = bool(str(brand_svc.get_brand(user_id).get("address") or "").strip())
+    result = run_site_checks(req.url.strip() or f"https://{lock['domain']}", has_address=has_address)
+    result.checked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    saved = result.model_dump()
+    save_insight(user_id, SITE_CHECKS, saved)
+    logger.info(f"[aeo] site checks saved for user={user_id}: {len(result.checks)} checks, error={result.error!r}")
+    return _site_checks_response(user_id, saved)
 
 
 # ── Saved dashboard state ────────────────────────────────────────────────────
