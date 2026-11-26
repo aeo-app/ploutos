@@ -1,28 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { aeoApi } from '../api/aeoApi';
 
-/* Website checks are saved on the server. Screens read the saved result; a new check runs only when
-   there is none yet, the last one is over a week old, or the customer clicks "Re-check". */
-const STALE_MS = 7 * 24 * 60 * 60 * 1000;
+/* The server no longer keeps a saved website check, so screens run the check itself. The result is kept for the
+   rest of the visit, so opening the same page again does not check the website again. */
 const latest = new Map();    // url -> last result this session (keyed by url so "act as" another customer never mixes them)
-const pending = new Map();   // url -> in-flight load, shared by the Dashboard and Company Profile
-
-const isStale = (d) => !d?.checked_at || Date.now() - new Date(d.checked_at).getTime() > STALE_MS;
+const pending = new Map();   // url -> in-flight check, shared by every screen that asks at the same time
 
 export function loadSiteChecks(url) {
   if (latest.has(url)) return Promise.resolve(latest.get(url));
   if (!pending.has(url)) {
-    pending.set(url, aeoApi.siteChecksSaved()
-      .then(d => (isStale(d) ? aeoApi.siteChecks(url) : d))
+    pending.set(url, aeoApi.siteChecks(url)
       .then(d => { latest.set(url, d); return d; })
       .finally(() => pending.delete(url)));
   }
   return pending.get(url);
-}
-
-/** The saved result only: never starts a new check (used by the Full Report). */
-export function readSavedSiteChecks(url) {
-  return latest.has(url) ? Promise.resolve(latest.get(url)) : aeoApi.siteChecksSaved();
 }
 
 export function useSiteChecks(url) {
