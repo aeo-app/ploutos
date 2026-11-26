@@ -9,7 +9,7 @@ import { StarterPassStatus, usePassPrice } from '../payment/StarterPass';
 import { PagePickerModal } from '../canva/PagePickerModal';
 import { historyApi } from '../../api/historyApi';
 import { isActingAs } from '../../api/seoApi';
-import { consumeRememberedPage, consumeConnectAttempt, markConnectInProgress, clearConnectInProgress } from '../../utils/oauthReturn';
+import { consumeRememberedPage, peekAdminConnect, consumeConnectAttempt, markConnectInProgress, clearConnectInProgress } from '../../utils/oauthReturn';
 import '../../aeo/aeo.css';
 import '../../aeo/dashboard.css';
 
@@ -100,6 +100,13 @@ export function AppShell({ children, profile, onEnterAdminView }) {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('social_publish');
     if (!result) return;
+    if (peekAdminConnect()) {
+      // An admin was connecting on a customer's behalf: the admin screen finishes it (it reopens that customer).
+      ['social_publish', 'reason', 'invite_token'].forEach(k => params.delete(k));
+      const q = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (q ? `?${q}` : ''));
+      return;
+    }
     const attempted = consumeConnectAttempt();
     if (result === 'connected') {
       if (attempted.length) clearConnectInProgress(attempted);

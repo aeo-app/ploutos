@@ -941,13 +941,14 @@ function CalendarBlock({ t }) {
         {(() => { const cs = channelState(ch, conn[ch.platform], !!progress[ch.platform]);
           if (cs.key === 'on') return null;
           if (acting) return <div className="ae-note" data-testid="cust-not-connected" style={{ background: '#fffbeb', border: '1px solid #fcd34d', color: '#92400e', padding: '10px 14px', borderRadius: 12 }}>
-            <b>This customer has not connected {ch.name}{cs.key === 'reconnect' ? ' (it needs to be reconnected)' : ''}.</b> They connect it from their own sign-in. Until then you can write and prepare the post, but not publish or schedule it.</div>;
+            <b>This customer has not connected {ch.name}{cs.key === 'reconnect' ? ' (it needs to be reconnected)' : ''}.</b> Connect it for them to publish or schedule this post. Until then you can write and prepare it.
+            <button className="ae-btn sm" style={{ marginLeft: 10 }} data-testid="admin-connect-toggle" onClick={() => setShowLink(v => !v)}>{showLink ? 'Hide' : 'Connect for them'}</button></div>;
           const prog = cs.key === 'progress';
           return <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '10px 14px', borderRadius: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span>{prog ? <><b>{ch.name} is in progress.</b> We are finishing this connection. You can write, edit and approve now, and we will publish once it is ready.</>
               : <><b>Connect your {ch.name} account</b> to publish this post. You can approve it in the meantime.</>}</span>
             <button className="ae-btn sm" onClick={() => setShowLink(v => !v)}>{showLink ? 'Hide' : prog ? 'Try again' : 'Connect account'}</button></div>; })()}
-        {showLink && !acting && <SocialChannelsCard />}
+        {showLink && <SocialChannelsCard />}
       </section>
       )}
 

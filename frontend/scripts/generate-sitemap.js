@@ -68,6 +68,7 @@ function generate() {
 
   const entries = [
     urlEntry(`${SITE_URL}/`, today, 'weekly', '1.0'),
+    ...['how-it-works', 'features', 'pricing', 'faq'].map(s => urlEntry(`${SITE_URL}/${s}`, today, 'monthly', '0.8')),
     urlEntry(`${SITE_URL}/blog`, today, 'weekly', '0.8'),
     ...posts.map(p => urlEntry(`${SITE_URL}/blog/${p.slug}`, p.date || today, 'monthly', '0.7')),
   ];

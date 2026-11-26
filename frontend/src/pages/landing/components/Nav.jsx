@@ -1,30 +1,29 @@
 import { useState } from 'react';
-import { scrollToSection } from '../scrollUtils';
 
-const LINKS = [
-  { label: 'How it works', section: 'how' },
-  { label: 'Features', section: 'features' },
-  { label: 'Pricing', section: 'pricing' },
-  { label: 'FAQ', section: 'faq' },
+// Every tab is its own page with its own address (and is pre-rendered at build time, see scripts/prerender).
+export const NAV_LINKS = [
+  { label: 'How it works', href: '/how-it-works' },
+  { label: 'Features', href: '/features' },
+  { label: 'Pricing', href: '/pricing' },
+  { label: 'FAQ', href: '/faq' },
+  { label: 'Blog', href: '/blog' },
 ];
 
-export default function Nav({ onSignIn, onGetStarted }) {
+export default function Nav({ onSignIn, onGetStarted, active }) {
   const [open, setOpen] = useState(false);
-  const go = (section) => (e) => { scrollToSection(section, e); setOpen(false); };
 
   return (
     <header className="ln-nav">
       <div className="ln-nav-row">
-        <a className="brand" href="#top" onClick={go('top')}>
+        <a className="brand" href="/">
           <img className="brand-mark" src="/aeo-logo.png" alt="" aria-hidden="true" />
           <span className="brand-name">AEO App</span>
         </a>
 
         <nav id="ln-menu" className={'menu' + (open ? ' open' : '')} aria-label="Main">
-          {LINKS.map((l) => (
-            <a key={l.section} href={`#${l.section}`} onClick={go(l.section)}>{l.label}</a>
+          {NAV_LINKS.map((l) => (
+            <a key={l.href} href={l.href} aria-current={active === l.href ? 'page' : undefined} className={active === l.href ? 'active' : undefined}>{l.label}</a>
           ))}
-          <a href="/blog">Blog</a>
           <button type="button" className="menu-login" onClick={() => { setOpen(false); onSignIn?.(); }}>Log in</button>
         </nav>
 

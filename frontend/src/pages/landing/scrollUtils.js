@@ -12,8 +12,13 @@
  * the real href still works via the browser's own anchor navigation —
  * removing the href entirely would break that fallback for no benefit.
  */
+// Sections that live on their own page (the top-bar tabs). When the section is not on the page being viewed, go to its page.
+const SECTION_PAGE = { how: '/how-it-works', studio: '/how-it-works#studio', autopilot: '/how-it-works#autopilot', features: '/features', demo: '/features#demo', pricing: '/pricing', faq: '/faq', blog: '/blog' };
+
 export function scrollToSection(id, e) {
   if (e) e.preventDefault();
   if (typeof document === 'undefined') return;
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const el = document.getElementById(id);
+  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (SECTION_PAGE[id] && typeof window !== 'undefined') window.location.assign(SECTION_PAGE[id]);
 }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { isActingAs } from '../api/seoApi';
+import { isActingAs, getActAs } from '../api/seoApi';
 import { useApp } from '../context/AppContext';
 import { socialPublishApi } from '../api/socialPublishApi';
-import { rememberPageBeforeOAuthRedirect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
+import { rememberPageBeforeOAuthRedirect, rememberAdminConnect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
 import { useConnectProgress } from './useConnectProgress';
 import { useAeo } from './AeoContext';
 import { CHANNELS, channelState } from './utils';
@@ -19,7 +19,7 @@ const GROUP = { facebook: 'meta', instagram: 'meta', linkedin: 'linkedin', googl
 const FOUND_KEY = { fb: 'facebook', ig: 'instagram', li: 'linkedin', yt: 'youtube', gbp: 'google_business' };
 const shortLink = (u) => String(u || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '').replace(/^[a-z]+\.com\//i, '');
 
-/** Connection state of the five social channels, plus connect / disconnect / re-scan. An admin viewing a customer can look but never connect. */
+/** Connection state of the five social channels, plus connect / disconnect / re-scan. An admin viewing a customer can connect on the customer's behalf. */
 export function useSocialChannels() {
   const acting = isActingAs();
   const { state, toast } = useApp();
@@ -57,10 +57,11 @@ export function useSocialChannels() {
     try {
       const { authorize_url } = await socialPublishApi.connect(group);
       if (!authorize_url) throw new Error('no authorize url');
-      rememberPageBeforeOAuthRedirect(state.page);
+      if (acting) rememberAdminConnect(getActAs(), state.page); else rememberPageBeforeOAuthRedirect(state.page);
       rememberConnectAttempt(group);
       window.location.href = authorize_url;
     } catch (e) {
+      if (acting) { toast({ type: 'error', message: `Could not start the ${c.name} connection: ${e.message || 'please try again'}` }); setConnecting(null); return; }
       // Not something the customer can fix: show the connection as "in progress", never as an error.
       markConnectInProgress(platformsOfGroup(group));
       toast({ type: 'info', message: `Your ${c.name} connection is in progress. We are finishing the setup — try again a little later.` });

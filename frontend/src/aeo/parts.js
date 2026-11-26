@@ -1,8 +1,8 @@
-import { isActingAs } from '../api/seoApi';
+import { isActingAs, getActAs } from '../api/seoApi';
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { socialPublishApi } from '../api/socialPublishApi';
-import { rememberPageBeforeOAuthRedirect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
+import { rememberPageBeforeOAuthRedirect, rememberAdminConnect, rememberConnectAttempt, markConnectInProgress, clearConnectInProgress, platformsOfGroup } from '../utils/oauthReturn';
 import { useConnectProgress } from './useConnectProgress';
 import { useAeo, usePromptRows } from './AeoContext';
 import { ENG_SHORT, INTENT, SOCIAL_ORDER, CHANNELS, channelState, engCell, isReal, promptVis, num, hostOf, searchesTitle } from './utils';
@@ -192,10 +192,11 @@ function SocialChannelsCardInner() {
     try {
       const { authorize_url } = await socialPublishApi.connect(group);
       if (!authorize_url) throw new Error('no authorize url');
-      rememberPageBeforeOAuthRedirect(state.page);
+      if (acting) rememberAdminConnect(getActAs(), state.page); else rememberPageBeforeOAuthRedirect(state.page);
       rememberConnectAttempt(group);
       window.location.href = authorize_url;
     } catch (e) {
+      if (acting) { toast({ type: 'error', message: `Could not start the ${ch.name} connection: ${e.message || 'please try again'}` }); setConnecting(null); return; }
       // Not an error the customer can act on — show the connection as in progress.
       markConnectInProgress(platformsOfGroup(group));
       toast({ type: 'info', message: `Your ${ch.name} connection is in progress. We are finishing the setup — try again a little later.` });
@@ -223,7 +224,7 @@ function SocialChannelsCardInner() {
       <div className="ae-row" style={{ alignItems: 'baseline' }}><h2>Social media channels</h2><a onClick={() => { setPage('aeoCalendar'); window.scrollTo(0, 0); }} style={{ fontSize: 13, fontWeight: 700 }}>Open calendar →</a></div>
       <div className="ae-note" style={{ background: '#f3f4ff', border: '1px solid #dcdcf7', color: '#3730a3', padding: '9px 12px', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <span>{detecting ? <b>Reading your website for social accounts…</b>
-          : foundCount ? <><b>We found {foundCount} social account{foundCount > 1 ? 's' : ''} on {hostOf(state.request.url) || 'your website'}.</b> {acting ? 'The customer connects each one from their own sign-in.' : 'Connect each one below so we can publish for you.'}</>
+          : foundCount ? <><b>We found {foundCount} social account{foundCount > 1 ? 's' : ''} on {hostOf(state.request.url) || 'your website'}.</b> {acting ? 'Connect each one below on their behalf.' : 'Connect each one below so we can publish for you.'}</>
           : brand.data?.detected ? <>We did not find social account links on {hostOf(state.request.url) || 'your website'}. You can still connect your accounts below.</> : <>We will look for your social accounts on your website.</>}</span>
         <button type="button" className="ae-btn sm" disabled={detecting || !state.request.url} onClick={rescan}>{detecting ? 'Reading…' : '🔎 Scan website again'}</button>
       </div>
@@ -244,7 +245,7 @@ function SocialChannelsCardInner() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: cs.color }}>{cs.label.replace(/^[●○◐] /, '')}</span>
-                {!acting && !connected && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : cs.key === 'reconnect' ? 'Reconnect' : cs.key === 'progress' ? 'Try again' : 'Connect account'}</button>}
+                {!connected && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : cs.key === 'reconnect' ? 'Reconnect' : cs.key === 'progress' ? 'Try again' : 'Connect account'}</button>}
                 {!acting && connected && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
               </div>
             </div>

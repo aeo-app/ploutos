@@ -32,9 +32,9 @@ export default function Footer() {
             <address>2 Ang Mo Kio Street 64, #02-03A<br />ECON INDUSTRIAL BUILDING<br />Singapore 569084</address>
           </div>
           <FootCol title="Product" links={[
-            { label: 'Content studio', href: '#studio', section: 'studio' },
-            { label: 'Features', href: '#features', section: 'features' },
-            { label: 'Pricing', href: '#pricing', section: 'pricing' },
+            { label: 'Content studio', href: '/how-it-works#studio' },
+            { label: 'Features', href: '/features' },
+            { label: 'Pricing', href: '/pricing' },
           ]} />
           <FootCol title="Company" links={[
             { label: 'About', href: '#' },

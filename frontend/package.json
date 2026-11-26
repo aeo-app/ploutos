@@ -19,7 +19,7 @@
     "llms-txt": "node scripts/generate-llms-txt.js",
     "prerender": "node scripts/prerender/index.js",
     "deploy": "npm run build && aws s3 sync build s3://aeo-app.com --delete",
-    "uat-deploy": "npm run build && aws s3 sync build s3://aeo-app-uat.com --delete"
+    "uat-deploy": "npm run build && aws s3 sync build s3://uat.aeo-app.com --delete"
   },
   "browserslist": {
     "production": [

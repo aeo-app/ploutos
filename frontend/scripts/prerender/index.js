@@ -40,7 +40,7 @@ const INDEX_HTML_PATH = path.join(BUILD_DIR, 'index.html');
 const API_BASE = process.env.PRERENDER_API_BASE || 'https://api.aeo-app.ai/api/v1';
 
 const { AuthProvider } = require('../../src/context/AuthContext.js');
-const { LandingPage } = require('../../src/pages/landing/LandingPage.js');
+const { LandingPage, SECTION_PAGES } = require('../../src/pages/landing/LandingPage.js');
 const { PublicBlogIndexPage } = require('../../src/pages/PublicBlogIndexPage.js');
 const { PublicBlogPostPage } = require('../../src/pages/PublicBlogPostPage.js');
 const { loadBlogPostsSync } = require('./loadBlogPostsNode.js');
@@ -127,6 +127,18 @@ async function main() {
     description: 'Track your brand across ChatGPT, Perplexity, and Google AI Overviews, then ship the content and technical fixes that move you into the answer.',
   }));
 
+  // 1b. The top-bar tabs, each as its own page: /how-it-works, /features, /pricing, /faq
+  for (const route of Object.keys(SECTION_PAGES)) {
+    const pageHtml = ReactDOMServer.renderToString(
+      React.createElement(
+        AuthProvider,
+        null,
+        React.createElement(LandingPage, { initialPlans: plans, initialPosts: posts.slice(0, 3), route })
+      )
+    );
+    writeRouteHtml(route, injectIntoTemplate(template, pageHtml, SECTION_PAGES[route]));
+  }
+
   // 2. Blog index — every post, one card each
   const blogIndexHtml = ReactDOMServer.renderToString(
     React.createElement(PublicBlogIndexPage, { initialPosts: posts })
@@ -152,7 +164,7 @@ async function main() {
     }));
   }
 
-  console.log('[prerender] done — 1 homepage + 1 blog index + ' + posts.length + ' blog post(s)');
+  console.log('[prerender] done — 1 homepage + ' + Object.keys(SECTION_PAGES).length + ' tab pages + 1 blog index + ' + posts.length + ' blog post(s)');
 }
 
 main().catch(function (err) {

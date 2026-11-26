@@ -40,12 +40,51 @@ import './LandingPage.css';
   AuthContext marks the user as authenticated (`authScreen === null`),
   App.js renders the existing application instead of this page.
 */
-export function LandingPage({ initialPlans, initialPosts } = {}) {
-  const { goScreen } = useAuth();
+// The top-bar tabs, each served at its own address. `route` is passed by the build-time pre-render; in the browser it is the address.
+export const SECTION_PAGES = {
+  '/how-it-works': { title: 'How it works — AEO-APP.ai', description: 'See how AEO-APP.ai audits your AI search visibility, builds your content, and publishes it for you.' },
+  '/features': { title: 'Features — AEO-APP.ai', description: 'Everything in AEO-APP.ai: AI visibility tracking, competitor analysis, keyword intelligence, content, and publishing.' },
+  '/pricing': { title: 'Pricing — AEO-APP.ai', description: 'Simple plans for tracking and improving your AI search visibility, from a free audit to a full content engine.' },
+  '/faq': { title: 'FAQ — AEO-APP.ai', description: 'Answers to common questions about AEO-APP.ai, AI search visibility, and how the platform works.' },
+};
 
-  const handleSignIn = () => goScreen('login');
-  const handleGetStarted = () => goScreen('signup');
-  const handleStartTrial = () => goScreen('signup');
+export function sectionRoute(route) {
+  const raw = route || (typeof window !== 'undefined' ? window.location.pathname : '/');
+  const p = String(raw).replace(/\/+$/, '') || '/';
+  return SECTION_PAGES[p] ? p : null;
+}
+
+export function LandingPage({ initialPlans, initialPosts, route } = {}) {
+  const { goScreen } = useAuth();
+  const section = sectionRoute(route);
+
+  // Moving on to log in / sign up from a tab page: put the address back to "/" so the app does not sit under /pricing.
+  const leave = (screen) => () => {
+    if (section && typeof window !== 'undefined') window.history.replaceState(null, '', '/');
+    goScreen(screen);
+  };
+  const handleSignIn = leave('login');
+  const handleGetStarted = leave('signup');
+  const handleStartTrial = leave('signup');
+
+  React.useEffect(() => {
+    if (section && typeof document !== 'undefined') document.title = SECTION_PAGES[section].title;
+  }, [section]);
+
+  if (section) {
+    return (
+      <div className="page landingPage">
+        <JsonLd data={organizationSchema} />
+        <Nav onSignIn={handleSignIn} onGetStarted={handleGetStarted} active={section} />
+        {section === '/how-it-works' && (<><HowItWorks /><Studio /><Autopilot /></>)}
+        {section === '/features' && (<><Features /><Demo onGetStarted={handleGetStarted} /></>)}
+        {section === '/pricing' && <Pricing onStartTrial={handleStartTrial} initialPlans={initialPlans} />}
+        {section === '/faq' && <Faq />}
+        <Contact onStart={handleGetStarted} />
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="page landingPage">

@@ -9,6 +9,7 @@ import { AeoProvider, useAeo } from '../../aeo/AeoContext';
 import { BrandKitCard } from '../../aeo/BrandKit';
 import { historyApi } from '../../api/historyApi';
 import { setActAs, clearActAs } from '../../api/seoApi';
+import { takePendingAdminPage } from '../../utils/oauthReturn';
 import { SkeletonCard } from '../../components/ui/UI';
 import { UserHeader } from './shared';
 import { AppShell } from '../../components/layout/AppShell';
@@ -59,7 +60,7 @@ function CustomerScope({ ws, children, setup, onNavigate, asApp }) {
   const [results, setResults] = useState({ ...EMPTY_KEYS });
   const [loading, setLoading] = useState({ ...FALSE_KEYS });
   const [errors, setErrors] = useState({ ...EMPTY_KEYS });
-  const [page, setPageLocal] = useState('home');          // asApp: which of the customer's pages is open
+  const [page, setPageLocal] = useState(() => (asApp && takePendingAdminPage()) || 'home');          // asApp: which of the customer's pages is open
   const [request, setReq] = useState(() => asApp ? ({ company_name: '', url: '', market: 'Singapore', industry: '' }) : ({
     company_name: ws.user.company_name || ws.user.full_name || '',
     url: ws.user.domain ? (/^https?:/.test(ws.user.domain) ? ws.user.domain : `https://${ws.user.domain}`) : '',

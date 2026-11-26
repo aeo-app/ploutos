@@ -111,9 +111,9 @@ function SocialCard({ soc, onManage }) {
                 {c.key === 'progress' && <span className="dv-st b" style={{ color: '#4f46e5' }}>In progress</span>}
               </div>
             </div>
-            {!soc.acting && c.key === 'connect' && <button type="button" className="dv-btn chipb dv-nopr" disabled={soc.connecting === c.id} onClick={() => soc.connect(c)}>{soc.connecting === c.id ? 'Opening…' : 'Connect'}</button>}
-            {!soc.acting && c.key === 'reconnect' && <button type="button" className="dv-btn chipb warn dv-nopr" disabled={soc.connecting === c.id} onClick={() => soc.connect(c)}>Reconnect</button>}
-            {!soc.acting && c.key === 'progress' && <button type="button" className="dv-link sm dv-nopr" disabled={soc.connecting === c.id} onClick={() => soc.connect(c)}>Try again</button>}
+            {c.key === 'connect' && <button type="button" className="dv-btn chipb dv-nopr" disabled={soc.connecting === c.id} onClick={() => soc.connect(c)}>{soc.connecting === c.id ? 'Opening…' : 'Connect'}</button>}
+            {c.key === 'reconnect' && <button type="button" className="dv-btn chipb warn dv-nopr" disabled={soc.connecting === c.id} onClick={() => soc.connect(c)}>Reconnect</button>}
+            {c.key === 'progress' && <button type="button" className="dv-link sm dv-nopr" disabled={soc.connecting === c.id} onClick={() => soc.connect(c)}>Try again</button>}
           </div>
         ))}
       </div>

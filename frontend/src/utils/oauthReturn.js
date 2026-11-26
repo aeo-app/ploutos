@@ -59,3 +59,22 @@ export function consumeConnectAttempt() {
   try { const g = sessionStorage.getItem(ATTEMPT_KEY); sessionStorage.removeItem(ATTEMPT_KEY); return g ? (PLATFORMS_OF_GROUP[g] || [g]) : []; } catch { return []; }
 }
 export const platformsOfGroup = (g) => PLATFORMS_OF_GROUP[g] || [g];
+
+
+/* ── Admin connecting a customer's account ─────────────────────────────────
+ * The full-page redirect to the provider drops the in-memory "acting as" state. Remember which customer (and which of
+ * their pages) the admin was on so the return trip can reopen that customer and finish the connection for them. */
+const ADMIN_SOCIAL_KEY = 'admin_social_return';
+export function rememberAdminConnect(userId, page) {
+  try { sessionStorage.setItem(ADMIN_SOCIAL_KEY, JSON.stringify({ uid: userId, page: page || 'home' })); } catch { /* optional */ }
+}
+/** Which customer an admin was connecting for (read-only; clearAdminConnect ends it). */
+export function peekAdminConnect() {
+  try { return JSON.parse(sessionStorage.getItem(ADMIN_SOCIAL_KEY) || 'null'); } catch { return null; }
+}
+export function clearAdminConnect() { try { sessionStorage.removeItem(ADMIN_SOCIAL_KEY); } catch { /* optional */ } }
+
+// Which of the customer's pages to reopen once the admin is back (kept in memory: the marker above is cleared early).
+let _pendingAdminPage = null;
+export function setPendingAdminPage(p) { _pendingAdminPage = p || null; }
+export function takePendingAdminPage() { const p = _pendingAdminPage; _pendingAdminPage = null; return p; }

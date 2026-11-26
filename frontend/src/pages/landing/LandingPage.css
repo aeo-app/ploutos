@@ -106,6 +106,7 @@
 .landingPage .menu { display: flex; align-items: center; gap: 26px; font-size: 15px; font-weight: 500; }
 .landingPage .menu a { color: var(--txt); padding: 8px 0; }
 .landingPage .menu a:hover { color: var(--blue); }
+.landingPage .menu a.active { color: var(--blue); font-weight: 700; }
 .landingPage .menu-login { display: none; }
 .landingPage .nav-ctas { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
 .landingPage .nav-ctas .login { background: none; border: 0; color: var(--txt); font-weight: 600; font-size: 15px; padding: 12px 8px; cursor: pointer; min-height: 44px; }

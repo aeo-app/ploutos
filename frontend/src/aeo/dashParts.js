@@ -242,7 +242,7 @@ export function IdeasCard({ soc }) {
       go: () => { setSelectedPrompts([gap.text, ...saved.selected_prompts.filter(t => t !== gap.text)]); setPage('aeoStrategy'); window.scrollTo(0, 0); } });
     if (llmsMissing) out.push({ title: 'Help AI tools read your website', reason: 'Your website is missing an AI-readable file (llms.txt).', action: 'How to fix', go: () => { setPage('profile'); window.scrollTo(0, 0); } });
     const fb = soc?.channels?.find(c => c.id === 'fb');
-    if (soc && soc.loaded && fb && fb.key !== 'connected' && !soc.acting) out.push({ title: 'Connect your Facebook Page', reason: 'So we can publish your approved posts for you.', action: 'Connect', go: () => soc.connect(fb) });
+    if (soc && soc.loaded && fb && fb.key !== 'connected') out.push({ title: 'Connect your Facebook Page', reason: 'So we can publish your approved posts for you.', action: 'Connect', go: () => soc.connect(fb) });
     return out.map((x, i) => ({ ...x, n: i + 1 }));
     // eslint-disable-next-line
   }, [analysis, llmsMissing, soc?.channels, soc?.loaded, saved.selected_prompts]);
