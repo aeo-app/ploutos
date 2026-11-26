@@ -5,15 +5,15 @@ import { useAeo } from '../AeoContext';
 import { EmptyAnalysis } from '../parts';
 import { checkedLine, RED, AMBER, GREEN } from '../dashParts';
 import { useSocialChannels } from '../social';
-import { readSavedSiteChecks } from '../siteChecks';
+import { loadSiteChecks } from '../siteChecks';
 import { Icon } from '../Icon';
 import { checkedAnswers, citedCount, engineNames, fmtDate, hostOf, isReal, num, overallVis, sovRank, youSov } from '../utils';
 import '../fullReport.css';
 
 /* ── Full Report ──────────────────────────────────────────────────────────────
    Everything the app already knows about the customer, on one page, in plain words.
-   It only reads what is already saved: the latest analysis (loaded at login), the last
-   speed test and the last website check. Nothing is re-checked when the page opens. */
+   It reads the latest analysis (loaded at login) and the last speed test. The website check
+   runs when the page opens, the same check the Dashboard and Company Profile run. */
 
 const MUTE = '#6b6a85';
 const CHECK_COLOR = { good: GREEN, warn: AMBER, bad: RED, info: '#1c1b3a' };
@@ -80,7 +80,7 @@ function Header({ analysis, lastRun }) {
     <div className="dv-card fr-head" data-print-card data-testid="fr-head">
       <h2>Full report for {r.company_name || 'your business'}</h2>
       <span className="dv-sub">{[hostOf(r.url), r.market, r.industry].filter(Boolean).join(' · ')}</span>
-      <span className="dv-sub">{when ? `Based on your analysis from ${when}. ` : ''}This page shows results we already have, so nothing is checked again when you open it.</span>
+      <span className="dv-sub">{when ? `Based on your analysis from ${when}. ` : ''}The website check for AI runs again when you open this page.</span>
       <span className="dv-tiny dv-nopr"><Icon name="download" size={14} />To save or share this report, click “Export PDF” at the top.</span>
     </div>
   );
@@ -259,7 +259,7 @@ function Speed({ speed }) {
 
 function Checks({ checks }) {
   const text = 'Simple checks that show whether AI tools can find and understand your website.';
-  if (checks === undefined) return <Section id="fr-checks" title="Website check for AI" text={text}><span className="dv-sub">Loading…</span></Section>;
+  if (checks === undefined) return <Section id="fr-checks" title="Website check for AI" text={text}><span className="dv-sub">Checking your website…</span></Section>;
   if (!checks) return <Section id="fr-checks" title="Website check for AI" text={text}><div className="fr-empty">Not checked yet.<GoButton to="profile">Check it on Company Profile</GoButton></div></Section>;
   const rows = (checks.checks || []).filter(c => c.key !== 'speed');
   return (
@@ -311,9 +311,11 @@ export function FullReportPage() {
   const [checks, setChecks] = useState(undefined);   // undefined = loading, null = never checked
   const url = state.request.url;
 
+  // Both loads start inside a promise, so even an error thrown by the call itself (like a missing API function)
+  // only empties its own section instead of blanking the whole page.
   useEffect(() => {
     let off = false;
-    aeoApi.speedTest()
+    Promise.resolve().then(() => aeoApi.speedTest())
       .then(d => { if (!off) setSpeed(d?.report ? d : null); })
       .catch(() => { if (!off) setSpeed(null); });
     return () => { off = true; };
@@ -322,7 +324,7 @@ export function FullReportPage() {
   useEffect(() => {
     if (!url) { setChecks(null); return undefined; }
     let off = false;
-    readSavedSiteChecks(url)
+    Promise.resolve().then(() => loadSiteChecks(url))
       .then(d => { if (!off) setChecks(d?.checks?.length || d?.error ? d : null); })
       .catch(() => { if (!off) setChecks(null); });
     return () => { off = true; };
