@@ -2,7 +2,7 @@
 title: "AEO-APP Beginner’s Guide: From Free Audit to Your First AI Engine Citation"
 description: "Use AEO App, an automated content posting social media tool, to start with a free audit and earn your first AI engine citation in four steps."
 date: 2026-11-24
-featured_image: ""
+featured_image: "/assets/blog/image-9.jpg"
 tags: [AEO App, AEO, Answer Engine Optimization, AI Search Optimization, Free Audit, AI Visibility, Content Marketing, Social Media Automation]
 ---
 # AEO-APP Beginner’s Guide: From Free Audit to Your First AI Engine Citation
