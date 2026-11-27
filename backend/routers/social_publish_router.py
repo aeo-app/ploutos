@@ -39,6 +39,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from core.security import get_real_user_id as get_current_user_id  # never "act as" a customer here
 # Uploads are the one exception: an admin preparing a post for a customer uploads the picture or reel INTO the customer's
 # account, so the customer's own publish (and the admin's publish for them) can read it.
+# Whose account a connection is saved on: the signed-in user, or — for a verified admin using Customer view —
+# the customer being viewed (header or ?act_as=). Connect / disconnect use this so an admin never lands it on their own account.
 from core.security import get_current_user_id as get_upload_owner_id
 from core.paywall import paywall_guard
 from db import (
@@ -106,7 +108,7 @@ async def status(user_id: str = Depends(get_current_user_id)):
 
 
 @router.post("/{platform}/disconnect", summary="Disconnect a platform")
-async def disconnect(platform: str, user_id: str = Depends(get_current_user_id)):
+async def disconnect(platform: str, user_id: str = Depends(get_upload_owner_id)):
     if platform not in PLATFORM_LABELS:
         raise HTTPException(status_code=404, detail=f"Unknown platform: {platform}")
     delete_social_connection(user_id, platform)
@@ -115,7 +117,7 @@ async def disconnect(platform: str, user_id: str = Depends(get_current_user_id))
 
 # ── Meta (Facebook + Instagram) ──────────────────────────────────────────────
 @router.get("/meta/connect", response_model=ConnectResponse, summary="Get the Meta authorize URL (covers Facebook + Instagram)")
-async def meta_connect(user_id: str = Depends(get_current_user_id)):
+async def meta_connect(user_id: str = Depends(get_upload_owner_id)):
     # Use the same one-time page-picker flow as a customer invite. The
     # authenticated user is the requester, so the resulting connection is
     # stored on their account after they choose a specific Page.
@@ -160,7 +162,7 @@ async def meta_callback(
 
 # ── LinkedIn ─────────────────────────────────────────────────────────────────
 @router.get("/linkedin/connect", response_model=ConnectResponse, summary="Get the LinkedIn authorize URL")
-async def linkedin_connect(user_id: str = Depends(get_current_user_id)):
+async def linkedin_connect(user_id: str = Depends(get_upload_owner_id)):
     # Same one-time page-picker flow as Meta (see meta_connect above) — now
     # that LinkedIn posts as a Company Page rather than the member's own
     # profile, there can be more than one Page to choose between, so this
@@ -203,7 +205,7 @@ async def linkedin_callback(
 
 # ── Google Business Profile ──────────────────────────────────────────────────
 @router.get("/google_business/connect", response_model=ConnectResponse, summary="Get the Google authorize URL")
-async def google_business_connect(user_id: str = Depends(get_current_user_id)):
+async def google_business_connect(user_id: str = Depends(get_upload_owner_id)):
     state = f"{user_id}:{secrets.token_urlsafe(24)}"
     return ConnectResponse(authorize_url=gbp.build_authorize_url(state))
 
@@ -258,7 +260,7 @@ async def google_business_callback(
 
 # ── YouTube ──────────────────────────────────────────────────────────────────
 @router.get("/youtube/connect", response_model=ConnectResponse, summary="Get the YouTube (Google) authorize URL")
-async def youtube_connect(user_id: str = Depends(get_current_user_id)):
+async def youtube_connect(user_id: str = Depends(get_upload_owner_id)):
     state = f"{user_id}:{secrets.token_urlsafe(24)}"
     return ConnectResponse(authorize_url=yt.build_authorize_url(state))
 

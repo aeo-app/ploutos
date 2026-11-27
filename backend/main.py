@@ -191,8 +191,7 @@ app.add_middleware(
         "http://localhost:3000",
         "https://api.aeo-app.ai",
         "https://aeo-app.ai",
-        "https://aeo-app.com",
-        "https://uat.aeo-app.com"
+        "https://aeo-app.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],

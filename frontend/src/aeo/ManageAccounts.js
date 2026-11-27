@@ -36,7 +36,7 @@ export function ManageAccounts({ soc, onClose }) {
                 <div className="dv-ico lg" style={{ background: c.bg, color: c.fg }}><Icon name={c.icon} size={18} /></div>
                 <div className="dv-grow"><span style={{ fontSize: 14, fontWeight: 600 }}>{c.name}</span><span style={{ fontSize: 12, color: col }}>{txt}</span>
                   {c.foundUrl && c.key !== 'connected' && <a href={c.foundUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Found on your website: {c.foundLabel}</a>}</div>
-                {!acting && c.key === 'connected' && <button type="button" className="dv-btn danger sm" onClick={() => disconnect(c)}>Disconnect</button>}
+                {c.key === 'connected' && <button type="button" className="dv-btn danger sm" onClick={() => disconnect(c)}>Disconnect</button>}
                 {c.key === 'connect' && <button type="button" className="dv-btn primary sm" disabled={connecting === c.id} onClick={() => connect(c)}>{connecting === c.id ? 'Opening…' : 'Connect'}</button>}
                 {c.key === 'reconnect' && <button type="button" className="dv-btn warn sm" disabled={connecting === c.id} onClick={() => connect(c)}>Reconnect</button>}
                 {c.key === 'progress' && <button type="button" className="dv-link" disabled={connecting === c.id} onClick={() => connect(c)}>Try again</button>}

@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/static/css/main.398a1971.css",
-    "main.js": "/static/js/main.d2843de9.js",
+    "main.js": "/static/js/main.424f0a77.js",
     "static/media/aeo-icon.png": "/static/media/aeo-icon.c77254d0c8ce1182e97d.png",
     "static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.md": "/static/media/why-zero-click-search-is-reshaping-b2b-buyer-journeys.6be9f170010fc46fb114.md",
     "static/media/aeo-app-beginners-guide-free-audit-first-ai-citation.md": "/static/media/aeo-app-beginners-guide-free-audit-first-ai-citation.3ecd76d933e491afd466.md",
@@ -26,6 +26,6 @@
   },
   "entrypoints": [
     "static/css/main.398a1971.css",
-    "static/js/main.d2843de9.js"
+    "static/js/main.424f0a77.js"
   ]
 }

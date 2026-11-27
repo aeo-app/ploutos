@@ -89,8 +89,8 @@ export const socialPublishApi = {
   statusForView: () => (getActAs() ? adminAeoApi.socialStatus(getActAs()) : req("GET", "/social-publish/status")),
   status: () => req("GET", "/social-publish/status"),
   /** @param {'meta'|'linkedin'|'google_business'|'youtube'} platform - "meta" covers both Facebook + Instagram in one OAuth flow */
-  connect: (platform) => req("GET", `/social-publish/${platform}/connect`),
-  disconnect: (platform) => req("POST", `/social-publish/${platform}/disconnect`),
+  connect: (platform) => (getActAs() ? adminAeoApi.socialConnect(getActAs(), platform) : req("GET", `/social-publish/${platform}/connect`)),
+  disconnect: (platform) => (getActAs() ? adminAeoApi.socialDisconnect(getActAs(), platform) : req("POST", `/social-publish/${platform}/disconnect`)),
   /** @param {File} file - a browser File object, e.g. from an <input type="file"> */
   uploadMedia: async (file) => uploadReq("/social-publish/uploads", await shrunk(file)),
   uploadVideo: (file, onProgress) => uploadVideoInPieces(file, onProgress),

@@ -653,7 +653,7 @@ function CalendarBlock({ t }) {
         ...(p.reel ? { video_url: p.st.vid, title: (p.post.title || '').slice(0, 100) || undefined } : { image_url: p.st.img }),
         caption: postCaption(p).slice(0, 3000), platforms: [p.c.platform],
         cta_url: hostOf(state.request.url) ? `https://${hostOf(state.request.url)}` : undefined,
-        day_date: isoDate(p.d), post_number: 1,
+        day_date: isoDate(p.d), post_number: 1, post_key: p.k,
       });
       const r = (res?.results || [])[0] || {};
       if (r.success) {
@@ -679,6 +679,27 @@ function CalendarBlock({ t }) {
     if (d.getTime() < Date.now() + 10 * 60 * 1000) { d.setTime(Date.now() + 60 * 60 * 1000); d.setMinutes(0, 0, 0); }
     const z = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+  };
+  /** The date and time the calendar planned for this post (its day and the channel's posting time), in local time. */
+  const plannedAt = (p) => {
+    const m = /(\d+):(\d+)\s*(AM|PM)/i.exec(p.c.time || '');
+    const d = new Date(p.d); d.setHours(m ? (Number(m[1]) % 12) + (/pm/i.test(m[3]) ? 12 : 0) : 9, m ? Number(m[2]) : 0, 0, 0);
+    return d;
+  };
+  const localValue = (d) => { const z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; };
+  /** Approving a post sends it out by itself at the time the calendar planned (straight away if that time has passed).
+   *  For an admin in Customer view this runs on the customer's connected channels, saved on the customer. */
+  const approvePost = async (p) => {
+    setPostState(p.k, { approved: true });
+    if (!acting || p.st.published || p.st.sched_id || manualOnly(p)) return;
+    const cs = channelState(p.c, conn[p.c.platform], false);
+    if (!hasMedia(p) || cs.key !== 'on') {
+      toast({ type: 'info', message: !hasMedia(p) ? `Approved. Add ${p.reel ? 'the video' : 'an image'} and it can be posted to ${p.c.name}.` : `Approved. ${p.c.name} is not connected for this customer yet, so it will not post until it is.` });
+      return;
+    }
+    const when = plannedAt(p);
+    if (when.getTime() > Date.now() + 2 * 60 * 1000) await schedulePost(p, localValue(when));
+    else await publishNow(p);
   };
   const schedulePost = async (p, value) => {
     const when = new Date(value);
@@ -1013,7 +1034,7 @@ function CalendarBlock({ t }) {
                         <button className="ae-btn sm" style={{ fontWeight: 800 }} data-testid="publish-now" disabled={!!w || !hasMedia(p) || (!acting && !!data.limited) || (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on')}
                           title={(!acting && data.limited) ? 'Publishing is available on paid plans.' : !hasMedia(p) ? (p.reel ? `Create or upload a ${reelWord(p.c)} first.` : 'Add an image first. Every poster needs one.') : (acting && channelState(p.c, conn[p.c.platform], false).key !== 'on') ? `This customer has not connected ${p.c.name}.` : `Post this to ${p.c.name} right now`}
                           onClick={() => setConfirmPub(p.k)}>{w === 'pub' ? 'Publishing…' : isPub ? '↻ Publish again' : '🚀 Publish now'}</button></>}
-                  <button className="ae-btn good" style={{ fontWeight: 800, padding: '8px 16px', background: ap ? '#ecfdf5' : '#10b981', color: ap ? '#047857' : '#fff' }} onClick={() => setPostState(p.k, { approved: !ap })}>{ap ? 'Approved ✓' : 'Approve'}</button>
+                  <button className="ae-btn good" style={{ fontWeight: 800, padding: '8px 16px', background: ap ? '#ecfdf5' : '#10b981', color: ap ? '#047857' : '#fff' }} onClick={() => { if (!ap) approvePost(p); else { setPostState(p.k, { approved: false }); if (acting && p.st.sched_id) cancelSchedule(p); } }}>{ap ? 'Approved ✓' : 'Approve'}</button>
                 </span>
               </div>
               {acting && !manualOnly(p) && !isPub && (() => {

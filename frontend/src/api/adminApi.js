@@ -132,4 +132,7 @@ export const adminAeoApi = {
   canvaEdit: (userId, key) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/post-image/canva-edit`, { key }),
   canvaSync: (userId, key) => req("POST", `/admin/aeo/users/${encodeURIComponent(userId)}/post-image/canva-sync`, { key }),
   socialStatus: (userId) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/status`),
+  /** Start connecting a social account FOR this customer; the connection is saved on them, not on the signed-in admin. */
+  socialDisconnect: (userId, platform) => req("POST", `/admin/users/${encodeURIComponent(userId)}/social-publish/${platform}/disconnect`),
+  socialConnect: (userId, group) => req("GET", `/admin/users/${encodeURIComponent(userId)}/social-publish/${group}/connect`),
 };

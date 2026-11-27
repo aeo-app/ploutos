@@ -246,7 +246,7 @@ function SocialChannelsCardInner() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: cs.color }}>{cs.label.replace(/^[●○◐] /, '')}</span>
                 {!connected && <button className="ae-btn sm primary" disabled={connecting === id} onClick={() => connect(ch)}>{connecting === id ? 'Opening…' : cs.key === 'reconnect' ? 'Reconnect' : cs.key === 'progress' ? 'Try again' : 'Connect account'}</button>}
-                {!acting && connected && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
+                {connected && <button className="ae-btn sm" onClick={() => disconnect(ch)}>Disconnect</button>}
               </div>
             </div>
             {!acting && cs.key === 'progress' && <span className="ae-note" style={{ color: '#3730a3' }}>This connection is in progress. You can keep writing and approving {ch.name} posts — we will publish them once it is ready.</span>}

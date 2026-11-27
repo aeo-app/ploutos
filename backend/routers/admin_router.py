@@ -440,6 +440,48 @@ async def user_social_status(user_id: str, admin_id: str = Depends(require_admin
     return SocialConnectionsStatusResponse(platforms=platforms)
 
 
+@router.get(
+    "/users/{user_id}/social-publish/{group}/connect",
+    summary="Start connecting a social account FOR a customer (the connection is saved on the customer, not the admin)",
+)
+async def admin_connect_for_user(user_id: str, group: str, admin_id: str = Depends(require_admin)):
+    """The admin signs in to the customer's social account at the provider; whatever Page / location /
+    channel they then pick is saved on `user_id`. The target is fixed here, in the server-side invite
+    (or the signed-in state for Google), so nothing the browser sends afterwards can redirect it."""
+    import secrets as _secrets
+    from routers import social_publish_router as sp
+    from db import save_page_invite as _save_invite
+    if group not in ("meta", "linkedin", "google_business", "youtube"):
+        raise HTTPException(status_code=404, detail=f"Unknown platform: {group}")
+    if not user_id or user_id == admin_id:
+        raise HTTPException(status_code=400, detail="Pick a customer first. This would connect your own account.")
+    label = "Your account (connected by our team)"
+    if group in ("meta", "linkedin"):
+        token = _secrets.token_urlsafe(24)
+        _save_invite(invite_token=token, platform=group, requested_by_user_id=user_id,
+                     requested_by_label=label, return_to_app=True)
+        build = sp.meta.build_authorize_url if group == "meta" else sp.li.build_authorize_url
+        url = build(sp._invite_state(token))
+    else:
+        state = f"{user_id}:{_secrets.token_urlsafe(24)}"
+        url = (sp.gbp if group == "google_business" else sp.yt).build_authorize_url(state)
+    logger.info(f"[admin] {admin_id} started a {group} connection for customer {user_id}")
+    return {"authorize_url": url}
+
+
+@router.post(
+    "/users/{user_id}/social-publish/{platform}/disconnect",
+    summary="Disconnect one of a customer's social accounts (e.g. one connected by mistake)",
+)
+async def admin_disconnect_for_user(user_id: str, platform: str, admin_id: str = Depends(require_admin)):
+    from db import delete_social_connection as _delete_conn
+    if platform not in ("facebook", "instagram", "linkedin", "google_business", "youtube"):
+        raise HTTPException(status_code=404, detail=f"Unknown platform: {platform}")
+    _delete_conn(user_id, platform)
+    logger.info(f"[admin] {admin_id} disconnected {platform} for customer {user_id}")
+    return {"disconnected": platform}
+
+
 @router.post(
     "/users/{user_id}/social-publish/uploads",
     response_model=UploadMediaResponse,
