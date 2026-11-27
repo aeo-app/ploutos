@@ -1,6 +1,6 @@
 import React from 'react';
 import s from './PlanCards.module.css';
-import { formatPlanAmount } from '../../utils/geo';
+import { formatPlanAmount, getBrowserCountry } from '../../utils/geo';
 
 const CHECK = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -23,14 +23,18 @@ const CURRENCY_SYMBOLS = { USD: '$', SGD: 'S$', INR: '₹', EUR: '€', GBP: '£
  */
 export function PlanCards({ plans, selectedPlanId, currentPlanId, onSelect, disabled, ctaLabel = 'Choose plan' }) {
   if (!plans || plans.length === 0) return null;
+  const country = getBrowserCountry();
 
   return (
     <div className="aeo-pricing">
       <style>{CARD_STYLES}</style>
       <div className="aeo-pricing__grid">
         {plans.map(plan => {
-          const price = formatPlanAmount(plan.amount, plan.currency);
-          const symbol = CURRENCY_SYMBOLS[plan.currency] || `${plan.currency} `;
+          const indiaStarter = country === 'IN' && plan.plan_id === 'starter';
+          const displayAmount = indiaStarter ? '1' : plan.amount;
+          const displayCurrency = indiaStarter ? 'INR' : plan.currency;
+          const price = formatPlanAmount(displayAmount, displayCurrency);
+          const symbol = CURRENCY_SYMBOLS[displayCurrency] || `${displayCurrency} `;
           const isSelected = selectedPlanId === plan.plan_id;
           const isCurrent = currentPlanId === plan.plan_id;
 

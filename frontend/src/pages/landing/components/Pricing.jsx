@@ -67,14 +67,25 @@ const FALLBACK_PLANS = [
 ];
 
 // Offline/error rendering follows the same rule as the server: India -> INR, Singapore -> SGD, otherwise USD.
-const FALLBACK_AMOUNTS = { SGD: ['50', '150', '500'], USD: ['39', '119', '389'], INR: ['3299', '9999', '32999'] };
+const FALLBACK_AMOUNTS = { SGD: ['50', '150', '500'], USD: ['39', '119', '389'], INR: ['1', '9999', '32999'] };
 const localizedFallback = (country) => {
   const currency = country === 'IN' ? 'INR' : country === 'SG' ? 'SGD' : 'USD';
   return FALLBACK_PLANS.map((p, i) => ({ ...p, currency, amount: FALLBACK_AMOUNTS[currency][i] }));
 };
 
+const localizeIndiaStarter = (plans, country) => {
+  if (country !== 'IN') return plans;
+  return plans.map((plan) => (
+    plan.plan_id === 'starter'
+      ? { ...plan, amount: '1', currency: 'INR' }
+      : plan
+  ));
+};
+
 export default function Pricing({ onStartTrial, initialPlans }) {
-  const [plans, setPlans] = useState(initialPlans || null);
+  const [plans, setPlans] = useState(() => (
+    initialPlans ? localizeIndiaStarter(initialPlans, getBrowserCountry()) : null
+  ));
 
   useEffect(() => {
     if (initialPlans) return;
@@ -83,7 +94,7 @@ export default function Pricing({ onStartTrial, initialPlans }) {
 
     fetch(`${BASE}/payment/plans${query}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
-      .then((data) => setPlans(data.plans || localizedFallback(country)))
+      .then((data) => setPlans(localizeIndiaStarter(data.plans || localizedFallback(country), country)))
       .catch((err) => {
         console.error('[Pricing] Could not load plans from', `${BASE}/payment/plans`, '—', err.message);
         setPlans(localizedFallback(country));
