@@ -641,3 +641,15 @@ async def admin_auto_generate_poster(user_id: str, req: AutoGeneratePosterReques
     result = await _canva_auto_generate_poster(user_id, req)
     logger.info(f"[admin] {admin_id} auto-generated a poster for user {user_id}, day={req.day_date} post={req.post_number}")
     return result
+
+
+# ── Payments: clear out autopay-test records ─────────────────────────────────
+@router.post("/payments/purge-test", summary="List or delete the test (autopay testing) payment records")
+async def purge_test_payments_endpoint(dry_run: bool = True, admin_id: str = Depends(require_admin)):
+    """Test payments = Starter charges at the test price (1.00) or records flagged `is_test`.
+    Default is a dry run that only lists them; call with ?dry_run=false to delete. Real payments and every
+    user's plan/entitlement are never touched."""
+    from db import purge_test_payments
+    found = purge_test_payments(dry_run=dry_run)
+    logger.info("[admin] %s purge-test-payments by %s: %d record(s)", "dry-run" if dry_run else "DELETED", admin_id, len(found))
+    return {"dry_run": dry_run, "count": len(found), "deleted": 0 if dry_run else len(found), "items": found}

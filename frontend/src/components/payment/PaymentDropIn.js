@@ -11,13 +11,19 @@ import { AIRWALLEX_ENV } from '../../api/config';
 // authentication failed" error — the two sides were never in the same
 // environment to begin with.
 
+/** Plans renew automatically, so the card is saved by default: Airwallex's "Save my card for future payments" box starts
+ *  ticked and the consent is for scheduled charges by us. The one-time Starter Pass never renews, so it saves nothing. */
+export const cardSaveOptions = (saveCard) => (saveCard
+  ? { autoSaveCardForFuturePayments: true, payment_consent: { next_triggered_by: 'merchant', merchant_trigger_reason: 'scheduled' } }
+  : { autoSaveCardForFuturePayments: false });
+
 /**
  * Mounts an Airwallex Drop-in element for a given PaymentIntent. Pure
  * SDK-mounting concern only — the parent owns the intent/stage state
  * machine (see BillingPage.js and CheckoutPage.js, which both need this but
  * drive their own surrounding UI/flow differently).
  */
-export function PaymentDropIn({ intent, onSuccess, onError, onCancel }) {
+export function PaymentDropIn({ intent, onSuccess, onError, onCancel, saveCard = true }) {
   const containerRef = useRef(null);
   const elementRef = useRef(null);
 
@@ -33,6 +39,7 @@ export function PaymentDropIn({ intent, onSuccess, onError, onCancel }) {
           intent_id: intent.payment_intent_id,
           client_secret: intent.client_secret,
           currency: intent.currency,
+          ...cardSaveOptions(saveCard),
         });
         if (cancelled) return;
         elementRef.current = element;

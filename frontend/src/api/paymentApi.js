@@ -77,6 +77,8 @@ export const paymentApi = {
   getStatus: (paymentIntentId) =>
     get(`/payment/status${paymentIntentId ? `?payment_intent_id=${encodeURIComponent(paymentIntentId)}` : ""}`),
   getHistory: () => get("/payment/history"),
+  /** Full details of one payment — credited or not, with the bank's error when it failed. */
+  getPaymentDetail: (paymentIntentId) => get(`/payment/history/${encodeURIComponent(paymentIntentId)}`),
   /** The one-time Starter Pass for free accounts. The server picks INR (India) or SGD from the country. */
   createPassIntent: () => post("/payment/pass/create-intent", { country: getBrowserCountry() }),
   /** The pass price for this account's country: { currency, amount, eligible, ... } */

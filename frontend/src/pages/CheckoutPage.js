@@ -6,6 +6,8 @@ import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
 import { AIRWALLEX_ENV } from '../api/config';
 import { PlanCards, PricingSectionHeader, PricingFooter } from '../components/payment/PlanCards';
+import { cardSaveOptions } from '../components/payment/PaymentDropIn';
+import { PaymentReceipt, PaymentFailure, AutoRenewNotice, waitForPaymentOutcome } from '../components/payment/PaymentResult';
 import s from './CheckoutPage.module.css';
 
 // Previously this had its own local `const AIRWALLEX_ENV = 'demo'`, with a
@@ -34,6 +36,7 @@ export function CheckoutPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [stage, setStage] = useState('plans');        // plans | loading | ready | confirming | success | failed
+  const [result, setResult] = useState(null);         // the settled payment: a receipt on success, the bank's reason on failure
   const containerRef = useRef(null);
   const elementRef = useRef(null);
 
@@ -93,6 +96,7 @@ export function CheckoutPage() {
           intent_id: intent.payment_intent_id,
           client_secret: intent.client_secret,
           currency: intent.currency,
+          ...cardSaveOptions(true),   // card saved by default for the automatic renewal; the notice above the form says so
         });
         if (cancelled) return;
         elementRef.current = element;
@@ -103,6 +107,7 @@ export function CheckoutPage() {
           pollForConfirmation(intent.payment_intent_id);
         });
         element.on('error', (evt) => {
+          setResult(null);
           setStage('failed');
           setError(evt?.detail?.error?.message || 'Payment failed. Please try a different payment method.');
         });
@@ -123,22 +128,19 @@ export function CheckoutPage() {
   }, [intent, stage]);
 
   const pollForConfirmation = async (paymentIntentId) => {
-    for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-      try {
-        const data = await refreshPayment(paymentIntentId);
-        if (data?.is_paid) {
-          setStage('success');
-          return;
-        }
-      } catch {
-        // keep polling — a transient error here shouldn't abort confirmation
-      }
-      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    setError(null);
+    // Asks the server, which asks Airwallex directly, until the payment is settled either way. Access is granted
+    // server-side only for a SUCCEEDED payment; this screen just reports what happened.
+    const data = await waitForPaymentOutcome(paymentIntentId, { tries: POLL_MAX_ATTEMPTS, interval: POLL_INTERVAL_MS });
+    if (!data) {
+      // Still pending: the payment may well succeed, but we can't confirm yet.
+      setStage('ready');
+      setError('Payment is still being confirmed. This can take a moment — please check again shortly.');
+      return;
     }
-    // Gave up waiting — payment likely succeeded (webhook may just be slow)
-    // but we can't confirm yet. Let the user retry the check manually.
-    setStage('ready');
-    setError('Payment is still being confirmed. This can take a moment — click below to check again.');
+    setResult(data.payment);
+    if (data.payment.outcome === 'failed') { setStage('failed'); return; }   // not active: stay on checkout with the reason
+    setStage('success');   // the receipt stays on screen until they continue
   };
 
   const retry = () => {
@@ -185,7 +187,7 @@ export function CheckoutPage() {
           </>
         )}
 
-        {stage !== 'plans' && intent && stage !== 'success' && (
+        {stage !== 'plans' && intent && stage !== 'success' && stage !== 'failed' && (
           <>
             <div className={s.priceBox}>
               <span className={s.priceAmount}>{intent.amount}</span>
@@ -202,8 +204,12 @@ export function CheckoutPage() {
           </div>
         )}
 
-        {error && stage !== 'plans' && (
+        {error && stage !== 'plans' && stage !== 'failed' && (
           <div className={s.errorBox}>{error}</div>
+        )}
+
+        {stage === 'failed' && (
+          <PaymentFailure message={result?.failure_reason || error} onRetry={retry} />
         )}
 
         {stage === 'confirming' && (
@@ -214,19 +220,12 @@ export function CheckoutPage() {
         )}
 
         {stage === 'success' && (
-          <div className={s.successBox}>
-            <span className={s.successIcon}>✅</span>
-            <strong>Payment confirmed — you're all set!</strong>
-            <span style={{ fontSize: 13, color: 'var(--c-slate-500)' }}>Loading your dashboard…</span>
-          </div>
+          <PaymentReceipt payment={result} onContinue={() => refreshPayment()} />
         )}
 
-        {!loading && (stage === 'ready' || stage === 'failed') && (
+        {!loading && stage === 'ready' && intent && <AutoRenewNotice amount={intent.amount} currency={intent.currency} />}
+        {!loading && stage === 'ready' && (
           <div ref={containerRef} className={s.dropinContainer} />
-        )}
-
-        {stage === 'failed' && (
-          <button type="button" className={s.retryBtn} onClick={retry}>Try again</button>
         )}
 
         {(stage === 'ready' || stage === 'failed') && (

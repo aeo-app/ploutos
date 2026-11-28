@@ -116,7 +116,7 @@ COUNTRY_CURRENCIES = {
 # for USD and INR: confirm them (or create the matching Prices in Airwallex)
 # before going live, because this is what a customer is charged.
 DEFAULT_PRICES: dict[str, dict[str, str]] = {
-    "starter": {"SGD": "50.00", "USD": "39.00", "INR": "3299.00"},
+    "starter": {"SGD": "50.00", "USD": "39.00", "INR": "1.00"},
     "growth":  {"SGD": "150.00", "USD": "119.00", "INR": "9999.00"},
     "scale":   {"SGD": "500.00", "USD": "389.00", "INR": "32999.00"},
 }
@@ -232,6 +232,9 @@ def get_plan_price(plan_id: str, currency: str | None = None, marketing: bool = 
     global _catalog_prices, _catalog_loaded_at
     plan = PLANS[plan_id]
     currency_code = (currency or PAYMENT_CURRENCY).upper()
+    if plan_id == "starter" and currency_code == "INR":
+        logger.info("[airwallex] starter/INR = 1.00 (source: fixed backend price)")
+        return DEFAULT_PRICES["starter"]["INR"]
     if AUTOPAY_TEST_MODE and plan_id == "starter" and not marketing:
         logger.warning(f"[airwallex] starter/{currency_code} = {AUTOPAY_TEST_STARTER_PRICE} (AUTOPAY TEST MODE — not the real price)")
         return AUTOPAY_TEST_STARTER_PRICE

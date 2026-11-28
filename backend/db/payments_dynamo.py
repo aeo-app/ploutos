@@ -121,6 +121,7 @@ def save_payment_intent(
         "status": status,
         "description": description,
         "is_renewal": is_renewal,
+        **({"is_test": True} if os.getenv("AUTOPAY_TEST_MODE", "false").lower() == "true" and plan_id == "starter" else {}),
         "created_at": now_iso,
         "updated_at": now_iso,
     }
@@ -171,19 +172,87 @@ def update_payment_intent_status(payment_intent_id: str, status: str) -> Optiona
         raise
 
 
-def list_user_payments(user_id: str, limit: int = 20) -> list[dict]:
-    """Payment transaction history for a user, newest first."""
+def set_payment_details(payment_intent_id: str, **fields) -> None:
+    """Attach what we learned about a payment (why it failed, which card paid) to its record. Never changes the status."""
+    fields = {k: v for k, v in fields.items() if v not in (None, "")}
+    if not fields:
+        return
+    item = get_payment_intent(payment_intent_id)
+    if not item:
+        return
+    names = {f"#f{i}": k for i, k in enumerate(fields)}
+    values = {f":v{i}": v for i, v in enumerate(fields.values())}
+    sets = ", ".join(f"#f{i} = :v{i}" for i in range(len(fields)))
+    try:
+        _get_payments_table().update_item(
+            Key={"PK": item["PK"], "SK": item["SK"]},
+            UpdateExpression=f"SET {sets}, updated_at = :u",
+            ExpressionAttributeNames=names, ExpressionAttributeValues={**values, ":u": _now_iso()},
+        )
+    except ClientError as e:
+        logger.error(f"[payments_dynamo] set_payment_details failed: {e.response['Error']}")
+
+
+# Payments made while the autopay TEST MODE was on (Starter at 1.00, 1-day access) are not real money.
+_TEST_PRICE = os.getenv("AUTOPAY_TEST_STARTER_PRICE", "1.00")
+
+
+def is_test_payment(item: dict) -> bool:
+    """True for a payment that came from autopay testing: flagged `is_test`, or a Starter charge at the test price (<= 1)."""
+    if item.get("is_test"):
+        return True
+    if item.get("plan_id") != "starter":
+        return False
+    try:
+        return float(item.get("amount")) <= max(float(_TEST_PRICE), 1.0)
+    except (TypeError, ValueError):
+        return False
+
+
+def list_user_payments(user_id: str, limit: int = 20, include_test: bool = False) -> list[dict]:
+    """Payment transaction history for a user, newest first. Test (autopay-testing) payments are left out unless asked for."""
     table = _get_payments_table()
     try:
-        resp = table.query(
+        items: list[dict] = []
+        kwargs = dict(
             KeyConditionExpression=Key("PK").eq(_pk(user_id)) & Key("SK").begins_with("PAYMENT#"),
             ScanIndexForward=False,
-            Limit=limit,
         )
-        return [_from_dynamo(i) for i in resp.get("Items", [])]
+        while True:
+            resp = table.query(**kwargs)
+            items += [_from_dynamo(i) for i in resp.get("Items", [])]
+            if not resp.get("LastEvaluatedKey") or (not include_test and len([i for i in items if not is_test_payment(i)]) >= limit):
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        if not include_test:
+            items = [i for i in items if not is_test_payment(i)]
+        return items[:limit]
     except ClientError as e:
         logger.error(f"[payments_dynamo] list_user_payments failed: {e.response['Error']}")
         raise
+
+
+def purge_test_payments(dry_run: bool = True) -> list[dict]:
+    """Find (and, when dry_run is False, delete) every test payment record in the table. Entitlements are never touched."""
+    table = _get_payments_table()
+    found: list[dict] = []
+    kwargs = {"FilterExpression": Attr("SK").begins_with("PAYMENT#")}
+    try:
+        while True:
+            resp = table.scan(**kwargs)
+            for raw in resp.get("Items", []):
+                item = _from_dynamo(raw)
+                if is_test_payment(item):
+                    found.append({k: item.get(k) for k in ("PK", "SK", "user_id", "payment_intent_id", "plan_id", "amount", "currency", "status", "created_at")})
+                    if not dry_run:
+                        table.delete_item(Key={"PK": raw["PK"], "SK": raw["SK"]})
+            if not resp.get("LastEvaluatedKey"):
+                break
+            kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    except ClientError as e:
+        logger.error(f"[payments_dynamo] purge_test_payments failed: {e.response['Error']}")
+        raise
+    return found
 
 
 # ── Entitlement ──────────────────────────────────────────────────────────────

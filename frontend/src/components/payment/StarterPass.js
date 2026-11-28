@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { paymentApi } from '../../api/paymentApi';
 import { withTokenExpiry } from '../../api/authApi';
 import { PaymentDropIn } from './PaymentDropIn';
+import { PaymentReceipt, PaymentFailure, waitForPaymentOutcome } from './PaymentResult';
 
 const SYMBOL = { INR: '₹', SGD: 'S$' };
 const WHAT = [
@@ -45,6 +46,7 @@ export function StarterPassOffer({ onDone, compact = false }) {
   const [stage, setStage] = useState('idle');   // idle | loading | ready | confirming | success
   const [intent, setIntent] = useState(null);
   const [error, setError] = useState('');
+  const [result, setResult] = useState(null);   // { payment } once the payment has settled
 
   if (!pass?.eligible && stage === 'idle') return null;
 
@@ -58,15 +60,13 @@ export function StarterPassOffer({ onDone, compact = false }) {
     }
   };
   const confirm = async (id) => {
-    setStage('confirming');
-    for (let i = 0; i < 15; i++) {
-      try {
-        const d = await refresh(id);
-        if (d?.pass?.active) { setStage('success'); setTimeout(() => onDone?.(), 900); return; }
-      } catch { /* keep polling */ }
-      await new Promise(r => setTimeout(r, 2000));
-    }
-    setStage('ready'); setError('Payment is still being confirmed. This can take a moment. Check back shortly.');
+    setStage('confirming'); setError('');
+    const data = await waitForPaymentOutcome(id);
+    if (!data) { setStage('ready'); setError('Payment is still being confirmed. This can take a moment. Check back shortly.'); return; }
+    if (data.payment.outcome === 'failed') { setResult(data.payment); setStage('failed'); return; }
+    setResult(data.payment); setStage('success');
+    await refresh();    // the pass is active on the server now: update the app (banner, limits)
+    onDone?.();
   };
 
   return (
@@ -84,14 +84,15 @@ export function StarterPassOffer({ onDone, compact = false }) {
       )}
       {stage === 'loading' && <span style={{ fontSize: 13, color: '#64748b' }}>Preparing checkout…</span>}
       {stage === 'confirming' && <span style={{ fontSize: 13, color: '#64748b' }}>Confirming your payment…</span>}
-      {stage === 'success' && <strong style={{ color: '#047857' }} data-testid="pass-success">✓ Payment confirmed. Your Starter Pass is active.</strong>}
+      {stage === 'success' && <div data-testid="pass-success"><PaymentReceipt payment={result} /></div>}
+      {stage === 'failed' && <PaymentFailure message={result?.failure_reason || error} onRetry={() => { setResult(null); setIntent(null); setStage('idle'); start(); }} />}
       {(stage === 'ready') && intent && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, fontWeight: 700 }}>
             <span>{intent.amount} {intent.currency} · {intent.plan_name}</span>
             <button type="button" style={{ background: 'none', border: 'none', color: '#64748b', textDecoration: 'underline', cursor: 'pointer', fontSize: 12.5 }} onClick={() => { setIntent(null); setStage('idle'); setError(''); }}>Back</button>
           </div>
-          <PaymentDropIn intent={intent} onSuccess={() => confirm(intent.payment_intent_id)} onError={(m) => setError(m)} onCancel={() => { setIntent(null); setStage('idle'); }} />
+          <PaymentDropIn intent={intent} saveCard={false} onSuccess={() => confirm(intent.payment_intent_id)} onError={(m) => setError(m)} onCancel={() => { setIntent(null); setStage('idle'); }} />
         </div>
       )}
       {error && <div role="alert" style={{ color: '#b91c1c', fontSize: 13 }}>{error}</div>}

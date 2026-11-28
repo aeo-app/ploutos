@@ -26,6 +26,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from core.security import get_real_user_id as get_current_user_id  # never "act as" a customer here
 from db import (
     cancel_auto_renew,
+    get_payment_intent,
     get_user_entitlement,
     get_user_id_by_customer_id,
     list_user_payments,
@@ -33,6 +34,7 @@ from db import (
     set_renewal_status,
     set_user_paid,
     update_payment_intent_status,
+    set_payment_details,
 )
 from db.dynamo import get_registered_user
 from models.payment_models import CreatePaymentIntentRequest
@@ -54,6 +56,7 @@ from services.airwallex_service import (
 )
 from services.cognito_service import get_user_country_from_token
 from core import starter_pass
+from services import payment_outcome
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -228,11 +231,26 @@ async def payment_status(
     in case the webhook hasn't arrived yet — e.g. right after the frontend's
     Drop-in reports success, before Airwallex's webhook has landed.
     """
+    payment = None
     if payment_intent_id:
         try:
             live = awx_get_payment_intent(payment_intent_id)
             live_status = live.get("status", "")
             record = update_payment_intent_status(payment_intent_id, live_status)
+            if record and record.get("user_id") != user_id:
+                record = None   # somebody else's payment: never report on it
+            if record:
+                # Why it failed / which card paid — kept on the record so history and receipts can show it.
+                card = payment_outcome.card_of(live)
+                outcome = payment_outcome.outcome_of(live, SUCCESS_STATUSES, FAILURE_STATUSES)
+                reason = payment_outcome.failure_reason(live) if outcome == "failed" else None
+                set_payment_details(payment_intent_id, failure_reason=reason, card_brand=card.get("brand"), card_last4=card.get("last4"))
+                payment = {"payment_intent_id": payment_intent_id, "status": live_status,
+                           "outcome": outcome,
+                           "failure_reason": reason, "card": card,
+                           "plan_id": record.get("plan_id"), "description": record.get("description"),
+                           "amount": record.get("amount"), "currency": record.get("currency"),
+                           "created_at": record.get("created_at"), "is_renewal": bool(record.get("is_renewal", False))}
             if record and live_status in SUCCESS_STATUSES and record.get("plan_id") == starter_pass.PASS_PLAN_ID:
                 if record.get("user_id") == user_id:
                     starter_pass.grant_pass(user_id, payment_intent_id, str(record.get("amount")), str(record.get("currency")))
@@ -271,9 +289,25 @@ async def payment_status(
             logger.warning(f"[payment] unparseable paid_until={paid_until!r} for user={user_id} in status check; reporting as expired")
             is_paid = False
 
+    if payment:
+        # The receipt: only a SUCCEEDED payment ever shows access details.
+        ok = payment["outcome"] == "succeeded"
+        pass_state = starter_pass.public_state(user_id)
+        is_pass = payment.get("plan_id") == starter_pass.PASS_PLAN_ID
+        payment.update({
+            "plan_name": starter_pass.PASS_NAME if is_pass else (PLANS.get(payment.get("plan_id"), {}).get("name") or payment.get("description")),
+            "paid_at": (ent.get("updated_at") if ok and not is_pass else None) or payment.get("created_at") if ok else None,
+            "access_until": (paid_until if ok and not is_pass else None),
+            "auto_renew": bool(ent.get("auto_renew", False)) if ok and not is_pass else False,
+            "card": payment.get("card") or (ent.get("payment_method_summary") if ok and not is_pass else None) or {},
+            "is_pass": is_pass,
+            "pass": pass_state if (ok and is_pass) else None,
+        })
+
     from core.paywall import subscription_state
     sub = subscription_state(user_id)
     return {
+        "payment": payment,
         "is_paid": is_paid,
         # Paid before and no active access now: paid actions are blocked until a plan is bought again.
         "lapsed": bool(sub["lapsed"]),
@@ -358,25 +392,76 @@ async def cancel_auto_renew_endpoint(user_id: str = Depends(get_current_user_id)
     return {"auto_renew": False}
 
 
+def _history_view(i: dict) -> dict:
+    """One payment as the history list shows it. `credited` = the money was received (only a SUCCEEDED payment ever is)."""
+    status = str(i.get("status") or "").upper()
+    credited = status in SUCCESS_STATUSES
+    failed = status in FAILURE_STATUSES or bool(i.get("failure_reason"))
+    pid = i.get("plan_id")
+    return {
+        "payment_intent_id": i.get("payment_intent_id"),
+        "plan_id": pid,
+        "plan_name": starter_pass.PASS_NAME if pid == starter_pass.PASS_PLAN_ID else (PLANS.get(pid, {}).get("name") or i.get("description")),
+        "amount": i.get("amount"),
+        "currency": i.get("currency"),
+        "status": i.get("status"),
+        "outcome": "succeeded" if credited else ("failed" if failed else "pending"),
+        "credited": credited,
+        "description": i.get("description", ""),
+        "created_at": i.get("created_at"),
+        "updated_at": i.get("updated_at"),
+        "is_renewal": bool(i.get("is_renewal", False)),
+        "failure_reason": i.get("failure_reason") or (payment_outcome.GENERIC_FAILURE if failed and not credited else None),
+        "card_brand": i.get("card_brand"),
+        "card_last4": i.get("card_last4"),
+    }
+
+
 @router.get("/api/v1/payment/history", summary="Your payment transaction history")
 async def payment_history(user_id: str = Depends(get_current_user_id)):
-    items = list_user_payments(user_id)
-    return {
-        "items": [
-            {
-                "payment_intent_id": i.get("payment_intent_id"),
-                "plan_id": i.get("plan_id"),
-                "amount": i.get("amount"),
-                "currency": i.get("currency"),
-                "status": i.get("status"),
-                "description": i.get("description", ""),
-                "created_at": i.get("created_at"),
-                "updated_at": i.get("updated_at"),
-                "is_renewal": bool(i.get("is_renewal", False)),
-            }
-            for i in items
-        ]
-    }
+    """Real payments only — payments made while autopay testing was on are left out."""
+    return {"items": [_history_view(i) for i in list_user_payments(user_id)]}
+
+
+@router.get("/api/v1/payment/history/{payment_intent_id}", summary="Full details of one payment (credited or not, with the error)")
+async def payment_detail(payment_intent_id: str, user_id: str = Depends(get_current_user_id)):
+    """Everything known about one of your payments. Asks Airwallex for the live state so the status and the bank's
+    error are current. Read-only: it never changes access (that only happens on a confirmed success)."""
+    record = get_payment_intent(payment_intent_id)
+    if not record or record.get("user_id") != user_id:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    live = None
+    try:
+        live = awx_get_payment_intent(payment_intent_id)
+        live_status = live.get("status", "")
+        if live_status and live_status != record.get("status"):
+            update_payment_intent_status(payment_intent_id, live_status)
+            record["status"] = live_status
+        outcome = payment_outcome.outcome_of(live, SUCCESS_STATUSES, FAILURE_STATUSES)
+        card = payment_outcome.card_of(live)
+        reason = payment_outcome.failure_reason(live) if outcome == "failed" else None
+        set_payment_details(payment_intent_id, failure_reason=reason, card_brand=card.get("brand"), card_last4=card.get("last4"))
+        if reason:
+            record["failure_reason"] = reason
+        if card:
+            record["card_brand"], record["card_last4"] = card.get("brand"), card.get("last4")
+    except AirwallexError as e:
+        logger.warning(f"[payment] detail live poll failed for {payment_intent_id}: {e}")
+    view = _history_view(record)
+    detail = payment_outcome.failure_detail(live) if (live and view["outcome"] == "failed") else {}
+    ent = get_user_entitlement(user_id)
+    view.update({
+        "bank_error_code": detail.get("code"),
+        "bank_error_message": detail.get("message"),
+        "attempt_status": detail.get("attempt_status"),
+        "access_granted": bool(view["credited"]),
+        "access_until": ent.get("paid_until") if view["credited"] and record.get("plan_id") != starter_pass.PASS_PLAN_ID else None,
+        "auto_renew": bool(ent.get("auto_renew", False)) if view["credited"] and record.get("plan_id") != starter_pass.PASS_PLAN_ID else False,
+        "note": ("Payment received — your plan is active." if view["credited"]
+                 else "Payment not received — no money was taken and your plan was not activated." if view["outcome"] == "failed"
+                 else "Waiting for the bank to confirm — nothing has been charged or activated yet."),
+    })
+    return view
 
 
 @router.post("/api/v1/payment/webhook", summary="Airwallex webhook receiver")
@@ -465,6 +550,7 @@ async def airwallex_webhook(request: Request):
         logger.info(f"[payment] user={record['user_id']} marked paid ({plan_id}) via webhook ({payment_intent_id}, renewal={is_renewal})")
     elif status in FAILURE_STATUSES:
         logger.info(f"[payment] payment {payment_intent_id} failed/cancelled for user={record['user_id']} (renewal={is_renewal})")
+        set_payment_details(payment_intent_id, failure_reason=payment_outcome.failure_reason(payment_intent))
         if is_renewal:
             # A failed renewal does NOT immediately revoke access here —
             # paid_until simply continues counting down to its already-set

@@ -5,6 +5,8 @@ import { paymentApi } from '../api/paymentApi';
 import { withTokenExpiry } from '../api/authApi';
 import { PlanCards, PricingSectionHeader, PricingFooter } from '../components/payment/PlanCards';
 import { PaymentDropIn } from '../components/payment/PaymentDropIn';
+import { PaymentReceipt, PaymentFailure, AutoRenewNotice, waitForPaymentOutcome } from '../components/payment/PaymentResult';
+import { PaymentDetailsModal } from '../components/payment/PaymentDetails';
 import { StarterPassOffer, StarterPassStatus } from '../components/payment/StarterPass';
 import { Card, Badge, SectionHeader, DataTable, SkeletonCard, ErrorCard } from '../components/ui/UI';
 import s from './BillingPage.module.css';
@@ -25,6 +27,7 @@ export function BillingPage() {
   } = usePayment();
   const { goScreen, logout } = useAuth();
   const authCtx = { goScreen, logout };
+  const [detailPayment, setDetailPayment] = useState(null);
   const [togglingRenew, setTogglingRenew] = useState(false);
   const [renewToggleError, setRenewToggleError] = useState(null);
 
@@ -36,6 +39,7 @@ export function BillingPage() {
   const [checkoutIntent, setCheckoutIntent] = useState(null);
   const [checkoutStage, setCheckoutStage] = useState('idle'); // idle | loading | ready | confirming | success | failed
   const [checkoutError, setCheckoutError] = useState(null);
+  const [checkoutResult, setCheckoutResult] = useState(null);   // the settled payment (receipt or failure)
 
   const load = useCallback(async () => {
     setLoadingPage(true);
@@ -60,6 +64,7 @@ export function BillingPage() {
   const selectPlan = async (planId) => {
     setCheckoutStage('loading');
     setCheckoutError(null);
+    setCheckoutResult(null);
     try {
       const data = await withTokenExpiry(paymentApi.createIntent(planId), authCtx);
       setCheckoutIntent(data);
@@ -76,6 +81,7 @@ export function BillingPage() {
     setCheckoutIntent(null);
     setCheckoutStage('idle');
     setCheckoutError(null);
+    setCheckoutResult(null);
   };
 
   const handleToggleAutoRenew = async () => {
@@ -92,28 +98,28 @@ export function BillingPage() {
   };
 
   const pollForConfirmation = async (paymentIntentId) => {
-    setCheckoutStage('confirming');
-    for (let attempt = 0; attempt < 15; attempt++) {
-      try {
-        const data = await refresh(paymentIntentId);
-        if (data?.is_paid) {
-          setCheckoutStage('success');
-          load(); // refresh plan catalog highlighting + payment history
-          return;
-        }
-      } catch { /* keep polling */ }
-      await new Promise(r => setTimeout(r, 2000));
+    setCheckoutStage('confirming'); setCheckoutError(null);
+    const data = await waitForPaymentOutcome(paymentIntentId);
+    if (!data) {
+      setCheckoutStage('ready');
+      setCheckoutError('Payment is still being confirmed — this can take a moment. Check back shortly.');
+      return;
     }
-    setCheckoutStage('ready');
-    setCheckoutError('Payment is still being confirmed — this can take a moment. Check back shortly.');
+    setCheckoutResult(data.payment);
+    if (data.payment.outcome === 'failed') { setCheckoutStage('failed'); load(); return; }   // not active: nothing unlocks
+    setCheckoutStage('success');
+    await refresh();   // the plan is active on the server: update the app
+    load();            // plan highlighting + payment history
   };
 
   const cols = [
     { key: 'plan_id', label: 'Plan', render: v => <Badge variant="brand">{v || '—'}</Badge> },
     { key: 'amount', label: 'Amount', render: (v, row) => `${v} ${row.currency}` },
-    { key: 'status', label: 'Status', render: v => <Badge variant={v === 'SUCCEEDED' ? 'success' : v === 'FAILED' ? 'danger' : 'default'}>{v}</Badge> },
+    { key: 'status', label: 'Status', render: (v, row) => (<div><Badge variant={v === 'SUCCEEDED' ? 'success' : ['FAILED', 'CANCELLED', 'EXPIRED'].includes(v) || row.failure_reason ? 'danger' : 'default'}>{row.failure_reason && !['FAILED', 'CANCELLED', 'EXPIRED'].includes(v) ? 'FAILED' : v}</Badge>{row.failure_reason && <div style={{ fontSize: 11.5, color: 'var(--c-danger)', marginTop: 3, maxWidth: 260 }}>{row.failure_reason}</div>}</div>) },
     { key: 'is_renewal', label: 'Type', render: v => v ? <Badge>Auto-renewal</Badge> : <Badge variant="brand">Checkout</Badge> },
     { key: 'created_at', label: 'Date', render: v => formatDate(v) || '—' },
+    { key: 'credited', label: 'Credited', render: (v, row) => v ? <Badge variant="success">✓ Received</Badge> : <Badge variant={row.outcome === 'failed' ? 'danger' : 'default'}>{row.outcome === 'failed' ? '✕ Not received' : 'Pending'}</Badge> },
+    { key: 'payment_intent_id', label: '', render: (v, row) => <button type="button" className={s.autoRenewToggleBtn} onClick={() => setDetailPayment(row)}>View details</button> },
   ];
 
   return (
@@ -200,27 +206,28 @@ export function BillingPage() {
           {checkoutStage === 'loading' && (
             <div className={s.loadingRow}><span className={s.spinner} /><span>Preparing checkout…</span></div>
           )}
-          {checkoutError && <div className={s.errorBox} style={{ marginTop: 12 }}>{checkoutError}</div>}
+          {checkoutError && checkoutStage !== 'failed' && <div className={s.errorBox} style={{ marginTop: 12 }}>{checkoutError}</div>}
 
-          {checkoutStage === 'success' && (
-            <div className={s.successBox} style={{ marginTop: 14 }}>✅ Payment confirmed — your plan is now active.</div>
+          {checkoutStage === 'success' && checkoutResult && (
+            <div style={{ marginTop: 14 }}><PaymentReceipt payment={checkoutResult} onContinue={cancelCheckout} continueLabel="Done" /></div>
+          )}
+          {checkoutStage === 'failed' && (checkoutResult || checkoutError) && (
+            <div style={{ marginTop: 14 }}><PaymentFailure message={checkoutResult?.failure_reason || checkoutError} onRetry={() => selectPlan(checkoutIntent.plan_id)} /></div>
           )}
 
-          {(checkoutStage === 'ready' || checkoutStage === 'failed') && checkoutIntent && (
+          {checkoutStage === 'ready' && checkoutIntent && (
             <div className={s.checkoutBox}>
               <div className={s.checkoutHead}>
                 <span className={s.checkoutPrice}>{checkoutIntent.amount} {checkoutIntent.currency} — {checkoutIntent.plan_name}</span>
                 <button type="button" className={s.cancelLink} onClick={cancelCheckout}>Cancel</button>
               </div>
+              <AutoRenewNotice amount={checkoutIntent.amount} currency={checkoutIntent.currency} />
               <PaymentDropIn
                 intent={checkoutIntent}
                 onSuccess={() => pollForConfirmation(checkoutIntent.payment_intent_id)}
-                onError={(msg) => { setCheckoutStage('failed'); setCheckoutError(msg); }}
+                onError={(msg) => { setCheckoutResult(null); setCheckoutStage('failed'); setCheckoutError(msg); }}
                 onCancel={cancelCheckout}
               />
-              {checkoutStage === 'failed' && (
-                <button type="button" className={s.retryBtn} onClick={() => selectPlan(checkoutIntent.plan_id)}>Try again</button>
-              )}
             </div>
           )}
         </Card>
@@ -234,6 +241,7 @@ export function BillingPage() {
             : <DataTable cols={cols} rows={history.items} keyFn={r => r.payment_intent_id} />}
         </Card>
       )}
+      {detailPayment && <PaymentDetailsModal payment={detailPayment} onClose={() => setDetailPayment(null)} />}
     </div>
   );
 }
